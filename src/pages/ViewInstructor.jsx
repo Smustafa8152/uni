@@ -43,6 +43,15 @@ export default function ViewInstructor() {
 
   const txt = (ar, en) => (isArabicLayout ? ar : en)
   const valueOrDash = (value) => (value === null || value === undefined || value === '' ? '-' : value)
+
+  const genderLabel = (g) => {
+    if (g === null || g === undefined || g === '') return '-'
+    const v = String(g).toLowerCase().trim()
+    if (v === 'male' || v === 'm') return txt('ذكر', 'Male')
+    if (v === 'female' || v === 'f') return txt('أنثى', 'Female')
+    if (v === 'other' || v === 'o') return txt('آخر', 'Other')
+    return valueOrDash(g)
+  }
   const formatDate = (value) => {
     if (!value) return '-'
     return new Date(value).toLocaleDateString(isArabicLayout ? 'ar-SA' : 'en-US')
@@ -67,15 +76,45 @@ export default function ViewInstructor() {
   }
 
   const primaryName = isArabicLayout
-    ? (instructor?.name_ar || '').trim() || '-'
+    ? (instructor?.name_ar || instructor?.name_en || '').trim() || '-'
     : (instructor?.name_en || instructor?.name_ar || '').trim() || '-'
 
   const secondaryName = isArabicLayout
-    ? ''
+    ? ((instructor?.name_ar || '').trim() && (instructor?.name_en || '').trim()
+        ? (instructor.name_en).trim()
+        : '')
     : (instructor?.name_ar || '').trim()
 
+  /** Physical alignment for Arabic; field tiles use card chrome. */
+  const alignMain = isArabicLayout ? 'text-right' : 'text-left'
+
+  const fieldCardShell = isArabicLayout
+    ? 'w-full min-w-0 rounded-xl border border-gray-100 bg-gray-50 p-4 shadow-sm'
+    : 'w-full min-w-0 rounded-lg border border-gray-200 bg-white p-4 shadow-sm'
+
+  const renderField = (label, value, opts = {}) => {
+    const { dir: valueDir, valueClassName = '' } = opts
+    const d = valueDir ?? (isArabicLayout ? 'rtl' : 'ltr')
+    const ltrAlignFix = isArabicLayout && d === 'ltr' ? { textAlign: 'right' } : undefined
+    const isBadge = Boolean(valueClassName?.includes('bg-'))
+    return (
+      <div className={`${fieldCardShell} ${alignMain}`}>
+        <div className={`text-xs font-medium text-gray-500 mb-1.5 ${alignMain}`}>{label}</div>
+        <div
+          dir={d}
+          style={ltrAlignFix}
+          className={`text-sm font-semibold break-words text-gray-900 ${valueClassName} ${alignMain} ${
+            isBadge ? 'inline-block max-w-full' : 'block w-full'
+          }`}
+        >
+          {value}
+        </div>
+      </div>
+    )
+  }
+
   const infoItems = [
-    { label: txt('الاسم (إنجليزي)', 'Name (English)'), value: valueOrDash(instructor?.name_en) },
+    { label: txt('الاسم (إنجليزي)', 'Name (English)'), value: valueOrDash(instructor?.name_en), dir: 'ltr' },
     { label: txt('الاسم (عربي)', 'Name (Arabic)'), value: valueOrDash(instructor?.name_ar) },
     { label: txt('الرقم الوظيفي', 'Employee ID'), value: valueOrDash(instructor?.employee_id) },
     { label: txt('الحالة', 'Status'), value: status.label, className: status.cls },
@@ -134,26 +173,41 @@ export default function ViewInstructor() {
       </div>
 
       <div
-        className={`bg-white rounded-2xl shadow-sm border border-gray-200 p-6 sm:p-8 ${isArabicLayout ? 'text-right' : 'text-left'}`}
+        className={`bg-white rounded-2xl shadow-sm border border-gray-200 p-6 sm:p-8 ${alignMain}`}
       >
         {isArabicLayout ? (
-          <div className="flex flex-col sm:flex-row-reverse sm:items-start gap-4 mb-6 sm:mb-8 w-full">
-            <div className="w-20 h-20 bg-primary-gradient rounded-2xl flex items-center justify-center flex-shrink-0 mx-auto sm:mx-0">
-              <User className="w-10 h-10 text-white" />
-            </div>
-            <div className="flex-1 min-w-0 text-right">
-              <div className="flex flex-wrap items-center gap-3 mb-2 justify-end">
-                <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">{primaryName}</h1>
-                <span className={`px-4 py-1.5 rounded-full text-xs font-semibold ${status.cls}`}>{status.label}</span>
+          <div
+            className="mb-8 flex w-full flex-col items-start gap-3 border-b border-gray-100 pb-8"
+            dir="rtl"
+          >
+            <div className="flex w-full flex-row items-center justify-start gap-3">
+              <div className="flex h-20 w-20 shrink-0 items-center justify-center rounded-2xl bg-primary-gradient">
+                <User className="h-10 w-10 text-white" />
               </div>
-              {!!secondaryName && <p className="text-gray-500 text-base">{secondaryName}</p>}
-              <p className="text-gray-600 mt-1">
-                <span className="text-gray-500">{txt('الرقم الوظيفي', 'Employee ID')}:</span>{' '}
-                <span dir="ltr" className="inline-block font-medium text-gray-900 tabular-nums">
-                  {valueOrDash(instructor?.employee_id)}
+              <div className="flex min-w-0 flex-1 flex-wrap items-center justify-start gap-2">
+                <h1 className="text-2xl font-bold text-gray-900 sm:text-3xl" dir="rtl">
+                  {primaryName}
+                </h1>
+                <span className={`shrink-0 rounded-full px-4 py-1.5 text-xs font-semibold ${status.cls}`}>
+                  {status.label}
                 </span>
-              </p>
+              </div>
             </div>
+            {!!secondaryName && (
+              <p
+                className="w-full text-base text-gray-500"
+                dir="ltr"
+                style={{ textAlign: 'right' }}
+              >
+                {secondaryName}
+              </p>
+            )}
+            <p className={`w-full text-gray-600 ${alignMain}`}>
+              <span className="text-gray-500">{txt('الرقم الوظيفي', 'Employee ID')}:</span>{' '}
+              <span dir="ltr" className="font-medium text-gray-900 tabular-nums">
+                {valueOrDash(instructor?.employee_id)}
+              </span>
+            </p>
           </div>
         ) : (
           <div className="flex flex-col sm:flex-row sm:items-start gap-4 mb-6 sm:mb-8" dir="ltr">
@@ -174,106 +228,75 @@ export default function ViewInstructor() {
         )}
 
         <div
-          className={`grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-x-4 gap-y-5 ${isArabicLayout ? '[direction:rtl]' : ''}`}
+          className="grid grid-cols-1 gap-3 sm:grid-cols-2"
+          dir={isArabicLayout ? 'rtl' : 'ltr'}
         >
           {infoItems.map((item, idx) => (
-            <div key={idx} className={`min-w-0 ${isArabicLayout ? 'text-right' : 'text-left'}`}>
-              <div className="text-xs text-gray-500 mb-1">{item.label}</div>
-              <div
-                dir={item.dir || (isArabicLayout ? 'rtl' : 'ltr')}
-                className={`text-sm font-semibold break-words ${item.className || 'text-gray-900'} ${isArabicLayout ? 'text-right' : 'text-left'}`}
-              >
-                {item.value}
-              </div>
+            <div key={idx} className="min-w-0">
+              {renderField(item.label, item.value, {
+                dir: item.dir,
+                valueClassName: item.className || ''
+              })}
             </div>
           ))}
         </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
-        <section className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6">
-          <h2 className={`text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2 ${isArabicLayout ? 'flex-row-reverse justify-end text-right' : ''}`}>
-            <Mail className="w-5 h-5" />
+        <section
+          className={`bg-white rounded-2xl shadow-sm border border-gray-200 p-6 ${alignMain}`}
+          dir={isArabicLayout ? 'rtl' : 'ltr'}
+        >
+          <h2 className={`text-lg font-semibold text-gray-900 mb-5 flex items-center gap-2 ${isArabicLayout ? 'flex-row-reverse justify-start' : ''} ${alignMain}`}>
+            <Mail className="w-5 h-5 shrink-0" />
             <span>{txt('معلومات التواصل', 'Contact Information')}</span>
           </h2>
-          <div className={`grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-4 text-sm ${isArabicLayout ? 'text-right' : 'text-left'}`}>
-            <div className="min-w-0">
-              <div className="text-xs text-gray-500 mb-1">{txt('البريد الإلكتروني', 'Email')}</div>
-              <div dir="ltr" className={`font-medium text-gray-900 break-all ${isArabicLayout ? 'text-right' : 'text-left'}`}>
-                {valueOrDash(instructor?.email)}
-              </div>
-            </div>
-            <div className="min-w-0">
-              <div className="text-xs text-gray-500 mb-1">{txt('الهاتف', 'Phone')}</div>
-              <div dir="ltr" className={`font-medium text-gray-900 ${isArabicLayout ? 'text-right' : 'text-left'}`}>
-                {valueOrDash(instructor?.phone)}
-              </div>
-            </div>
-            <div className="min-w-0 sm:col-span-2">
-              <div className="text-xs text-gray-500 mb-1">{txt('العنوان', 'Address')}</div>
-              <div className="font-medium text-gray-900">{valueOrDash(instructor?.address)}</div>
-            </div>
-            <div className="min-w-0">
-              <div className="text-xs text-gray-500 mb-1">{txt('المدينة', 'City')}</div>
-              <div className="font-medium text-gray-900">{valueOrDash(instructor?.city)}</div>
-            </div>
-            <div className="min-w-0">
-              <div className="text-xs text-gray-500 mb-1">{txt('الدولة', 'Country')}</div>
-              <div className="font-medium text-gray-900">{valueOrDash(instructor?.country)}</div>
-            </div>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            {renderField(txt('البريد الإلكتروني', 'Email'), valueOrDash(instructor?.email), { dir: 'ltr' })}
+            {renderField(txt('الهاتف', 'Phone'), valueOrDash(instructor?.phone), { dir: 'ltr' })}
+            {renderField(txt('العنوان', 'Address'), valueOrDash(instructor?.address))}
+            {renderField(txt('المدينة', 'City'), valueOrDash(instructor?.city))}
+            {renderField(txt('الدولة', 'Country'), valueOrDash(instructor?.country))}
           </div>
         </section>
 
-        <section className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6">
-          <h2 className={`text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2 ${isArabicLayout ? 'flex-row-reverse justify-end text-right' : ''}`}>
-            <BadgeCheck className="w-5 h-5" />
+        <section
+          className={`bg-white rounded-2xl shadow-sm border border-gray-200 p-6 ${alignMain}`}
+          dir={isArabicLayout ? 'rtl' : 'ltr'}
+        >
+          <h2 className={`text-lg font-semibold text-gray-900 mb-5 flex items-center gap-2 ${isArabicLayout ? 'flex-row-reverse justify-start' : ''} ${alignMain}`}>
+            <BadgeCheck className="w-5 h-5 shrink-0" />
             <span>{txt('البيانات الشخصية', 'Personal Information')}</span>
           </h2>
-          <div className={`grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-4 text-sm ${isArabicLayout ? 'text-right' : 'text-left'}`}>
-            <div className="min-w-0">
-              <div className="text-xs text-gray-500 mb-1">{txt('تاريخ الميلاد', 'Date of Birth')}</div>
-              <div className="font-medium text-gray-900">{formatDate(instructor?.date_of_birth)}</div>
-            </div>
-            <div className="min-w-0">
-              <div className="text-xs text-gray-500 mb-1">{txt('الجنس', 'Gender')}</div>
-              <div className="font-medium text-gray-900">{valueOrDash(instructor?.gender)}</div>
-            </div>
-            <div className="min-w-0">
-              <div className="text-xs text-gray-500 mb-1">{txt('الجنسية', 'Nationality')}</div>
-              <div className="font-medium text-gray-900">{valueOrDash(instructor?.nationality)}</div>
-            </div>
-            <div className="min-w-0">
-              <div className="text-xs text-gray-500 mb-1">{txt('الهوية الوطنية', 'National ID')}</div>
-              <div dir="ltr" className={`font-medium text-gray-900 ${isArabicLayout ? 'text-right' : 'text-left'}`}>
-                {valueOrDash(instructor?.national_id)}
-              </div>
-            </div>
-            <div className="min-w-0 sm:col-span-2">
-              <div className="text-xs text-gray-500 mb-1">{txt('رقم الجواز', 'Passport Number')}</div>
-              <div dir="ltr" className={`font-medium text-gray-900 ${isArabicLayout ? 'text-right' : 'text-left'}`}>
-                {valueOrDash(instructor?.passport_number)}
-              </div>
-            </div>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            {renderField(txt('تاريخ الميلاد', 'Date of Birth'), formatDate(instructor?.date_of_birth))}
+            {renderField(txt('الجنس', 'Gender'), genderLabel(instructor?.gender))}
+            {renderField(txt('الجنسية', 'Nationality'), valueOrDash(instructor?.nationality))}
+            {renderField(txt('الهوية الوطنية', 'National ID'), valueOrDash(instructor?.national_id), { dir: 'ltr' })}
+            {renderField(txt('رقم الجواز', 'Passport Number'), valueOrDash(instructor?.passport_number), { dir: 'ltr' })}
           </div>
         </section>
       </div>
 
       {(Array.isArray(instructor?.education) && instructor.education.length > 0) && (
-        <section className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6">
-          <h2 className={`text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2 ${isArabicLayout ? 'flex-row-reverse justify-end text-right' : ''}`}>
-            <GraduationCap className="w-5 h-5" />
+        <section className={`bg-white rounded-2xl shadow-sm border border-gray-200 p-6 ${alignMain}`} dir={isArabicLayout ? 'rtl' : 'ltr'}>
+          <h2 className={`text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2 ${isArabicLayout ? 'flex-row-reverse justify-start' : ''} ${alignMain}`}>
+            <GraduationCap className="w-5 h-5 shrink-0" />
             <span>{txt('المؤهلات العلمية', 'Education')}</span>
           </h2>
-          <div className={`grid grid-cols-1 ${instructor.education.length > 1 ? 'md:grid-cols-2' : ''} gap-4`}>
+          <div className="flex flex-col gap-4" dir={isArabicLayout ? 'rtl' : 'ltr'}>
             {instructor.education.map((edu, index) => (
-              <div key={index} className="border border-gray-200 rounded-xl p-4">
-                <h4 className="font-semibold text-gray-900 mb-2">{valueOrDash(edu.degree)}</h4>
-                <div className="space-y-1 text-sm">
-                  <p><span className="text-gray-500">{txt('التخصص:', 'Field:')}</span> {valueOrDash(edu.field)}</p>
-                  <p><span className="text-gray-500">{txt('الجهة:', 'Institution:')}</span> {valueOrDash(edu.institution)}</p>
-                  <p><span className="text-gray-500">{txt('بلد الدراسة:', 'Country:')}</span> {valueOrDash(edu.country)}</p>
-                  <p><span className="text-gray-500">{txt('سنة التخرج:', 'Graduation Year:')}</span> {valueOrDash(edu.graduation_year)}</p>
-                  <p><span className="text-gray-500">{txt('المعدل:', 'GPA:')}</span> {valueOrDash(edu.gpa)}</p>
+              <div
+                key={index}
+                className={`border border-gray-200 rounded-xl p-4 ${alignMain}`}
+              >
+                <h4 className={`mb-3 font-semibold text-gray-900 ${alignMain}`}>{valueOrDash(edu.degree)}</h4>
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                  {renderField(txt('التخصص', 'Field'), valueOrDash(edu.field))}
+                  {renderField(txt('الجهة', 'Institution'), valueOrDash(edu.institution))}
+                  {renderField(txt('بلد الدراسة', 'Country'), valueOrDash(edu.country))}
+                  {renderField(txt('سنة التخرج', 'Graduation Year'), valueOrDash(edu.graduation_year))}
+                  {renderField(txt('المعدل', 'GPA'), valueOrDash(edu.gpa))}
                 </div>
               </div>
             ))}
@@ -282,29 +305,33 @@ export default function ViewInstructor() {
       )}
 
       {(Array.isArray(instructor?.work_experience) && instructor.work_experience.length > 0) && (
-        <section className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6">
-          <h2 className={`text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2 ${isArabicLayout ? 'flex-row-reverse justify-end text-right' : ''}`}>
-            <Briefcase className="w-5 h-5" />
+        <section className={`bg-white rounded-2xl shadow-sm border border-gray-200 p-6 ${alignMain}`} dir={isArabicLayout ? 'rtl' : 'ltr'}>
+          <h2 className={`text-lg font-semibold text-gray-900 mb-5 flex items-center gap-2 ${isArabicLayout ? 'flex-row-reverse justify-start' : ''} ${alignMain}`}>
+            <Briefcase className="w-5 h-5 shrink-0" />
             <span>{txt('الخبرات العملية', 'Work Experience')}</span>
           </h2>
           <div className="space-y-4">
             {instructor.work_experience.map((exp, index) => (
-              <div key={index} className="border border-gray-200 rounded-xl p-4">
-                <div className={`flex items-center justify-between mb-2 ${isArabicLayout ? 'flex-row-reverse' : ''}`}>
-                  <h4 className="font-semibold text-gray-900">{valueOrDash(exp.position)}</h4>
+              <div key={index} className={`border border-gray-200 rounded-xl p-4 ${alignMain}`}>
+                <div className={`flex flex-wrap items-center gap-2 mb-4 ${isArabicLayout ? 'justify-start' : 'justify-between'}`}>
+                  <h4 className={`font-semibold text-gray-900 ${alignMain}`}>{valueOrDash(exp.position)}</h4>
                   {exp.current && (
-                    <span className="px-2 py-1 bg-green-100 text-green-800 text-xs rounded-full">
+                    <span className="px-2 py-1 bg-green-100 text-green-800 text-xs rounded-full shrink-0">
                       {txt('حالي', 'Current')}
                     </span>
                   )}
                 </div>
-                <div className="space-y-1 text-sm">
-                  <p><span className="text-gray-500">{txt('الجهة:', 'Organization:')}</span> {valueOrDash(exp.organization)}</p>
-                  <p>
-                    <span className="text-gray-500">{txt('الفترة:', 'Period:')}</span>{' '}
-                    {formatDate(exp.start_date)} - {exp.current ? txt('حتى الآن', 'Present') : formatDate(exp.end_date)}
-                  </p>
-                  {exp.description && <p className="text-gray-700">{exp.description}</p>}
+                <div className="grid grid-cols-1 gap-3 text-sm sm:grid-cols-2">
+                  {renderField(txt('الجهة', 'Organization'), valueOrDash(exp.organization))}
+                  {renderField(
+                    txt('الفترة', 'Period'),
+                    `${formatDate(exp.start_date)} - ${exp.current ? txt('حتى الآن', 'Present') : formatDate(exp.end_date)}`
+                  )}
+                  {exp.description
+                    ? renderField(txt('الوصف', 'Description'), exp.description, {
+                        valueClassName: 'font-normal text-gray-700 whitespace-pre-wrap'
+                      })
+                    : null}
                 </div>
               </div>
             ))}
@@ -313,12 +340,12 @@ export default function ViewInstructor() {
       )}
 
       {Array.isArray(instructor?.languages) && instructor.languages.length > 0 && (
-        <section className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6">
-          <h2 className={`text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2 ${isArabicLayout ? 'flex-row-reverse justify-end text-right' : ''}`}>
-            <Languages className="w-5 h-5" />
+        <section className={`bg-white rounded-2xl shadow-sm border border-gray-200 p-6 ${alignMain}`} dir={isArabicLayout ? 'rtl' : 'ltr'}>
+          <h2 className={`text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2 ${isArabicLayout ? 'flex-row-reverse justify-start' : ''} ${alignMain}`}>
+            <Languages className="w-5 h-5 shrink-0" />
             <span>{txt('اللغات', 'Languages')}</span>
           </h2>
-          <div className={`flex flex-wrap gap-2 ${isArabicLayout ? 'justify-end' : 'justify-start'}`}>
+          <div className="flex flex-wrap gap-2 justify-start">
             {instructor.languages.map((lang, index) => (
               <span key={index} className="px-3 py-1 bg-blue-100 text-blue-800 rounded-full text-sm">
                 {valueOrDash(lang.language)} {lang.proficiency ? `(${lang.proficiency})` : ''}
@@ -329,42 +356,42 @@ export default function ViewInstructor() {
       )}
 
       {(instructor?.research_interests || instructor?.bio || instructor?.bio_ar) && (
-        <section className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6">
-          <h2 className={`text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2 ${isArabicLayout ? 'flex-row-reverse justify-end text-right' : ''}`}>
-            <BookOpen className="w-5 h-5" />
+        <section className={`bg-white rounded-2xl shadow-sm border border-gray-200 p-6 ${alignMain}`} dir={isArabicLayout ? 'rtl' : 'ltr'}>
+          <h2 className={`text-lg font-semibold text-gray-900 mb-5 flex items-center gap-2 ${isArabicLayout ? 'flex-row-reverse justify-start' : ''} ${alignMain}`}>
+            <BookOpen className="w-5 h-5 shrink-0" />
             <span>{txt('ملف أكاديمي', 'Academic Profile')}</span>
           </h2>
-          {instructor?.research_interests && (
-            <div className="mb-4">
-              <h3 className="text-sm text-gray-500 mb-1">{txt('الاهتمامات البحثية', 'Research Interests')}</h3>
-              <p className="text-sm text-gray-900 whitespace-pre-wrap">{instructor.research_interests}</p>
-            </div>
-          )}
-          {instructor?.bio && !isArabicLayout && (
-            <div className="mb-4">
-              <h3 className="text-sm text-gray-500 mb-1">{txt('السيرة الذاتية (إنجليزي)', 'Biography (English)')}</h3>
-              <p className="text-sm text-gray-900 whitespace-pre-wrap">{instructor.bio}</p>
-            </div>
-          )}
-          {instructor?.bio_ar && (
-            <div>
-              <h3 className="text-sm text-gray-500 mb-1">{txt('السيرة الذاتية (عربي)', 'Biography (Arabic)')}</h3>
-              <p className="text-sm text-gray-900 whitespace-pre-wrap" dir="rtl">{instructor.bio_ar}</p>
-            </div>
-          )}
+          <div className="grid grid-cols-1 gap-3">
+            {instructor?.research_interests &&
+              renderField(txt('الاهتمامات البحثية', 'Research Interests'), instructor.research_interests, {
+                valueClassName: 'font-normal whitespace-pre-wrap'
+              })}
+            {instructor?.bio && !isArabicLayout &&
+              renderField(txt('السيرة الذاتية (إنجليزي)', 'Biography (English)'), instructor.bio, {
+                dir: 'ltr',
+                valueClassName: 'font-normal whitespace-pre-wrap'
+              })}
+            {instructor?.bio_ar &&
+              renderField(txt('السيرة الذاتية (عربي)', 'Biography (Arabic)'), instructor.bio_ar, {
+                valueClassName: 'font-normal whitespace-pre-wrap'
+              })}
+          </div>
         </section>
       )}
 
       {(Array.isArray(instructor?.publications) && instructor.publications.length > 0) && (
-        <section className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6">
-          <h2 className={`text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2 ${isArabicLayout ? 'flex-row-reverse justify-end text-right' : ''}`}>
-            <FileText className="w-5 h-5" />
+        <section className={`bg-white rounded-2xl shadow-sm border border-gray-200 p-6 ${alignMain}`} dir={isArabicLayout ? 'rtl' : 'ltr'}>
+          <h2 className={`text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2 ${isArabicLayout ? 'flex-row-reverse justify-start' : ''} ${alignMain}`}>
+            <FileText className="w-5 h-5 shrink-0" />
             <span>{txt('المنشورات', 'Publications')}</span>
           </h2>
-          <div className="space-y-2">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             {instructor.publications.map((pub, index) => (
-              <div key={index} className={`border-s-4 border-primary-500 ps-4 py-2 ${isArabicLayout ? 'text-right' : ''}`}>
-                <p className="text-sm text-gray-900 break-all">{typeof pub === 'string' ? pub : JSON.stringify(pub)}</p>
+              <div
+                key={index}
+                className={`${fieldCardShell} ${isArabicLayout ? 'border-e-4 border-e-primary-500' : 'border-s-4 border-s-primary-500'}`}
+              >
+                <p className="text-sm break-all text-gray-900">{typeof pub === 'string' ? pub : JSON.stringify(pub)}</p>
               </div>
             ))}
           </div>
@@ -372,15 +399,18 @@ export default function ViewInstructor() {
       )}
 
       {(Array.isArray(instructor?.certifications) && instructor.certifications.length > 0) && (
-        <section className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6">
-          <h2 className={`text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2 ${isArabicLayout ? 'flex-row-reverse justify-end text-right' : ''}`}>
-            <Award className="w-5 h-5" />
+        <section className={`bg-white rounded-2xl shadow-sm border border-gray-200 p-6 ${alignMain}`} dir={isArabicLayout ? 'rtl' : 'ltr'}>
+          <h2 className={`text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2 ${isArabicLayout ? 'flex-row-reverse justify-start' : ''} ${alignMain}`}>
+            <Award className="w-5 h-5 shrink-0" />
             <span>{txt('الشهادات المهنية', 'Certifications')}</span>
           </h2>
-          <div className="space-y-2">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             {instructor.certifications.map((cert, index) => (
-              <div key={index} className={`border-s-4 border-primary-500 ps-4 py-2 ${isArabicLayout ? 'text-right' : ''}`}>
-                <p className="text-sm text-gray-900 break-all">{typeof cert === 'string' ? cert : JSON.stringify(cert)}</p>
+              <div
+                key={index}
+                className={`${fieldCardShell} ${isArabicLayout ? 'border-e-4 border-e-primary-500' : 'border-s-4 border-s-primary-500'}`}
+              >
+                <p className="text-sm break-all text-gray-900">{typeof cert === 'string' ? cert : JSON.stringify(cert)}</p>
               </div>
             ))}
           </div>

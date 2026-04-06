@@ -114,42 +114,87 @@ export default function Subjects() {
       </div>
 
       <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6">
-        <div className={`flex items-center ${isArabicLayout ? 'flex-row-reverse space-x-reverse' : ''} gap-3`}>
-          <div className="relative flex-1">
-            <Search className={`absolute ${isArabicLayout ? 'right-3' : 'left-3'} top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400`} />
-            <input
-              type="text"
-              placeholder={t('academic.subjects.searchPlaceholder')}
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className={`w-full ${isArabicLayout ? 'pr-10 pl-4 text-right' : 'pl-10 pr-4 text-left'} py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-primary-500 focus:border-transparent`}
-            />
-          </div>
-          <select
-            value={collegeFilter}
-            onChange={(e) => setCollegeFilter(e.target.value)}
-            className={`px-4 py-3 border border-gray-300 rounded-xl text-sm bg-white min-w-[10rem] ${isArabicLayout ? 'text-right' : 'text-left'}`}
-          >
-            <option value="">{t('academic.subjects.allColleges')}</option>
-            <option value="university_wide">{t('academic.subjects.universityWide')}</option>
-            {collegeFilterOptions.map((college) => (
-              <option key={college.id} value={String(college.id)}>
-                {getLocalizedName(college, isRTL)}
-              </option>
-            ))}
-          </select>
-          <select
-            value={majorFilter}
-            onChange={(e) => setMajorFilter(e.target.value)}
-            className={`px-4 py-3 border border-gray-300 rounded-xl text-sm bg-white min-w-[10rem] ${isArabicLayout ? 'text-right' : 'text-left'}`}
-          >
-            <option value="">{t('academic.subjects.allMajors')}</option>
-            {majorFilterOptions.map((major) => (
-              <option key={major.id} value={String(major.id)}>
-                {getLocalizedName(major, isRTL)}
-              </option>
-            ))}
-          </select>
+        <div
+          className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3"
+          dir={isArabicLayout ? 'rtl' : 'ltr'}
+        >
+          {isArabicLayout ? (
+            <>
+              <select
+                value={collegeFilter}
+                onChange={(e) => setCollegeFilter(e.target.value)}
+                className="px-4 py-3 border border-gray-300 rounded-xl text-sm bg-white min-w-[10rem] text-right"
+              >
+                <option value="">{t('academic.subjects.allColleges')}</option>
+                <option value="university_wide">{t('academic.subjects.universityWide')}</option>
+                {collegeFilterOptions.map((college) => (
+                  <option key={college.id} value={String(college.id)}>
+                    {getLocalizedName(college, isRTL)}
+                  </option>
+                ))}
+              </select>
+              <select
+                value={majorFilter}
+                onChange={(e) => setMajorFilter(e.target.value)}
+                className="px-4 py-3 border border-gray-300 rounded-xl text-sm bg-white min-w-[10rem] text-right"
+              >
+                <option value="">{t('academic.subjects.allMajors')}</option>
+                {majorFilterOptions.map((major) => (
+                  <option key={major.id} value={String(major.id)}>
+                    {getLocalizedName(major, isRTL)}
+                  </option>
+                ))}
+              </select>
+              <div className="relative flex-1 min-w-0">
+                <Search className="absolute right-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
+                <input
+                  type="text"
+                  placeholder={t('academic.subjects.searchPlaceholder')}
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="w-full pr-10 pl-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-primary-500 focus:border-transparent text-right"
+                />
+              </div>
+            </>
+          ) : (
+            <>
+              <div className="relative flex-1 min-w-0">
+                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
+                <input
+                  type="text"
+                  placeholder={t('academic.subjects.searchPlaceholder')}
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-primary-500 focus:border-transparent text-left"
+                />
+              </div>
+              <select
+                value={collegeFilter}
+                onChange={(e) => setCollegeFilter(e.target.value)}
+                className="px-4 py-3 border border-gray-300 rounded-xl text-sm bg-white min-w-[10rem] text-left"
+              >
+                <option value="">{t('academic.subjects.allColleges')}</option>
+                <option value="university_wide">{t('academic.subjects.universityWide')}</option>
+                {collegeFilterOptions.map((college) => (
+                  <option key={college.id} value={String(college.id)}>
+                    {getLocalizedName(college, isRTL)}
+                  </option>
+                ))}
+              </select>
+              <select
+                value={majorFilter}
+                onChange={(e) => setMajorFilter(e.target.value)}
+                className="px-4 py-3 border border-gray-300 rounded-xl text-sm bg-white min-w-[10rem] text-left"
+              >
+                <option value="">{t('academic.subjects.allMajors')}</option>
+                {majorFilterOptions.map((major) => (
+                  <option key={major.id} value={String(major.id)}>
+                    {getLocalizedName(major, isRTL)}
+                  </option>
+                ))}
+              </select>
+            </>
+          )}
         </div>
       </div>
 

@@ -257,7 +257,7 @@
       "identity": "Identity Documents",
       "documents": "Documents",
       "emergency": "Emergency Contact",
-      "other": "Scholarship & Medical"
+      "other": "Scholarship & health status"
     },
     "documents": {
       "idPhoto": "ID photo",
@@ -336,7 +336,7 @@
     "hasScholarship": "Has scholarship",
     "type": "Type",
     "percentage": "Percentage",
-    "medical": "Medical",
+    "medical": "Health status",
     "conditions": "Conditions",
     "allergies": "Allergies",
     "medications": "Medications",

@@ -257,7 +257,7 @@
       "identity": "وثائق الهوية",
       "documents": "المستندات",
       "emergency": "جهة الطوارئ",
-      "other": "المنح والطبي"
+      "other": "المنح والحالة الصحية"
     },
     "documents": {
       "idPhoto": "صورة الهوية",
@@ -336,7 +336,7 @@
     "hasScholarship": "لديه منحة",
     "type": "النوع",
     "percentage": "النسبة",
-    "medical": "معلومات طبية",
+    "medical": "الحالة الصحية",
     "conditions": "الحالات",
     "allergies": "الحساسية",
     "medications": "الأدوية",
