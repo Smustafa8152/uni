@@ -15,6 +15,7 @@ const defaultAuthValue = {
     throw new Error('useAuth must be used within an AuthProvider')
   },
   signOut: async () => {},
+  refreshUserRole: async () => {},
 }
 
 const AuthContext = createContext(defaultAuthValue)
@@ -142,6 +143,22 @@ export const AuthProvider = ({ children }) => {
     }
   }
 
+  const refreshUserRole = async () => {
+    try {
+      const { data: sessionData } = await supabase.auth.getSession()
+      const email = sessionData?.session?.user?.email
+      if (email) {
+        await fetchUserRole(email)
+      } else {
+        setUserRole(null)
+        setCollegeId(null)
+        setDepartmentId(null)
+      }
+    } catch (e) {
+      console.warn('refreshUserRole failed:', e)
+    }
+  }
+
   useEffect(() => {
     let mounted = true
     let initComplete = false
@@ -158,6 +175,35 @@ export const AuthProvider = ({ children }) => {
     // Get initial session - but don't block if it's slow
     const initializeAuth = async () => {
       try {
+        // PKCE email links land as /?code=... — must exchange before a short getSession() race
+        // gives up; otherwise the user stays on the home page with no session.
+        if (typeof window !== 'undefined') {
+          const url = new URL(window.location.href)
+          if (url.searchParams.get('code')) {
+            const { data: exchanged, error: exchangeErr } = await supabase.auth.exchangeCodeForSession(
+              window.location.href,
+            )
+            if (exchangeErr) {
+              console.error('Auth PKCE code exchange failed:', exchangeErr)
+            } else if (exchanged?.session && mounted) {
+              setSession(exchanged.session)
+              setUser(exchanged.session.user)
+              if (exchanged.session.user?.email) {
+                supabase.rpc('sync_user_openid').then(() => {}, () => {})
+                fetchUserRole(exchanged.session.user.email).catch(() => {})
+              }
+              try {
+                sessionStorage.setItem('ums_auth_pkce_exchange', '1')
+              } catch (_) {
+                /* ignore */
+              }
+            }
+            url.searchParams.delete('code')
+            const rest = url.searchParams.toString()
+            window.history.replaceState({}, '', url.pathname + (rest ? `?${rest}` : '') + url.hash)
+          }
+        }
+
         // Try to get session with a timeout
         const getSessionWithTimeout = () => {
           return Promise.race([
@@ -337,10 +383,12 @@ export const AuthProvider = ({ children }) => {
 
         // Map 'user' role to 'college' for clarity
         const userRole = userData.role === 'user' ? 'college' : userData.role
-        
+
         // Allow 'college' to match 'user' role in database
         if (expectedRole === 'college' && userData.role === 'user') {
           // This is valid - college admin uses 'user' role
+        } else if (expectedRole === 'applicant' && userData.role === 'applicant') {
+          // Pre-enrollment applicant portal
         } else if (expectedRole !== userRole) {
           await supabase.auth.signOut()
           return { 
@@ -391,6 +439,7 @@ export const AuthProvider = ({ children }) => {
     signIn,
     signUp,
     signOut,
+    refreshUserRole,
   }
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>

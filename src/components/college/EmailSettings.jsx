@@ -8,14 +8,49 @@ export default function EmailSettings({
   onSendTestEmail,
   testEmailSending = false,
   testEmailFeedback = null,
+  /** When true, explains that Supabase Auth emails use Dashboard SMTP, not only these saved settings. */
+  showSupabaseAuthSmtpHint = false,
 }) {
   const { t } = useTranslation()
   const { isRTL } = useLanguage()
 
   const testAddress = formData.test_email_address ?? ''
+  const smtpPort = Number(formData.smtp_port)
+  const smtpPortLooksLikeTypo586 = Number.isFinite(smtpPort) && smtpPort === 586
 
   return (
     <div className="space-y-8">
+      {showSupabaseAuthSmtpHint && (
+        <div
+          className={`rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950 ${isRTL ? 'text-right' : ''}`}
+          role="note"
+        >
+          <p className="font-semibold text-amber-950">{t('colleges.emailSettings.supabaseAuthSmtpHintTitle')}</p>
+          <p className="mt-2 text-amber-900/95 leading-relaxed">{t('colleges.emailSettings.supabaseAuthSmtpHintBody')}</p>
+          <p className="mt-2">
+            <a
+              href="https://supabase.com/docs/guides/auth/auth-smtp"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="font-medium text-primary-700 underline hover:text-primary-800"
+            >
+              {t('colleges.emailSettings.supabaseAuthSmtpHintLink')}
+            </a>
+          </p>
+          <p className="mt-4 font-semibold text-amber-950">{t('colleges.emailSettings.supabaseOtpEmailHintTitle')}</p>
+          <p className="mt-2 text-amber-900/95 leading-relaxed">{t('colleges.emailSettings.supabaseOtpEmailHintBody')}</p>
+          <p className="mt-2">
+            <a
+              href="https://supabase.com/docs/guides/auth/auth-email-templates"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="font-medium text-primary-700 underline hover:text-primary-800"
+            >
+              {t('colleges.emailSettings.supabaseOtpEmailHintLink')}
+            </a>
+          </p>
+        </div>
+      )}
       <div>
         <h3 className="text-lg font-semibold text-gray-900 mb-4">{t('colleges.emailSettings.smtpConfiguration')}</h3>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -34,10 +69,15 @@ export default function EmailSettings({
             <input
               type="number"
               value={formData.smtp_port}
-              onChange={(e) => handleChange('smtp_port', parseInt(e.target.value))}
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+              onChange={(e) => handleChange('smtp_port', parseInt(e.target.value, 10))}
+              className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent ${
+                smtpPortLooksLikeTypo586 ? 'border-red-400' : 'border-gray-300'
+              }`}
               placeholder="587"
             />
+            {smtpPortLooksLikeTypo586 && (
+              <p className="mt-1 text-xs text-red-700">{t('colleges.emailSettings.smtpPortTypo586')}</p>
+            )}
           </div>
           <div className={`flex items-center ${isRTL ? 'flex-row-reverse' : 'justify-between'} p-4 bg-gray-50 rounded-lg`}>
             <div>

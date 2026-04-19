@@ -56,7 +56,7 @@ export default function TrackApplication() {
 
       setApplication(data)
       // Navigate to status page with application ID
-      navigate(`/track/${data.id}`, { state: { application: data } })
+      navigate(`/application-status/${data.id}`, { state: { application: data } })
     } catch (err) {
       console.error('Error fetching application:', err)
       setError(err.message || 'Failed to fetch application. Please try again.')

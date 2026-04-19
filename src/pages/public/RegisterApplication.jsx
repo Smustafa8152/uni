@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useLocation, useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { useLanguage } from '../../contexts/LanguageContext'
+import { useAuth } from '../../contexts/AuthContext'
 import { supabase, SUPABASE_STORAGE_BUCKET } from '../../lib/supabase'
 import { MAJOR_STATUS_FOR_APPLICATION_DROPDOWN } from '../../utils/majorAdmissionStatus'
 import { ArrowLeft, ArrowRight, Save, User, Phone, AlertCircle, GraduationCap, FileText, BookOpen, Building2, CheckCircle, Copy, Upload } from 'lucide-react'
@@ -22,10 +23,12 @@ const REGISTER_DOCUMENT_TYPES = [
   { key: 'transcript', label: 'Transcript / Grades', accept: 'image/jpeg,image/png,application/pdf' },
 ]
 
-export default function RegisterApplication() {
+export default function RegisterApplication({ portal = false }) {
   const { t } = useTranslation()
   const { isRTL, language, changeLanguage } = useLanguage()
   const navigate = useNavigate()
+  const location = useLocation()
+  const { user, userRole, loading: authLoading } = useAuth()
   const [colleges, setColleges] = useState([])
   const [selectedCollegeId, setSelectedCollegeId] = useState('')
   const [majors, setMajors] = useState([])
@@ -139,13 +142,44 @@ export default function RegisterApplication() {
     fetchColleges()
   }, [])
 
+  // Applicant portal: require selecting program first (from /portal/apply). We pass it in the URL.
+  useEffect(() => {
+    if (!portal) return
+    const sp = new URLSearchParams(location.search || '')
+    const cid = sp.get('collegeId')
+    const mid = sp.get('majorId')
+    if (!cid || !mid) {
+      navigate('/portal/apply', { replace: true })
+      return
+    }
+    setSelectedCollegeId(String(cid))
+    setFormData((prev) => ({ ...prev, major_id: String(mid) }))
+    // keep step at the beginning of the application, but lock program/college context
+    setCurrentStep(1)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [portal])
+
+  useEffect(() => {
+    if (!portal) return
+    if (!authLoading && (!user || userRole !== 'applicant')) {
+      navigate('/login/applicant', { replace: true, state: { from: '/portal/apply' } })
+    }
+  }, [portal, user, userRole, authLoading, navigate])
+
+  useEffect(() => {
+    if (portal && user?.email) {
+      setFormData((prev) => ({ ...prev, email: user.email }))
+    }
+  }, [portal, user?.email])
+
   useEffect(() => {
     if (selectedCollegeId) {
       fetchMajors()
       fetchSemesters()
-      setFormData(prev => ({
+      // In applicant portal, major is pre-selected from the program selection screen
+      setFormData((prev) => ({
         ...prev,
-        major_id: '',
+        ...(portal ? {} : { major_id: '' }),
         semester_id: '',
       }))
     } else {
@@ -394,6 +428,7 @@ export default function RegisterApplication() {
           review_notes: validationResult && !validationResult.isValid 
             ? `Auto-validation failed: ${validationResult.errors.join('; ')}` 
             : null,
+          ...(portal && user?.id ? { applicant_user_id: user.id } : {}),
         })
         .select('id, application_number, created_at')
         .single()
@@ -533,10 +568,14 @@ export default function RegisterApplication() {
 
             <div className="flex flex-col sm:flex-row gap-4 justify-center">
               <button
-                onClick={() => navigate('/track')}
+                onClick={() =>
+                  portal && submittedApplication?.id
+                    ? navigate(`/portal/applications/${submittedApplication.id}`)
+                    : navigate('/lookup-application')
+                }
                 className="px-6 py-3 bg-primary-gradient text-white rounded-lg font-semibold hover:shadow-lg transition-all"
               >
-                Track Application Status
+                {portal ? t('applicantPortal.viewApplication', 'View application') : 'Track Application Status'}
               </button>
               <button
                 onClick={() => {
@@ -550,7 +589,7 @@ export default function RegisterApplication() {
                     first_name_ar: '',
                     middle_name_ar: '',
                     last_name_ar: '',
-                    email: '',
+                    email: portal && user?.email ? user.email : '',
                     phone: '',
                     date_of_birth: '',
                     gender: '',
@@ -602,8 +641,23 @@ export default function RegisterApplication() {
     )
   }
 
+  if (portal && authLoading) {
+    return (
+      <div className="flex justify-center py-20" dir={isRTL ? 'rtl' : 'ltr'}>
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-600" />
+      </div>
+    )
+  }
+
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 py-8 px-4" dir={isRTL ? 'rtl' : 'ltr'}>
+    <div
+      className={
+        portal
+          ? 'py-4 px-0 md:px-2'
+          : 'min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 py-8 px-4'
+      }
+      dir={isRTL ? 'rtl' : 'ltr'}
+    >
       <div className="max-w-6xl mx-auto">
         {/* Language switcher */}
         <div className={`flex justify-end mb-4 ${isRTL ? 'flex-row-reverse' : ''}`}>
@@ -804,7 +858,8 @@ export default function RegisterApplication() {
                     value={formData.email}
                     onChange={handleChange}
                     placeholder="student@example.com"
-                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                    disabled={portal}
+                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent disabled:bg-gray-100 disabled:text-gray-600"
                     required
                   />
                 </div>

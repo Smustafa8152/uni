@@ -1,4 +1,4 @@
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
+import { BrowserRouter, Routes, Route, Navigate, useParams } from 'react-router-dom'
 import { AuthProvider } from './contexts/AuthContext'
 import { CollegeProvider } from './contexts/CollegeContext'
 import { LanguageProvider } from './contexts/LanguageContext'
@@ -129,6 +129,20 @@ import CreateFeeType from './pages/finance/CreateFeeType'
 import RegisterApplication from './pages/public/RegisterApplication'
 import TrackApplication from './pages/public/TrackApplication'
 import ApplicationStatus from './pages/public/ApplicationStatus'
+import { ApplicantProtectedRoute } from './components/ApplicantProtectedRoute'
+import ApplicantPortalLayout from './pages/applicant/ApplicantPortalLayout'
+import ApplicantDashboard from './pages/applicant/ApplicantDashboard'
+import ApplicantSelectMajor from './pages/applicant/ApplicantSelectMajor'
+import ApplicantProfile from './pages/applicant/ApplicantProfile'
+import ApplicantRegister from './pages/applicant/ApplicantRegister'
+import LoginApplicant from './pages/applicant/LoginApplicant'
+import ApplicantApplicationStatusPage from './pages/applicant/ApplicantApplicationStatusPage'
+
+/** Old bookmarked URLs: /track/:id → /application-status/:id */
+function LegacyTrackIdRedirect() {
+  const { id } = useParams()
+  return <Navigate to={`/application-status/${id}`} replace />
+}
 
 function App() {
   return (
@@ -143,10 +157,37 @@ function App() {
           <Route path="/login/instructor" element={<LoginInstructor />} />
           <Route path="/login/student" element={<LoginStudent />} />
           <Route path="/signup" element={<Signup />} />
-          {/* Public Application Routes */}
-          <Route path="/register" element={<RegisterApplication />} />
-          <Route path="/track" element={<TrackApplication />} />
-          <Route path="/track/:id" element={<ApplicationStatus />} />
+          {/* Applicant portal (pre-enrollment): register with email OTP + password, then dashboard / apply */}
+          <Route path="/register" element={<ApplicantRegister />} />
+          <Route path="/login/applicant" element={<LoginApplicant />} />
+          <Route
+            path="/portal"
+            element={
+              <ApplicantProtectedRoute>
+                <ApplicantPortalLayout />
+              </ApplicantProtectedRoute>
+            }
+          >
+            <Route index element={<ApplicantDashboard />} />
+            <Route path="apply" element={<ApplicantSelectMajor />} />
+            <Route path="apply/new" element={<RegisterApplication portal />} />
+            <Route path="profile" element={<ApplicantProfile />} />
+            <Route path="applications/:id" element={<ApplicationStatus />} />
+          </Route>
+          <Route
+            path="/application-status"
+            element={
+              <ApplicantProtectedRoute>
+                <ApplicantPortalLayout />
+              </ApplicantProtectedRoute>
+            }
+          >
+            <Route index element={<ApplicantApplicationStatusPage />} />
+          </Route>
+          <Route path="/lookup-application" element={<TrackApplication />} />
+          <Route path="/application-status/:id" element={<ApplicationStatus />} />
+          <Route path="/track" element={<Navigate to="/lookup-application" replace />} />
+          <Route path="/track/:id" element={<LegacyTrackIdRedirect />} />
           <Route
             path="/dashboard"
             element={

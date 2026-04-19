@@ -225,6 +225,12 @@ otp_expiry = 3600
 # subject = "You have been invited"
 # content_path = "./supabase/templates/invite.html"
 
+# Magic link / email OTP: default Supabase template often hides the 6-digit code. This file shows {{ .Token }} first.
+# For hosted projects, copy this HTML into Dashboard → Authentication → Email templates → Magic link.
+[auth.email.template.magic_link]
+subject = "Your verification code"
+content_path = "./supabase/templates/magic_link.html"
+
 # Uncomment to customize notification email template
 # [auth.email.notification.password_changed]
 # enabled = true

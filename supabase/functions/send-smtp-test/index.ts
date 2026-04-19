@@ -1,6 +1,6 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
-import { SMTPClient } from 'https://deno.land/x/denomailer@1.6.0/mod.ts'
+import nodemailer from 'npm:nodemailer@6.9.16'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -73,46 +73,69 @@ function bodySmtpToShape(s: Record<string, unknown>): SmtpShape | null {
   }
 }
 
-async function sendWithDenomailer(cfg: SmtpShape, to: string, subject: string, text: string, html: string) {
-  const port = cfg.port
-  const implicitTls = port === 465 || port === 994
-  const plainNoTls = !cfg.enableSsl && !implicitTls
+/** Gmail / Outlook submission AUTH must use the full mailbox address, not the local part only. */
+function normalizeSmtpAuth(cfg: SmtpShape): SmtpShape {
+  const host = cfg.host.trim().toLowerCase()
+  let username = cfg.username.trim()
+  const fromEmail = cfg.fromEmail.trim()
 
-  const client = new SMTPClient({
-    connection: {
-      hostname: cfg.host,
-      port,
-      tls: implicitTls,
-      auth:
-        cfg.username || cfg.password
-          ? {
-              username: cfg.username,
-              password: cfg.password,
-            }
-          : undefined,
-    },
-    debug: plainNoTls
-      ? { allowUnsecure: true, noStartTLS: true }
-      : useStartTls
-        ? {}
-        : { noStartTLS: true },
+  const isGmail =
+    host === 'smtp.gmail.com' ||
+    host === 'smtp.googlemail.com' ||
+    host.endsWith('.gmail.com')
+  const isOutlook =
+    host === 'smtp-mail.outlook.com' ||
+    host === 'smtp.office365.com' ||
+    host.includes('.outlook.com') ||
+    host.includes('.office365.com')
+
+  if ((isGmail || isOutlook) && username.length > 0 && !username.includes('@') && fromEmail.includes('@')) {
+    username = fromEmail
+  }
+
+  return { ...cfg, username }
+}
+
+/** Send via nodemailer (Node SMTP stack) — more reliable with Gmail STARTTLS than denomailer in Edge/Deno. */
+async function sendSmtpMessage(cfg: SmtpShape, to: string, subject: string, text: string, html: string) {
+  const effective = normalizeSmtpAuth(cfg)
+  const port = effective.port
+  const implicitTls = port === 465 || port === 994
+  const submissionPort = port === 587 || port === 2525 || port === 2587
+  const plainNoTls = !implicitTls && !submissionPort && !effective.enableSsl
+
+  const transporter = nodemailer.createTransport({
+    host: effective.host.trim(),
+    port,
+    secure: implicitTls,
+    auth:
+      effective.username || effective.password
+        ? {
+            user: effective.username,
+            pass: effective.password,
+          }
+        : undefined,
+    ignoreTLS: plainNoTls,
+    tls: plainNoTls
+      ? { rejectUnauthorized: false }
+      : { minVersion: 'TLSv1.2' as const },
   })
 
-  const fromAddr = cfg.fromName && cfg.fromEmail
-    ? `${cfg.fromName} <${cfg.fromEmail}>`
-    : cfg.fromEmail || cfg.username
+  const fromAddr =
+    effective.fromName && effective.fromEmail
+      ? `"${String(effective.fromName).replace(/"/g, '\\"')}" <${effective.fromEmail}>`
+      : effective.fromEmail || effective.username
 
   try {
-    await client.send({
+    await transporter.sendMail({
       from: fromAddr,
       to,
       subject,
-      content: text,
+      text,
       html,
-      headers: {},
     })
   } finally {
-    await client.close()
+    transporter.close()
   }
 }
 
@@ -336,7 +359,7 @@ serve(async (req) => {
     const html =
       '<p>This is a <strong>test message</strong> from your university management system SMTP settings.</p><p>If you received this email, your configuration is working.</p>'
 
-    await sendWithDenomailer(smtpCfg, to, subject, text, html)
+    await sendSmtpMessage(smtpCfg, to, subject, text, html)
 
     return new Response(JSON.stringify({ success: true, message: 'Test email sent' }), {
       status: 200,

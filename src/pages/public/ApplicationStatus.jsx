@@ -1,7 +1,8 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react'
-import { useNavigate, useParams, useLocation, Link } from 'react-router-dom'
+import { useNavigate, useParams, useLocation, Link, useOutletContext } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { useLanguage } from '../../contexts/LanguageContext'
+import { useAuth } from '../../contexts/AuthContext'
 import { supabase, SUPABASE_STORAGE_BUCKET } from '../../lib/supabase'
 import { getLocalizedName } from '../../utils/localizedName'
 import { canLoginWithoutSemesterPm10Milestone } from '../../utils/financePermissions'
@@ -20,11 +21,6 @@ import {
   RefreshCw,
   AlertTriangle,
   Loader2,
-  Mail,
-  Phone,
-  Building2,
-  BookOpen,
-  Calendar,
   LogIn,
   Printer,
 } from 'lucide-react'
@@ -46,19 +42,6 @@ function getStageIndex(code) {
   return i >= 0 ? i : 0
 }
 
-function getApplicantInitials(application) {
-  if (!application) return '?'
-  const first = (application.first_name || '').trim().charAt(0)
-  const last = (application.last_name || '').trim().charAt(0)
-  if (first && last) return `${first}${last}`.toUpperCase()
-  const arFirst = (application.first_name_ar || '').trim().charAt(0)
-  const arLast = (application.last_name_ar || '').trim().charAt(0)
-  if (arFirst && arLast) return `${arFirst}${arLast}`.toUpperCase()
-  const name = (application.first_name || application.first_name_ar || '').trim()
-  if (name.length >= 2) return name.slice(0, 2).toUpperCase()
-  return (first || arFirst || '?').toUpperCase()
-}
-
 function getApplicantDisplayName(application, isRTL) {
   if (!application) return ''
   if (isRTL) {
@@ -71,22 +54,15 @@ function getApplicantDisplayName(application, isRTL) {
   return [application.first_name_ar, application.middle_name_ar, application.last_name_ar].filter(Boolean).join(' ').trim()
 }
 
-function getApplicantSecondaryName(application, isRTL) {
-  if (!application) return ''
-  if (isRTL) {
-    const en = [application.first_name, application.middle_name, application.last_name].filter(Boolean).join(' ').trim()
-    return en || ''
-  }
-  const ar = [application.first_name_ar, application.middle_name_ar, application.last_name_ar].filter(Boolean).join(' ').trim()
-  return ar || ''
-}
-
 export default function ApplicationStatus() {
   const { t } = useTranslation()
   const { isRTL, language, changeLanguage } = useLanguage()
   const navigate = useNavigate()
   const { id } = useParams()
   const location = useLocation()
+  const outletCtx = useOutletContext()
+  const portalMode = Boolean(outletCtx?.applicantPortal)
+  const { user } = useAuth()
   const [application, setApplication] = useState(location.state?.application || null)
   const [activityLog, setActivityLog] = useState([])
   const [loading, setLoading] = useState(true)
@@ -102,6 +78,19 @@ export default function ApplicationStatus() {
   const [documentError, setDocumentError] = useState('')
   const applicationFetchInProgressRef = useRef(false)
   const studentInvoicesFetchedForRef = useRef(null)
+
+  // Enforce portal ownership when user session loads after application was fetched
+  useEffect(() => {
+    if (!portalMode || !user?.id || !application?.id) return
+    const em = (user.email || '').trim().toLowerCase()
+    const appEm = (application.email || '').trim().toLowerCase()
+    const uidOk = application.applicant_user_id === user.id
+    const emailOk = appEm === em
+    if (!uidOk && !emailOk) {
+      setError(t('track.portalAccessDenied', 'You do not have access to this application.'))
+      setApplication(null)
+    }
+  }, [portalMode, user?.id, user?.email, application?.id, application?.email, application?.applicant_user_id, t])
 
   // Single effect: fetch application by id once, then fetch activity log when we have the matching application
   useEffect(() => {
@@ -124,7 +113,7 @@ export default function ApplicationStatus() {
     fetchApplication().finally(() => {
       applicationFetchInProgressRef.current = false
     })
-  }, [id, application])
+  }, [id, application, portalMode, user?.id, user?.email])
 
   // Fetch application documents when we have application
   useEffect(() => {
@@ -257,6 +246,19 @@ export default function ApplicationStatus() {
         .single()
 
       if (fetchError) throw fetchError
+
+      if (portalMode && user?.id) {
+        const em = (user.email || '').trim().toLowerCase()
+        const appEm = (data.email || '').trim().toLowerCase()
+        const uidOk = data.applicant_user_id === user.id
+        const emailOk = appEm === em
+        if (!uidOk && !emailOk) {
+          setError(t('track.portalAccessDenied', 'You do not have access to this application.'))
+          setApplication(null)
+          return
+        }
+      }
+
       setApplication(data)
     } catch (err) {
       console.error('Error fetching application:', err)
@@ -328,22 +330,24 @@ export default function ApplicationStatus() {
   const getProcessingStages = () => {
     const code = application?.status_code || 'APDR'
     const currentIdx = getStageIndex(code)
-    const applicationDate = application?.created_at
-    const formatDate = (d) => d ? new Date(d).toLocaleDateString('en-CA', { year: 'numeric', month: '2-digit', day: '2-digit' }) : '—'
+    const created = application?.created_at
+    const locale = isRTL ? 'ar-SA' : 'en-CA'
+    const formatDate = (d) =>
+      d ? new Date(d).toLocaleDateString(locale, { year: 'numeric', month: '2-digit', day: '2-digit' }) : null
 
     const stages = [
       {
         key: 1,
         title: t('track.stages.orderReceipt', 'Order receipt'),
         desc: t('track.stages.orderReceiptDesc', 'Your request has been received and registered in the system'),
-        date: applicationDate,
+        date: formatDate(created),
         status: currentIdx >= getStageIndex('APSB') ? 'completed' : 'pending',
       },
       {
         key: 2,
         title: t('track.stages.documentVerification', 'Document verification'),
         desc: t('track.stages.documentVerificationDesc', 'Uploaded documents are being verified'),
-        date: currentIdx >= getStageIndex('APPC') ? applicationDate : null,
+        date: currentIdx >= getStageIndex('APPC') ? formatDate(created) : null,
         status: currentIdx > getStageIndex('APPC') ? 'completed' : currentIdx === getStageIndex('APPC') ? 'in_progress' : 'pending',
       },
       {
@@ -431,7 +435,7 @@ export default function ApplicationStatus() {
 
   if (loading && !application) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+      <div className={portalMode ? 'py-16 flex justify-center' : 'min-h-screen bg-gray-50 flex items-center justify-center'}>
         <div className="animate-spin rounded-full h-12 w-12 border-2 border-primary-500 border-t-transparent" />
       </div>
     )
@@ -439,16 +443,16 @@ export default function ApplicationStatus() {
 
   if (error || !application) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
+      <div className={portalMode ? 'py-8 px-2 flex justify-center' : 'min-h-screen bg-gray-50 flex items-center justify-center p-4'}>
         <div className="max-w-md w-full bg-white rounded-2xl shadow-sm border border-gray-200 p-8 text-center">
           <XCircle className="w-16 h-16 text-red-500 mx-auto mb-4" />
           <h2 className="text-2xl font-bold text-gray-900 mb-2">{t('track.notFound', 'Application Not Found')}</h2>
           <p className="text-gray-600 mb-6">{error || t('track.notFoundDesc', 'The application you are looking for does not exist.')}</p>
           <button
-            onClick={() => navigate('/track')}
+            onClick={() => navigate(portalMode ? '/portal' : '/lookup-application')}
             className="px-6 py-3 bg-primary-600 text-white rounded-xl font-semibold hover:bg-primary-700 transition-colors"
           >
-            {t('track.backToTracking', 'Back to Tracking')}
+            {portalMode ? t('track.backToPortal', 'Back to dashboard') : t('track.backToLookup', 'Back to application lookup')}
           </button>
         </div>
       </div>
@@ -459,7 +463,13 @@ export default function ApplicationStatus() {
   const StatusIcon = statusInfo.icon
   const showRegistrationPayment = (application.status_code === 'APPN' || application.status_code === 'APSB') && !showPaymentModal
   const programName = getLocalizedName(application.majors, isRTL) || application.majors?.name_en || 'N/A'
-  const applicationDate = application.created_at ? new Date(application.created_at).toLocaleDateString('en-CA', { year: 'numeric', month: '2-digit', day: '2-digit' }) : '—'
+  const dateLocale = isRTL ? 'ar-SA' : 'en-CA'
+  const applicationDate = application.created_at
+    ? new Date(application.created_at).toLocaleDateString(dateLocale, { year: 'numeric', month: '2-digit', day: '2-digit' })
+    : '—'
+  const processingStages = getProcessingStages()
+  const documentRows = documentItems()
+  const hasMissingUploadable = documentRows.some((i) => i.uploadable && !i.done)
 
   const handlePaymentSuccess = async () => {
     await fetchApplication()
@@ -502,7 +512,14 @@ export default function ApplicationStatus() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-slate-50 to-gray-100 py-8 px-4 sm:px-6" dir={isRTL ? 'rtl' : 'ltr'}>
+    <div
+      className={
+        portalMode
+          ? 'bg-transparent py-0 px-0 sm:px-0'
+          : 'min-h-screen bg-[#f4f6fb] py-8 px-4 sm:px-6'
+      }
+      dir={isRTL ? 'rtl' : 'ltr'}
+    >
       {/* Registration fee payment modal */}
       <PaymentModal
         isOpen={showPaymentModal}
@@ -519,147 +536,159 @@ export default function ApplicationStatus() {
         onPaymentSuccess={handleInvoicePaymentSuccess}
       />
 
-      <div className="max-w-6xl mx-auto">
-        <div className={`flex items-center justify-between gap-4 mb-6 ${isRTL ? 'flex-row-reverse' : ''}`}>
-          <button
-            onClick={() => navigate('/track')}
-            className="inline-flex items-center gap-2 text-slate-600 hover:text-slate-900 text-sm font-medium transition-colors"
-          >
-            <ArrowLeft className="w-4 h-4" />
-            <span>{t('track.backToTracking', 'Back to Tracking')}</span>
-          </button>
-          <div className="inline-flex rounded-lg border border-slate-200 bg-white/90 shadow-sm p-0.5">
+      <div className="max-w-6xl mx-auto w-full min-w-0 text-start">
+        {!portalMode && (
+          <div className={`flex items-center justify-between gap-4 mb-6 ${isRTL ? 'flex-row-reverse' : ''}`}>
             <button
               type="button"
-              onClick={() => changeLanguage('en')}
-              className={`px-3 py-1.5 text-sm font-medium rounded-md transition-colors ${language === 'en' ? 'bg-primary-600 text-white' : 'text-slate-600 hover:bg-slate-100'}`}
+              onClick={() => navigate('/lookup-application')}
+              className="inline-flex items-center gap-2 text-[#6b7a99] hover:text-[#1a3a6b] text-sm font-medium transition-colors"
             >
-              English
+              <ArrowLeft className={`w-4 h-4 shrink-0 ${isRTL ? 'rotate-180' : ''}`} />
+              <span>{t('track.backToLookup', 'Back to application lookup')}</span>
             </button>
-            <button
-              type="button"
-              onClick={() => changeLanguage('ar')}
-              className={`px-3 py-1.5 text-sm font-medium rounded-md transition-colors ${language === 'ar' ? 'bg-primary-600 text-white' : 'text-slate-600 hover:bg-slate-100'}`}
-            >
-              العربية
-            </button>
+            <div className="inline-flex rounded-md border border-[#dde3ef] bg-white p-0.5 shadow-sm">
+              <button
+                type="button"
+                onClick={() => changeLanguage('en')}
+                className={`px-3 py-1.5 text-sm font-medium rounded-[6px] transition-colors ${language === 'en' ? 'bg-[#1a3a6b] text-white' : 'text-[#6b7a99] hover:bg-[#f4f6fb]'}`}
+              >
+                {t('applicantPortal.langEnglish', 'English')}
+              </button>
+              <button
+                type="button"
+                onClick={() => changeLanguage('ar')}
+                className={`px-3 py-1.5 text-sm font-medium rounded-[6px] transition-colors ${language === 'ar' ? 'bg-[#1a3a6b] text-white' : 'text-[#6b7a99] hover:bg-[#f4f6fb]'}`}
+              >
+                {t('applicantPortal.langArabic', 'العربية')}
+              </button>
+            </div>
           </div>
-        </div>
+        )}
+        {portalMode && (
+          <nav className="flex flex-wrap items-center gap-1.5 text-sm text-[#6b7a99] mb-5" aria-label="breadcrumb">
+            <Link to="/" className="hover:text-[#1a3a6b] no-underline">
+              {t('applicantPortal.breadcrumbHome', 'Home')}
+            </Link>
+            <span className="text-[#dde3ef]">/</span>
+            <Link to="/portal" className="hover:text-[#1a3a6b] no-underline">
+              {t('applicantPortal.breadcrumbPortal', 'Applicant portal')}
+            </Link>
+            <span className="text-[#dde3ef]">/</span>
+            <span className="text-[#1a3a6b] font-semibold">{t('track.breadcrumbStatus', 'Application status')}</span>
+          </nav>
+        )}
 
-        {/* Top success banner */}
-        <div className={`rounded-2xl bg-emerald-500/10 border border-emerald-200 px-5 py-4 mb-8 flex items-center gap-4 shadow-sm ${isRTL ? 'flex-row-reverse' : ''}`}>
-          <div className="w-10 h-10 rounded-xl bg-emerald-500/20 flex items-center justify-center flex-shrink-0">
-            <CheckCircle className="w-5 h-5 text-emerald-600" />
+        <header className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3 mb-6">
+          <div>
+            <h1 className="text-2xl font-extrabold text-[#1a3a6b] mb-1">
+              {t('track.pageHeading', 'Admission application status')}
+            </h1>
+            <p className="text-sm text-[#6b7a99]">
+              {t('track.pageSubtitle', 'Follow the processing stages of your application')}
+              {portalMode && (
+                <>
+                  {' · '}
+                  <span className="font-semibold text-[#1e2a3a]">{getApplicantDisplayName(application, isRTL)}</span>
+                </>
+              )}
+            </p>
           </div>
-          <p className={`text-emerald-800 text-sm sm:text-base flex-1 ${isRTL ? 'text-right' : ''}`}>
-            {t('track.bannerReceived', 'Your order has been successfully received. Order number:')}{' '}
-            <span className="font-mono font-semibold text-emerald-900">{application.application_number}</span>
+        </header>
+
+        <div
+          className={`rounded-md bg-[#e6f7ef] text-[#1a7a4a] border-s-4 border-[#1a7a4a] px-4 py-3.5 mb-6 text-sm flex items-start gap-2.5 ${isRTL ? 'flex-row-reverse' : ''}`}
+          role="status"
+        >
+          <CheckCircle className="w-5 h-5 shrink-0 mt-0.5" aria-hidden />
+          <p className={`leading-relaxed flex-1 min-w-0 ${isRTL ? 'text-end' : 'text-start'}`}>
+            <span className="me-1">{t('track.bannerReceived', 'Your order has been successfully received. Order number:')}</span>
+            <strong className="font-mono font-bold">{application.application_number}</strong>
           </p>
         </div>
 
-        {/* Applicant profile card */}
-        <div className={`mb-8 overflow-hidden rounded-2xl bg-white shadow-lg shadow-slate-200/50 border border-slate-200/80 ${isRTL ? 'text-right' : ''}`}>
-          <div className="bg-gradient-to-br from-slate-50/80 via-white to-primary-50/30">
-            <div className={`flex flex-col sm:flex-row sm:items-center gap-6 p-6 sm:p-8 ${isRTL ? 'sm:flex-row-reverse' : ''}`}>
-              <div className={`flex items-center gap-4 sm:gap-5 ${isRTL ? 'flex-row-reverse' : ''}`}>
-                <div className="w-20 h-20 sm:w-24 sm:h-24 rounded-2xl bg-primary-600 flex items-center justify-center text-white text-2xl sm:text-3xl font-bold shadow-xl shadow-primary-900/20 ring-4 ring-white">
-                  {getApplicantInitials(application)}
-                </div>
-                <div className="min-w-0">
-                  <h1 className="text-xl sm:text-2xl font-bold text-gray-900 truncate">
-                    {getApplicantDisplayName(application, isRTL)}
-                  </h1>
-                  {getApplicantSecondaryName(application, isRTL) && getApplicantSecondaryName(application, isRTL) !== getApplicantDisplayName(application, isRTL) && (
-                    <p className="text-sm text-gray-500 mt-0.5 truncate">
-                      {getApplicantSecondaryName(application, isRTL)}
-                    </p>
-                  )}
-                  <div className={`mt-2 ${isRTL ? 'flex justify-end' : ''}`}>
-                    <span className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-sm font-medium ${statusInfo.color} ${isRTL ? 'flex-row-reverse' : ''}`}>
-                      <StatusIcon className="w-4 h-4" />
-                      {statusInfo.label}
-                    </span>
-                  </div>
-                </div>
+        <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)] gap-6">
+          <div className="min-w-0">
+            <div className="rounded-[10px] border border-[#dde3ef] bg-white shadow-[0_2px_12px_rgba(26,58,107,0.1)] p-6">
+              <div className="flex items-center justify-between mb-4 pb-3.5 border-b border-[#dde3ef]">
+                <h2 className="text-base font-bold text-[#1a3a6b]">{t('track.stagesTitle', 'Application processing stages')}</h2>
               </div>
-              <div className={`flex-1 grid grid-cols-1 min-[480px]:grid-cols-2 gap-4 sm:gap-5 ${isRTL ? 'sm:border-r sm:border-slate-200/80 sm:pr-8' : 'sm:border-l sm:border-slate-200/80 sm:pl-8'}`}>
-                <div className={`flex items-center gap-3 text-slate-700 ${isRTL ? 'flex-row-reverse' : ''}`}>
-                  <div className="w-10 h-10 rounded-xl bg-slate-100 flex items-center justify-center flex-shrink-0">
-                    <Mail className="w-5 h-5 text-slate-600" />
-                  </div>
-                  <div className="min-w-0">
-                    <p className="text-xs font-medium text-slate-500 uppercase tracking-wide">{t('track.profileEmail', 'Email')}</p>
-                    <p className="font-medium text-slate-900 truncate">{application.email || '—'}</p>
-                  </div>
-                </div>
-                <div className={`flex items-center gap-3 text-slate-700 ${isRTL ? 'flex-row-reverse' : ''}`}>
-                  <div className="w-10 h-10 rounded-xl bg-slate-100 flex items-center justify-center flex-shrink-0">
-                    <Phone className="w-5 h-5 text-slate-600" />
-                  </div>
-                  <div className="min-w-0">
-                    <p className="text-xs font-medium text-slate-500 uppercase tracking-wide">{t('track.profilePhone', 'Phone')}</p>
-                    <p className="font-medium text-slate-900 truncate">{application.phone || '—'}</p>
-                  </div>
-                </div>
-                <div className={`flex items-center gap-3 text-slate-700 ${isRTL ? 'flex-row-reverse' : ''}`}>
-                  <div className="w-10 h-10 rounded-xl bg-slate-100 flex items-center justify-center flex-shrink-0">
-                    <Building2 className="w-5 h-5 text-slate-600" />
-                  </div>
-                  <div className="min-w-0">
-                    <p className="text-xs font-medium text-slate-500 uppercase tracking-wide">{t('track.profileCollege', 'College')}</p>
-                    <p className="font-medium text-slate-900 truncate">{getLocalizedName(application.colleges, isRTL) || application.colleges?.name_en || '—'}</p>
-                  </div>
-                </div>
-                <div className={`flex items-center gap-3 text-slate-700 ${isRTL ? 'flex-row-reverse' : ''}`}>
-                  <div className="w-10 h-10 rounded-xl bg-slate-100 flex items-center justify-center flex-shrink-0">
-                    <BookOpen className="w-5 h-5 text-slate-600" />
-                  </div>
-                  <div className="min-w-0">
-                    <p className="text-xs font-medium text-slate-500 uppercase tracking-wide">{t('track.profileProgram', 'Program')}</p>
-                    <p className="font-medium text-slate-900 truncate">{programName}</p>
-                  </div>
-                </div>
-                <div className={`flex items-center gap-3 text-slate-700 min-[480px]:col-span-2 ${isRTL ? 'flex-row-reverse' : ''}`}>
-                  <div className="w-10 h-10 rounded-xl bg-slate-100 flex items-center justify-center flex-shrink-0">
-                    <Calendar className="w-5 h-5 text-slate-600" />
-                  </div>
-                  <div className="min-w-0">
-                    <p className="text-xs font-medium text-slate-500 uppercase tracking-wide">{t('track.applicationDate', 'Application date')}</p>
-                    <p className="font-medium text-slate-900">{applicationDate}</p>
-                  </div>
+              <div className="relative">
+                <div
+                  className={`absolute top-[18px] bottom-[18px] w-0.5 bg-[#dde3ef] rounded-full hidden sm:block ${isRTL ? 'right-[18px] left-auto' : 'left-[18px]'}`}
+                  aria-hidden
+                />
+                <div className="space-y-0">
+                  {processingStages.map((stage, idx) => (
+                    <div
+                      key={stage.key}
+                      className={`relative flex gap-4 ${idx < processingStages.length - 1 ? 'pb-4 mb-4 border-b border-[#dde3ef]' : ''} ${isRTL ? 'flex-row-reverse' : ''}`}
+                    >
+                      <div className="relative z-10 flex flex-col items-center shrink-0 w-9">
+                        {stage.status === 'completed' && (
+                          <div className="w-9 h-9 rounded-full bg-[#1a7a4a] text-white flex items-center justify-center text-sm font-bold shadow-sm" aria-hidden>
+                            ✓
+                          </div>
+                        )}
+                        {stage.status === 'in_progress' && (
+                          <div
+                            className="w-9 h-9 rounded-full bg-[#1a3a6b] text-white flex items-center justify-center shadow-sm"
+                            aria-current="step"
+                          >
+                            <RefreshCw className="w-4 h-4 animate-spin" aria-hidden />
+                          </div>
+                        )}
+                        {stage.status === 'pending' && (
+                          <div className="w-9 h-9 rounded-full bg-[#dde3ef] text-[#6b7a99] flex items-center justify-center text-sm font-bold">{idx + 1}</div>
+                        )}
+                      </div>
+                      <div className={`min-w-0 flex-1 pt-0.5 ${isRTL ? 'text-end' : 'text-start'}`}>
+                        <p
+                          className={`text-sm ${
+                            stage.status === 'pending'
+                              ? 'font-semibold text-[#6b7a99]'
+                              : stage.status === 'in_progress'
+                                ? 'font-bold text-[#1a3a6b]'
+                                : 'font-bold text-[#1e2a3a]'
+                          }`}
+                        >
+                          {stage.title}
+                        </p>
+                        <p className="text-xs text-[#6b7a99] mt-1 leading-relaxed">
+                          {stage.date ? `${stage.date} — ` : ''}
+                          {stage.desc}
+                        </p>
+                      </div>
+                    </div>
+                  ))}
                 </div>
               </div>
             </div>
           </div>
-        </div>
 
-        <div className={`grid grid-cols-1 lg:grid-cols-3 gap-8 ${isRTL ? 'lg:direction-rtl' : ''}`}>
-          {/* Left column: Summary, Portal CTA, Documents, Invoices */}
-          <div className="lg:col-span-1 space-y-6">
-            {/* Application Summary */}
-            <div className={`bg-white rounded-2xl shadow-md shadow-slate-200/40 border border-slate-200/60 p-6 transition-shadow hover:shadow-lg hover:shadow-slate-200/50 ${isRTL ? 'text-right' : ''}`}>
-              <div className={`flex items-center gap-2 mb-4 ${isRTL ? 'flex-row-reverse' : ''}`}>
-                <span className="w-1 h-6 rounded-full bg-primary-500" />
-                <h2 className="text-base font-bold text-slate-900">{t('track.summaryTitle', 'Application Summary')}</h2>
+          <div className="min-w-0 space-y-6">
+            <div className={`rounded-[10px] border border-[#dde3ef] bg-white shadow-[0_2px_12px_rgba(26,58,107,0.1)] p-6 ${isRTL ? 'text-end' : 'text-start'}`}>
+              <div className={`flex items-center justify-between mb-4 pb-3.5 border-b border-[#dde3ef] ${isRTL ? 'flex-row-reverse' : ''}`}>
+                <h2 className="text-base font-bold text-[#1a3a6b]">{t('track.summaryTitle', 'Application Summary')}</h2>
               </div>
-              <dl className="space-y-4">
+              <dl className="space-y-3 text-[13px]">
                 <div>
-                  <dt className="text-xs font-medium text-slate-500 uppercase tracking-wide">{t('track.orderNumber', 'Order number')}</dt>
-                  <dd className="font-mono font-semibold text-slate-900 mt-1">{application.application_number}</dd>
+                  <dt className="text-[#6b7a99]">{t('track.orderNumber', 'Order number')}</dt>
+                  <dd className="font-mono font-bold text-[#1e2a3a] mt-0.5">{application.application_number}</dd>
                 </div>
                 <div>
-                  <dt className="text-xs font-medium text-slate-500 uppercase tracking-wide">{t('track.program', 'The program')}</dt>
-                  <dd className="font-medium text-slate-900 mt-1">{programName}</dd>
+                  <dt className="text-[#6b7a99]">{t('track.program', 'The program')}</dt>
+                  <dd className="font-semibold text-[#1e2a3a] mt-0.5">{programName}</dd>
                 </div>
                 <div>
-                  <dt className="text-xs font-medium text-slate-500 uppercase tracking-wide">{t('track.applicationDate', 'Application date')}</dt>
-                  <dd className="font-medium text-slate-900 mt-1">{applicationDate}</dd>
+                  <dt className="text-[#6b7a99]">{t('track.applicationDate', 'Application date')}</dt>
+                  <dd className="font-semibold text-[#1e2a3a] mt-0.5">{applicationDate}</dd>
                 </div>
                 <div>
-                  <dt className="text-xs font-medium text-slate-500 uppercase tracking-wide">{t('track.currentSituation', 'Current situation')}</dt>
-                  <dd className={`mt-2 ${isRTL ? 'flex justify-end' : ''}`}>
-                    <span className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-sm font-medium ${statusInfo.color} ${isRTL ? 'flex-row-reverse' : ''}`}>
-                      <StatusIcon className="w-4 h-4" />
+                  <dt className="text-[#6b7a99]">{t('track.currentSituation', 'Current situation')}</dt>
+                  <dd className="mt-1.5">
+                    <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold border-0 ${statusInfo.color} ${isRTL ? 'flex-row-reverse' : ''}`}>
+                      <StatusIcon className="w-3.5 h-3.5 shrink-0" />
                       {statusInfo.label}
                     </span>
                   </dd>
@@ -667,22 +696,21 @@ export default function ApplicationStatus() {
               </dl>
             </div>
 
-            {/* Login to student portal (shown when finance status allows per PM rules) */}
             {student && hasStudentPortalAccess && (
-              <div className="rounded-2xl bg-gradient-to-br from-primary-500/8 to-primary-600/12 border border-primary-200/80 p-6 shadow-md shadow-slate-200/30 transition-shadow hover:shadow-lg">
-                <div className={`flex flex-col gap-4 ${isRTL ? 'text-right' : ''}`}>
-                  <div className={`flex items-start gap-4 ${isRTL ? 'flex-row-reverse' : ''}`}>
-                    <div className="w-12 h-12 rounded-xl bg-primary-500/15 flex items-center justify-center flex-shrink-0">
-                      <LogIn className="w-6 h-6 text-primary-600" />
+              <div className="rounded-[10px] border border-[#dde3ef] bg-[#f8fafc] shadow-sm p-5">
+                <div className={`flex flex-col gap-3 ${isRTL ? 'text-end' : 'text-start'}`}>
+                  <div className={`flex items-start gap-3 ${isRTL ? 'flex-row-reverse' : ''}`}>
+                    <div className="w-11 h-11 rounded-lg bg-[#1a3a6b]/10 text-[#1a3a6b] flex items-center justify-center shrink-0">
+                      <LogIn className="w-5 h-5" />
                     </div>
                     <div className="min-w-0 flex-1">
-                      <h3 className="font-semibold text-slate-900">{t('track.studentPortalTitle', 'Student portal access')}</h3>
-                      <p className="text-sm text-slate-600 mt-1">{t('track.studentPortalDesc', 'You can log in to the student portal for grades, courses, and more.')}</p>
+                      <h3 className="font-bold text-[#1a3a6b] text-sm">{t('track.studentPortalTitle', 'Student portal access')}</h3>
+                      <p className="text-xs text-[#6b7a99] mt-1">{t('track.studentPortalDesc', 'You can log in to the student portal for grades, courses, and more.')}</p>
                     </div>
                   </div>
                   <Link
                     to="/login/student"
-                    className={`inline-flex items-center justify-center gap-2 w-full sm:w-auto px-5 py-2.5 bg-primary-600 hover:bg-primary-700 text-white font-medium rounded-xl transition-all shadow-md shadow-primary-900/20 hover:shadow-lg hover:shadow-primary-900/25 ${isRTL ? 'sm:mr-0' : ''}`}
+                    className="inline-flex items-center justify-center gap-2 w-full py-2.5 px-4 bg-[#1a3a6b] hover:bg-[#2a5298] text-white text-sm font-semibold rounded-md transition-colors shadow-sm no-underline"
                   >
                     <LogIn className="w-4 h-4" />
                     {t('track.loginToStudentPortal', 'Login to student portal')}
@@ -691,36 +719,33 @@ export default function ApplicationStatus() {
               </div>
             )}
 
-            {/* Documents */}
-            <div className="bg-white rounded-2xl shadow-md shadow-slate-200/40 border border-slate-200/60 p-6 transition-shadow hover:shadow-lg hover:shadow-slate-200/50">
-              <div className={`flex items-center gap-2 mb-4 ${isRTL ? 'flex-row-reverse' : ''}`}>
-                <span className="w-1 h-6 rounded-full bg-primary-500" />
-                <h2 className="text-base font-bold text-slate-900">{t('track.documentsTitle', 'Documents')}</h2>
+            <div id="status-documents-panel" className="rounded-[10px] border border-[#dde3ef] bg-white shadow-[0_2px_12px_rgba(26,58,107,0.1)] p-6">
+              <div className={`flex items-center justify-between mb-4 pb-3.5 border-b border-[#dde3ef] ${isRTL ? 'flex-row-reverse' : ''}`}>
+                <h2 className="text-base font-bold text-[#1a3a6b]">{t('track.documentsTitle', 'Documents')}</h2>
               </div>
-              {documentError && (
-                <p className="text-sm text-red-600 mb-3">{documentError}</p>
-              )}
-              <ul className="space-y-1">
-                {documentItems().map((item) => (
-                  <li key={item.key} className={`flex flex-col gap-2 rounded-xl py-2.5 px-3 -mx-3 ${item.done ? 'bg-slate-50/80' : ''} ${isRTL ? 'text-right' : ''}`}>
-                    <div className={`flex items-center gap-3 ${isRTL ? 'flex-row-reverse' : ''}`}>
-                      {item.done ? (
-                        <div className="w-8 h-8 rounded-full bg-emerald-100 flex items-center justify-center flex-shrink-0">
-                          <CheckCircle className="w-4 h-4 text-emerald-600" />
-                        </div>
-                      ) : (
-                        <div className="w-8 h-8 rounded-full bg-amber-100 flex items-center justify-center flex-shrink-0">
-                          <AlertTriangle className="w-4 h-4 text-amber-600" />
-                        </div>
-                      )}
-                      <span className={`text-sm font-medium ${item.done ? 'text-slate-800' : 'text-slate-600'}`}>{item.label}</span>
+              {documentError && <p className="text-sm text-[#b91c1c] mb-3">{documentError}</p>}
+              <ul className="space-y-0">
+                {documentRows.map((item) => (
+                  <li
+                    key={item.key}
+                    className={`flex flex-col gap-2 py-2.5 border-b border-[#dde3ef] last:border-b-0 ${isRTL ? 'text-end' : 'text-start'}`}
+                  >
+                    <div className="flex items-center justify-between gap-2 text-[13px]">
+                      <span className="font-medium text-[#1e2a3a]">{item.label}</span>
+                      <span
+                        className={`inline-flex items-center justify-center min-w-[28px] h-7 px-2 rounded-full text-xs font-bold ${
+                          item.done ? 'bg-[#e6f7ef] text-[#1a7a4a]' : 'bg-[#fef3c7] text-[#b45309]'
+                        }`}
+                      >
+                        {item.done ? '✓' : '⚠'}
+                      </span>
                     </div>
                     {item.uploadable && !item.done && (
-                      <div className={`flex flex-wrap items-center gap-2 ${isRTL ? 'pl-0 pr-11 justify-end' : 'pl-11'}`}>
+                      <div className={`flex flex-wrap items-center gap-2 ${isRTL ? 'justify-end' : ''}`}>
                         <input
                           type="file"
                           accept={UPLOADABLE_DOCUMENT_TYPES.find((d) => d.key === item.key)?.accept || '*'}
-                          className="text-sm text-slate-600 file:mr-2 file:py-2 file:px-4 file:rounded-lg file:border-0 file:bg-primary-100 file:text-primary-700 file:font-medium file:cursor-pointer"
+                          className="text-xs text-[#6b7a99] file:me-2 file:py-1.5 file:px-3 file:rounded-md file:border-0 file:bg-[#f0f4fb] file:text-[#1a3a6b] file:font-semibold file:cursor-pointer max-w-full"
                           onChange={(e) => {
                             const f = e.target.files?.[0]
                             if (f) {
@@ -734,18 +759,31 @@ export default function ApplicationStatus() {
                           }}
                           disabled={uploadingDocType !== null}
                         />
-                        {uploadingDocType === item.key && (
-                          <Loader2 className="w-4 h-4 animate-spin text-primary-600" />
-                        )}
+                        {uploadingDocType === item.key && <Loader2 className="w-4 h-4 animate-spin text-[#1a3a6b]" />}
                       </div>
                     )}
                   </li>
                 ))}
               </ul>
+              {hasMissingUploadable && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    const panel = document.getElementById('status-documents-panel')
+                    const inp = panel?.querySelector('input[type="file"]')
+                    inp?.click()
+                  }}
+                  className="mt-3 w-full py-2 px-3 bg-[#d97706] hover:bg-[#b45309] text-white text-sm font-semibold rounded-md flex items-center justify-center gap-2 shadow-sm transition-colors"
+                >
+                  <Upload className="w-4 h-4" />
+                  {t('track.uploadMissingDocument', 'Upload the missing document')}
+                </button>
+              )}
               {showRegistrationPayment && (
                 <button
+                  type="button"
                   onClick={() => setShowPaymentModal(true)}
-                  className="mt-5 w-full py-3 px-4 bg-amber-500 hover:bg-amber-600 text-white font-medium rounded-xl flex items-center justify-center gap-2 shadow-md transition-all"
+                  className="mt-3 w-full py-2.5 px-4 bg-[#d97706] hover:bg-[#b45309] text-white text-sm font-semibold rounded-md flex items-center justify-center gap-2 shadow-sm transition-colors"
                 >
                   <CreditCard className="w-4 h-4" />
                   {t('track.payRegistrationFee', 'Pay registration fee')}
@@ -753,31 +791,32 @@ export default function ApplicationStatus() {
               )}
             </div>
 
-            {/* Invoices (registration fee + student invoices after enrollment) */}
             {mergedInvoices.length > 0 && (
-              <div className="bg-white rounded-2xl shadow-md shadow-slate-200/40 border border-slate-200/60 p-6 transition-shadow hover:shadow-lg hover:shadow-slate-200/50">
-                <div className={`flex items-center gap-2 mb-4 ${isRTL ? 'flex-row-reverse' : ''}`}>
-                  <span className="w-1 h-6 rounded-full bg-primary-500" />
-                  <h2 className="text-base font-bold text-slate-900">{t('track.invoicesTitle', 'Invoices')}</h2>
+              <div className="rounded-[10px] border border-[#dde3ef] bg-white shadow-[0_2px_12px_rgba(26,58,107,0.1)] p-6">
+                <div className={`flex items-center justify-between mb-4 pb-3.5 border-b border-[#dde3ef] ${isRTL ? 'flex-row-reverse' : ''}`}>
+                  <h2 className="text-base font-bold text-[#1a3a6b]">{t('track.invoicesTitle', 'Invoices')}</h2>
                 </div>
                 <ul className="space-y-2">
                   {mergedInvoices.map((inv) => {
                     const isPending = inv.status === 'pending' || inv.status === 'partially_paid'
                     return (
-                      <li key={inv.id} className={`flex flex-wrap items-center justify-between gap-3 rounded-xl py-3 px-3 -mx-3 bg-slate-50/60 border border-transparent ${isRTL ? 'flex-row-reverse' : ''}`}>
-                        <div className={`flex items-center gap-3 min-w-0 ${isRTL ? 'flex-row-reverse' : ''}`}>
+                      <li
+                        key={inv.id}
+                        className={`flex flex-wrap items-center justify-between gap-3 rounded-lg py-3 px-2 bg-[#f4f6fb] ${isRTL ? 'flex-row-reverse' : ''}`}
+                      >
+                        <div className={`flex items-center gap-2 min-w-0 ${isRTL ? 'flex-row-reverse' : ''}`}>
                           {inv.status === 'paid' ? (
-                            <div className="w-8 h-8 rounded-full bg-emerald-100 flex items-center justify-center flex-shrink-0">
-                              <CheckCircle className="w-4 h-4 text-emerald-600" />
+                            <div className="w-8 h-8 rounded-full bg-[#e6f7ef] flex items-center justify-center shrink-0">
+                              <CheckCircle className="w-4 h-4 text-[#1a7a4a]" />
                             </div>
                           ) : (
-                            <div className="w-8 h-8 rounded-full bg-amber-100 flex items-center justify-center flex-shrink-0">
-                              <AlertTriangle className="w-4 h-4 text-amber-600" />
+                            <div className="w-8 h-8 rounded-full bg-[#fef3c7] flex items-center justify-center shrink-0">
+                              <AlertTriangle className="w-4 h-4 text-[#b45309]" />
                             </div>
                           )}
-                          <div className={`min-w-0 ${isRTL ? 'text-right' : ''}`}>
-                            <p className="font-medium text-slate-900 truncate">{inv.invoice_number}</p>
-                            <p className="text-sm text-slate-500">
+                          <div className={`min-w-0 ${isRTL ? 'text-end' : 'text-start'}`}>
+                            <p className="font-semibold text-[#1e2a3a] truncate text-sm">{inv.invoice_number}</p>
+                            <p className="text-xs text-[#6b7a99]">
                               {inv.invoice_type?.replace(/_/g, ' ')} — {inv.status === 'paid' ? t('payments.paid', 'Paid') : `${inv.pending_amount ?? inv.total_amount} ${t('track.currency', 'SAR')}`}
                             </p>
                           </div>
@@ -787,7 +826,7 @@ export default function ApplicationStatus() {
                             <button
                               type="button"
                               onClick={() => handlePrintRegistrationReceipt(inv)}
-                              className="flex-shrink-0 py-2 px-3 border border-slate-200 bg-white hover:bg-slate-50 text-slate-800 text-sm font-medium rounded-lg transition-all inline-flex items-center gap-1.5"
+                              className="py-2 px-3 border border-[#dde3ef] bg-white hover:bg-[#f4f6fb] text-[#1e2a3a] text-xs font-semibold rounded-md inline-flex items-center gap-1.5"
                             >
                               <Printer className="w-4 h-4" />
                               {t('track.printReceipt', 'Print receipt')}
@@ -795,8 +834,9 @@ export default function ApplicationStatus() {
                           )}
                           {isPending && student && (
                             <button
+                              type="button"
                               onClick={() => handlePayInvoice(inv)}
-                              className="flex-shrink-0 py-2 px-4 bg-primary-600 hover:bg-primary-700 text-white text-sm font-medium rounded-lg shadow-sm transition-all"
+                              className="py-2 px-3 bg-[#1a3a6b] hover:bg-[#2a5298] text-white text-xs font-semibold rounded-md shadow-sm"
                             >
                               {t('track.payNow', 'Pay')}
                             </button>
@@ -808,53 +848,6 @@ export default function ApplicationStatus() {
                 </ul>
               </div>
             )}
-          </div>
-
-          {/* Right column: Application processing stages */}
-          <div className="lg:col-span-2">
-            <div className="bg-white rounded-2xl shadow-md shadow-slate-200/40 border border-slate-200/60 p-6 sm:p-8 transition-shadow hover:shadow-lg hover:shadow-slate-200/50">
-              <div className={`flex items-center gap-2 mb-8 ${isRTL ? 'flex-row-reverse' : ''}`}>
-                <span className="w-1 h-6 rounded-full bg-primary-500" />
-                <h2 className="text-base font-bold text-slate-900">{t('track.stagesTitle', 'Application processing stages')}</h2>
-              </div>
-              <div className="relative">
-                {/* Vertical line behind steps (centered under circle: 20px - 1px = 19px) */}
-                <div className={`absolute top-5 bottom-5 w-0.5 bg-slate-200 rounded-full hidden sm:block ${isRTL ? 'right-[19px] left-auto' : 'left-[19px]'}`} />
-                <div className="space-y-0">
-                  {getProcessingStages().map((stage, idx) => (
-                    <div
-                      key={stage.key}
-                      className={`relative flex gap-5 sm:gap-6 ${idx < getProcessingStages().length - 1 ? 'pb-8' : ''} ${isRTL ? 'flex-row-reverse' : ''}`}
-                    >
-                      <div className="relative z-10 flex flex-col items-center flex-shrink-0">
-                        {stage.status === 'completed' && (
-                          <div className="w-10 h-10 rounded-full bg-emerald-500 flex items-center justify-center shadow-md shadow-emerald-900/20">
-                            <CheckCircle className="w-5 h-5 text-white" />
-                          </div>
-                        )}
-                        {stage.status === 'in_progress' && (
-                          <div className="w-10 h-10 rounded-full bg-primary-500 flex items-center justify-center shadow-md shadow-primary-900/20 animate-pulse">
-                            <RefreshCw className="w-5 h-5 text-white" />
-                          </div>
-                        )}
-                        {stage.status === 'pending' && (
-                          <div className="w-10 h-10 rounded-full bg-slate-200 flex items-center justify-center text-slate-500 font-semibold text-xs">
-                            {idx + 1}
-                          </div>
-                        )}
-                      </div>
-                      <div className={`flex-1 min-w-0 pt-1 pb-1 ${isRTL ? 'text-right' : ''}`}>
-                        <p className="font-semibold text-slate-900">{stage.title}</p>
-                        {stage.date && (
-                          <p className="text-sm text-slate-500 mt-0.5">{stage.date}</p>
-                        )}
-                        <p className="text-sm text-slate-600 mt-1 leading-relaxed">{stage.desc}</p>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
           </div>
         </div>
       </div>

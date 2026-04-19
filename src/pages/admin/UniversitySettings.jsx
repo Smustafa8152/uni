@@ -684,6 +684,7 @@ export default function UniversitySettings() {
               onSendTestEmail={handleSendTestEmail}
               testEmailSending={testEmailSending}
               testEmailFeedback={testEmailFeedback}
+              showSupabaseAuthSmtpHint
             />
           )}
           {activeTab === 'onboarding' && (

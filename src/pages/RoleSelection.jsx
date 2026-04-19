@@ -111,8 +111,19 @@ export default function RoleSelection() {
           })}
         </div>
 
+        {/* Applicant admission portal */}
+        <div className="text-center mt-10">
+          <button
+            type="button"
+            onClick={() => navigate('/register')}
+            className="text-accent-300 hover:text-white text-sm font-semibold underline underline-offset-4 decoration-accent-400/80"
+          >
+            {t('roleSelection.applyForAdmission')}
+          </button>
+        </div>
+
         {/* Footer */}
-        <p className="text-center mt-12 text-gray-400 text-sm">
+        <p className="text-center mt-8 text-gray-400 text-sm">
           {t('roleSelection.copyright')}
         </p>
       </div>
