@@ -137,6 +137,8 @@ import ApplicantProfile from './pages/applicant/ApplicantProfile'
 import ApplicantRegister from './pages/applicant/ApplicantRegister'
 import LoginApplicant from './pages/applicant/LoginApplicant'
 import ApplicantApplicationStatusPage from './pages/applicant/ApplicantApplicationStatusPage'
+import ApplicantOfferLetter from './pages/applicant/ApplicantOfferLetter'
+import ApplicantOfferLetterIndex from './pages/applicant/ApplicantOfferLetterIndex'
 
 /** Old bookmarked URLs: /track/:id → /application-status/:id */
 function LegacyTrackIdRedirect() {
@@ -173,6 +175,8 @@ function App() {
             <Route path="apply/new" element={<RegisterApplication portal />} />
             <Route path="profile" element={<ApplicantProfile />} />
             <Route path="applications/:id" element={<ApplicationStatus />} />
+            <Route path="applications/:id/offer-letter" element={<ApplicantOfferLetter />} />
+            <Route path="offer-letter" element={<ApplicantOfferLetterIndex />} />
           </Route>
           <Route
             path="/application-status"

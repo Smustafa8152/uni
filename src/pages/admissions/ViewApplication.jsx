@@ -2,10 +2,12 @@ import { useState, useEffect, useMemo, useCallback } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { useLanguage } from '../../contexts/LanguageContext'
-import { supabase } from '../../lib/supabase'
+import { supabase, SUPABASE_STORAGE_BUCKET } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
 import { createStudentFromApplication } from '../../utils/createStudentFromApplication'
 import { getLocalizedName } from '../../utils/localizedName'
+import { resolveOnboardingFeeAmount } from '../../utils/resolveOnboardingFeeAmount'
+import { resolveRegistrationFeeAmount } from '../../utils/resolveRegistrationFeeAmount'
 import { ArrowLeft, CheckCircle, XCircle, Clock, Mail, Phone, MapPin, Calendar, GraduationCap, FileText, User, AlertCircle, BookOpen, Edit, Save, X, ChevronDown, ChevronUp, ArrowRight, Info, Sparkles, Shield, TrendingUp, ArrowDown } from 'lucide-react'
 
 const TIMELINE_TRIGGER_ICONS = {
@@ -779,6 +781,146 @@ export default function ViewApplication() {
   const [activityLog, setActivityLog] = useState([])
   const [loadingActivity, setLoadingActivity] = useState(false)
 
+  // Documents (admin verification + applicant requests)
+  const [applicationDocuments, setApplicationDocuments] = useState([])
+  const [loadingDocuments, setLoadingDocuments] = useState(false)
+  const [documentRequests, setDocumentRequests] = useState([])
+  const [showRequestDocsModal, setShowRequestDocsModal] = useState(false)
+  const [requestDocsMessage, setRequestDocsMessage] = useState('')
+  const [requestDocsSending, setRequestDocsSending] = useState(false)
+  const [verifyingDocId, setVerifyingDocId] = useState(null)
+
+  const [showOfferModal, setShowOfferModal] = useState(false)
+  const [offerDeadline, setOfferDeadline] = useState('')
+  const [tuitionAmount, setTuitionAmount] = useState('')
+  const [tuitionTotalAmount, setTuitionTotalAmount] = useState(0)
+  const [sendingOffer, setSendingOffer] = useState(false)
+  const [offerMessage, setOfferMessage] = useState('')
+
+  const [showReceiveFeeModal, setShowReceiveFeeModal] = useState(false)
+  const [receivingFee, setReceivingFee] = useState(false)
+  const [receiveFeeAmount, setReceiveFeeAmount] = useState('')
+  const [receiveFeeMethod, setReceiveFeeMethod] = useState('cash')
+
+  const coreDocVerified = useMemo(() => {
+    const docs = Array.isArray(applicationDocuments) ? applicationDocuments : []
+    const idOk = docs.some((d) => d.document_type === 'id_photo' && d.verified_at)
+    const trOk = docs.some((d) => d.document_type === 'transcript' && d.verified_at)
+    return { idOk, trOk, allOk: idOk && trOk }
+  }, [applicationDocuments])
+
+  const canReceiveRegistrationFee = useMemo(() => {
+    const code = String(application?.status_code || '').toUpperCase()
+    if (!application?.id) return false
+    if (application?.registration_fee_paid_at) return false
+    if (!coreDocVerified.allOk) return false
+    // We only collect the registration fee after document verification step
+    return code === 'RVDV' || code === 'RVRC' || code === 'RVIN'
+  }, [application?.id, application?.status_code, application?.registration_fee_paid_at, coreDocVerified.allOk])
+
+  const openReceiveFeeModal = async () => {
+    setError('')
+    setReceiveFeeMethod('cash')
+    try {
+      const amt = await resolveRegistrationFeeAmount(application)
+      setReceiveFeeAmount(Number.isFinite(Number(amt)) ? String(Number(amt).toFixed(2)) : '')
+    } catch (_) {
+      setReceiveFeeAmount('')
+    }
+    setShowReceiveFeeModal(true)
+  }
+
+  const handleReceiveRegistrationFee = async () => {
+    if (!applicationId || !application) return
+    setReceivingFee(true)
+    setError('')
+    try {
+      const amt = Number(receiveFeeAmount)
+      if (!Number.isFinite(amt) || amt <= 0) throw new Error('Fee amount is required.')
+      const now = new Date().toISOString()
+      const from = application.status_code || null
+
+      // After docs verified, enable payment for applicant (payment pending).
+      const nextStatus = 'APPN'
+
+      const { error: updErr } = await supabase
+        .from('applications')
+        .update({
+          registration_fee_amount: amt,
+          status_code: nextStatus,
+          status: 'pending',
+          status_changed_at: now,
+        })
+        .eq('id', applicationId)
+      if (updErr) throw updErr
+
+      await supabase.from('status_change_audit_log').insert({
+        entity_type: 'application',
+        entity_id: applicationId,
+        from_status_code: from,
+        to_status_code: nextStatus,
+        transition_reason_code: null,
+        trigger_code: 'TRPW',
+        notes: `Registration fee payment enabled: ${amt}. Applicant must pay.`,
+      })
+
+      setApplication((prev) =>
+        prev
+          ? {
+              ...prev,
+              registration_fee_amount: amt,
+              status_code: nextStatus,
+              status: 'pending',
+              status_changed_at: now,
+            }
+          : prev
+      )
+      setShowReceiveFeeModal(false)
+    } catch (e) {
+      setError(e?.message || 'Failed to record fee')
+    } finally {
+      setReceivingFee(false)
+    }
+  }
+
+  const getStaffUserId = useCallback(async () => {
+    if (!user?.email) return null
+    const { data: userData, error: userError } = await supabase
+      .from('users')
+      .select('id')
+      .eq('email', user.email)
+      .maybeSingle()
+    if (userError) return null
+    return userData?.id ?? null
+  }, [user?.email])
+
+  const sendAdmissionNotification = useCallback(
+    async ({ type, subject, message, meta } = {}) => {
+      try {
+        if (!application?.email) return
+        const collegeId = application?.college_id ?? null
+        await supabase.functions.invoke('send-admission-notification', {
+          body: {
+            scope: 'college',
+            collegeId,
+            to: application.email,
+            type,
+            subject,
+            message,
+            application: {
+              id: application.id,
+              application_number: application.application_number,
+            },
+            meta: meta || {},
+          },
+        })
+      } catch (e) {
+        console.warn('Email notification failed:', e?.message || e)
+      }
+    },
+    [application?.email, application?.college_id, application?.id, application?.application_number]
+  )
+
   useEffect(() => {
     if (applicationId) {
       fetchApplication()
@@ -877,6 +1019,29 @@ export default function ViewApplication() {
 
       if (error) throw error
       setApplication(data)
+
+      // Fetch uploaded documents + outstanding requests (side effects; do not block primary view)
+      setLoadingDocuments(true)
+      try {
+        const [{ data: docs }, { data: reqs }] = await Promise.all([
+          supabase
+            .from('application_documents')
+            .select('id, application_id, document_type, file_path, file_name, file_size, content_type, uploaded_at, verified_at, verified_by, verification_notes')
+            .eq('application_id', applicationId)
+            .order('uploaded_at', { ascending: false }),
+          supabase
+            .from('application_document_requests')
+            .select('id, application_id, requested_by, message, created_at, resolved_at, status')
+            .eq('application_id', applicationId)
+            .order('created_at', { ascending: false }),
+        ])
+        setApplicationDocuments(docs || [])
+        setDocumentRequests(reqs || [])
+      } catch (e) {
+        console.warn('Failed to fetch documents/requests:', e?.message || e)
+      } finally {
+        setLoadingDocuments(false)
+      }
       
       // Fetch activity log after application is loaded
       if (data?.id && data?.created_at) {
@@ -1025,6 +1190,180 @@ export default function ViewApplication() {
     setModalStep(3) // Move to notes step
   }
 
+  const docPublicUrl = useCallback((filePath) => {
+    if (!filePath) return null
+    const { data } = supabase.storage.from(SUPABASE_STORAGE_BUCKET).getPublicUrl(filePath)
+    return data?.publicUrl || null
+  }, [])
+
+  const handleVerifyDocument = async (docId) => {
+    if (!docId) return
+    setVerifyingDocId(docId)
+    try {
+      const staffUserId = await getStaffUserId()
+      const { error: upErr } = await supabase
+        .from('application_documents')
+        .update({
+          verified_at: new Date().toISOString(),
+          verified_by: staffUserId,
+        })
+        .eq('id', docId)
+      if (upErr) throw upErr
+
+      setApplicationDocuments((prev) =>
+        prev.map((d) => (d.id === docId ? { ...d, verified_at: new Date().toISOString(), verified_by: staffUserId } : d))
+      )
+
+      await sendAdmissionNotification({
+        type: 'document_verified',
+        subject: 'Document verified',
+        message: 'One of your uploaded documents has been verified.',
+        meta: { document_id: docId },
+      })
+    } catch (e) {
+      console.error('Verify document failed:', e)
+      setError(e?.message || 'Failed to verify document')
+    } finally {
+      setVerifyingDocId(null)
+    }
+  }
+
+  const handleRequestMoreDocuments = async () => {
+    const msg = requestDocsMessage.trim()
+    if (!msg || !applicationId) return
+    setRequestDocsSending(true)
+    setError('')
+    try {
+      const staffUserId = await getStaffUserId()
+      const { data: reqRow, error: insErr } = await supabase
+        .from('application_document_requests')
+        .insert({
+          application_id: applicationId,
+          requested_by: staffUserId,
+          message: msg,
+          status: 'open',
+        })
+        .select('id, application_id, requested_by, message, created_at, resolved_at, status')
+        .single()
+      if (insErr) throw insErr
+      setDocumentRequests((prev) => [reqRow, ...prev])
+
+      // Move application into "info required" if not already there (no reason code enforced here)
+      if (application?.status_code !== 'RVRI') {
+        await supabase.from('applications').update({ status_code: 'RVRI', status: 'pending' }).eq('id', applicationId)
+        await supabase.from('status_change_audit_log').insert({
+          entity_type: 'application',
+          entity_id: applicationId,
+          from_status_code: application?.status_code || null,
+          to_status_code: 'RVRI',
+          trigger_code: 'TRRQ',
+          triggered_by: staffUserId,
+          notes: msg,
+        })
+        setApplication((prev) => (prev ? { ...prev, status_code: 'RVRI', status: 'pending' } : prev))
+      }
+
+      await sendAdmissionNotification({
+        type: 'request_documents',
+        subject: 'Action required: additional documents needed',
+        message: msg,
+        meta: { request_id: reqRow?.id },
+      })
+
+      setShowRequestDocsModal(false)
+      setRequestDocsMessage('')
+    } catch (e) {
+      console.error('Request docs failed:', e)
+      setError(e?.message || 'Failed to request documents')
+    } finally {
+      setRequestDocsSending(false)
+    }
+  }
+
+  const handleSendOfferLetter = async () => {
+    if (!applicationId || !application) return
+    setSendingOffer(true)
+    setError('')
+    try {
+      const deadlineIso = offerDeadline ? new Date(offerDeadline).toISOString() : null
+      const amountNum = tuitionAmount !== '' ? Number(tuitionAmount) : null
+      if (!Number.isFinite(amountNum) || Number(amountNum) <= 0) {
+        throw new Error('Tuition fee amount is required.')
+      }
+
+      const now = new Date().toISOString()
+      const { error: updErr } = await supabase
+        .from('applications')
+        .update({
+          status_code: 'DCCA',
+          status: 'accepted',
+          status_changed_at: now,
+          offer_sent_at: now,
+          offer_deadline: deadlineIso,
+          tuition_fee_amount: amountNum,
+        })
+        .eq('id', applicationId)
+      if (updErr) throw updErr
+
+      await supabase.from('status_change_audit_log').insert({
+        entity_type: 'application',
+        entity_id: applicationId,
+        from_status_code: application?.status_code || null,
+        to_status_code: 'DCCA',
+        transition_reason_code: null,
+        trigger_code: 'TROF',
+        notes: `Offer letter sent. Tuition fee: ${amountNum}.`,
+      })
+
+      setApplication((prev) =>
+        prev
+          ? {
+              ...prev,
+              status_code: 'DCCA',
+              status: 'accepted',
+              offer_sent_at: now,
+              offer_deadline: deadlineIso,
+              tuition_fee_amount: amountNum,
+            }
+          : prev
+      )
+
+      // Email applicant (best effort)
+      try {
+        const subject = t('offerLetter.emailSentSubject', 'Your offer letter is ready')
+        const message =
+          offerMessage?.trim() ||
+          t(
+            'offerLetter.emailSentBody',
+            'Please log in to your applicant portal to view your offer letter and pay the tuition fee before the deadline.'
+          )
+        await supabase.functions.invoke('send-admission-notification', {
+          body: {
+            scope: 'college',
+            type: 'offer_sent',
+            to: application.email,
+            subject,
+            message,
+            collegeId: application.college_id,
+            application: { application_number: application.application_number },
+          },
+        })
+      } catch (_) {
+        // ignore email errors
+      }
+
+      setShowOfferModal(false)
+      setOfferDeadline('')
+      setTuitionAmount('')
+      setTuitionTotalAmount(0)
+      setOfferMessage('')
+    } catch (e) {
+      setError(e?.message || 'Failed to send offer letter')
+    } finally {
+      setSendingOffer(false)
+    }
+  }
+
   const handleStatusChange = async () => {
     if (!selectedStatus) {
       setError('Please select a status')
@@ -1084,6 +1423,45 @@ export default function ViewApplication() {
         .eq('id', applicationId)
 
       if (updateError) throw updateError
+
+      // Notify applicant by email on key admissions statuses
+      if (selectedStatus === 'RVRI') {
+        await sendAdmissionNotification({
+          type: 'request_documents',
+          subject: 'Action required: additional documents needed',
+          message:
+            statusNotes?.trim() ||
+            'Admissions has requested additional information/documents. Please check your applicant dashboard and upload the required items.',
+          meta: { to_status_code: selectedStatus, reason_code: selectedReason || null },
+        })
+      } else if (selectedStatus === 'DCRJ') {
+        await sendAdmissionNotification({
+          type: 'rejected',
+          subject: 'Admission decision',
+          message:
+            statusNotes?.trim() ||
+            'Your application status has been updated. Please check your applicant dashboard for details.',
+          meta: { to_status_code: selectedStatus, reason_code: selectedReason || null },
+        })
+      } else if (selectedStatus === 'DCCA' || selectedStatus === 'DCFA') {
+        await sendAdmissionNotification({
+          type: 'accepted',
+          subject: 'Admission decision',
+          message:
+            statusNotes?.trim() ||
+            'Congratulations! Your application status has been updated. Please check your applicant dashboard for next steps.',
+          meta: { to_status_code: selectedStatus, reason_code: selectedReason || null },
+        })
+      } else if (selectedStatus === 'RVDV') {
+        await sendAdmissionNotification({
+          type: 'document_verification',
+          subject: 'Document verification in progress',
+          message:
+            statusNotes?.trim() ||
+            'Your uploaded documents are now under verification. We will contact you if anything else is required.',
+          meta: { to_status_code: selectedStatus, reason_code: selectedReason || null },
+        })
+      }
 
       // Find if there's a defined transition for this status change
       const transition = statusTransitions.find(t => 
@@ -1421,6 +1799,30 @@ export default function ViewApplication() {
           >
             <Edit className="w-4 h-4" />
             <span>{t('admissions.viewApplication.edit')}</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setError('')
+              // Precompute onboarding fee (10% of total) from finance configuration / major catalog
+              ;(async () => {
+                try {
+                  const res = await resolveOnboardingFeeAmount(application)
+                  setTuitionTotalAmount(res.total || 0)
+                  setTuitionAmount(res.onboarding ? String(Number(res.onboarding).toFixed(2)) : '')
+                } catch (_) {
+                  setTuitionTotalAmount(0)
+                  setTuitionAmount('')
+                }
+              })()
+              setShowOfferModal(true)
+            }}
+            disabled={updating || sendingOffer || !application?.registration_fee_paid_at}
+            className="flex items-center space-x-2 px-4 py-2 bg-emerald-600 text-white rounded-lg font-medium hover:bg-emerald-700 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+            title={!application?.registration_fee_paid_at ? 'Registration fee must be paid first' : undefined}
+          >
+            <Mail className="w-4 h-4" />
+            <span>{t('admissions.viewApplication.sendOfferLetter', 'Send offer letter')}</span>
           </button>
           <button
             type="button"
@@ -1862,6 +2264,102 @@ export default function ViewApplication() {
         </div>
       )}
 
+      {/* Send offer letter modal */}
+      {showOfferModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-2xl shadow-xl max-w-lg w-full p-6">
+            <div className={`flex items-start justify-between gap-3 mb-4 ${isArabicLayout ? 'flex-row-reverse' : ''}`}>
+              <div className={alignStart}>
+                <h3 className="text-lg font-bold text-gray-900">
+                  {t('admissions.viewApplication.sendOfferLetter', 'Send offer letter')}
+                </h3>
+                <p className="text-sm text-gray-600 mt-1">
+                  {t(
+                    'admissions.viewApplication.sendOfferLetterHint',
+                    'Set the tuition fee amount and deadline. The applicant will receive an email and can pay tuition from the offer letter screen.'
+                  )}
+                </p>
+              </div>
+              <button type="button" onClick={() => setShowOfferModal(false)} className="p-2 rounded-lg hover:bg-gray-100">
+                <X className="w-5 h-5 text-gray-600" />
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              <div className="rounded-lg border border-gray-200 bg-gray-50 px-4 py-3 text-sm text-gray-800">
+                <div className="font-semibold">
+                  {t('admissions.viewApplication.tuitionTotal', 'Total semester fees')}:{' '}
+                  <span className="font-mono">{Number(tuitionTotalAmount || 0).toFixed(2)}</span>
+                </div>
+                <div className="mt-1 text-xs text-gray-600">
+                  {t('admissions.viewApplication.onboardingPercentNote', 'Onboarding payment is 10% (PM10).')}
+                </div>
+              </div>
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">
+                  {t('admissions.viewApplication.tuitionAmount', 'Tuition fee amount')}
+                </label>
+                <input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={tuitionAmount}
+                  onChange={(e) => setTuitionAmount(e.target.value)}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg bg-gray-50"
+                  placeholder="0.00"
+                  disabled
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">
+                  {t('admissions.viewApplication.offerDeadline', 'Deadline')}
+                </label>
+                <input
+                  type="date"
+                  value={offerDeadline}
+                  onChange={(e) => setOfferDeadline(e.target.value)}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">
+                  {t('admissions.viewApplication.offerEmailNote', 'Email note (optional)')}
+                </label>
+                <textarea
+                  rows={4}
+                  value={offerMessage}
+                  onChange={(e) => setOfferMessage(e.target.value)}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg resize-none"
+                />
+              </div>
+            </div>
+
+            <div className={`mt-6 flex items-center ${isArabicLayout ? 'flex-row-reverse' : ''} justify-end gap-2`}>
+              <button
+                type="button"
+                onClick={() => setShowOfferModal(false)}
+                className="px-4 py-2 rounded-lg border border-gray-300 bg-white hover:bg-gray-50"
+                disabled={sendingOffer}
+              >
+                {t('common.cancel', 'Cancel')}
+              </button>
+              <button
+                type="button"
+                onClick={handleSendOfferLetter}
+                className="px-4 py-2 rounded-lg bg-emerald-600 text-white font-bold hover:bg-emerald-700 disabled:opacity-60"
+                disabled={sendingOffer}
+              >
+                {sendingOffer
+                  ? t('admissions.viewApplication.sendingOffer', 'Sending…')
+                  : t('admissions.viewApplication.confirmSendOffer', 'Send')}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Edit Application Modal */}
       {showEditModal && (
         <EditApplicationModal
@@ -1877,6 +2375,65 @@ export default function ViewApplication() {
           isRTL={isRTL}
           isArabicLayout={isArabicLayout}
         />
+      )}
+
+      {/* Request more documents modal */}
+      {showRequestDocsModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-2xl shadow-xl max-w-lg w-full p-6">
+            <div className={`flex items-start justify-between gap-3 mb-4 ${isArabicLayout ? 'flex-row-reverse' : ''}`}>
+              <div className={alignStart}>
+                <h3 className="text-lg font-bold text-gray-900">
+                  {t('admissions.viewApplication.detail.requestMoreDocs', 'Request more documents')}
+                </h3>
+                <p className="text-sm text-gray-600 mt-1">
+                  {t(
+                    'admissions.viewApplication.detail.requestMoreDocsHint',
+                    'Type what documents you need from the applicant. This message will be emailed to the applicant.'
+                  )}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowRequestDocsModal(false)}
+                className="p-2 rounded-lg hover:bg-gray-100"
+                aria-label="Close"
+              >
+                <X className="w-5 h-5 text-gray-600" />
+              </button>
+            </div>
+
+            <textarea
+              value={requestDocsMessage}
+              onChange={(e) => setRequestDocsMessage(e.target.value)}
+              className={`w-full min-h-[120px] px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent ${alignStart}`}
+              placeholder={t(
+                'admissions.viewApplication.detail.requestMoreDocsPlaceholder',
+                'Example: Please upload a clearer transcript scan (all pages) and your high school certificate.'
+              )}
+            />
+
+            <div className={`flex items-center justify-end gap-3 mt-5 ${isArabicLayout ? 'flex-row-reverse' : ''}`}>
+              <button
+                type="button"
+                onClick={() => setShowRequestDocsModal(false)}
+                className="px-4 py-2 border border-gray-300 rounded-lg font-semibold text-gray-700 hover:bg-gray-50"
+              >
+                {t('common.cancel', 'Cancel')}
+              </button>
+              <button
+                type="button"
+                onClick={handleRequestMoreDocuments}
+                disabled={requestDocsSending || requestDocsMessage.trim().length === 0}
+                className="px-4 py-2 bg-yellow-600 text-white rounded-lg font-semibold hover:bg-yellow-700 disabled:opacity-50"
+              >
+                {requestDocsSending
+                  ? t('admissions.viewApplication.detail.sending', 'Sending…')
+                  : t('admissions.viewApplication.detail.sendRequest', 'Send request')}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -2047,6 +2604,200 @@ export default function ViewApplication() {
               )}
             </div>
           </div>
+
+          {/* Documents (uploads + verification) */}
+          <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6">
+            <div className={`flex items-center justify-between gap-3 mb-6 ${isArabicLayout ? 'flex-row-reverse' : ''}`}>
+              <div className={`flex items-center gap-2 ${isArabicLayout ? 'flex-row-reverse' : ''}`}>
+                <Shield className="w-5 h-5 text-gray-600 shrink-0" />
+                <h2 className={`text-xl font-bold text-gray-900 ${alignStart}`}>
+                  {t('admissions.viewApplication.detail.documents', 'Documents')}
+                </h2>
+              </div>
+              <div className={`flex items-center gap-2 ${isArabicLayout ? 'flex-row-reverse' : ''}`}>
+                <button
+                  type="button"
+                  onClick={openReceiveFeeModal}
+                  disabled={!canReceiveRegistrationFee || receivingFee}
+                  className="px-4 py-2 bg-amber-600 text-white rounded-lg font-semibold hover:bg-amber-700 transition-colors disabled:opacity-50"
+                >
+                  {t('admissions.viewApplication.receiveRegistrationFee', 'Receive registration fee')}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowRequestDocsModal(true)}
+                  className="px-4 py-2 bg-yellow-600 text-white rounded-lg font-semibold hover:bg-yellow-700 transition-colors"
+                >
+                  {t('admissions.viewApplication.detail.requestMoreDocs', 'Request more documents')}
+                </button>
+              </div>
+            </div>
+
+            {loadingDocuments ? (
+              <div className="flex justify-center py-8">
+                <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-primary-600" />
+              </div>
+            ) : (
+              <>
+                {applicationDocuments.length === 0 ? (
+                  <p className={`text-sm text-gray-600 ${alignStart}`}>
+                    {t('admissions.viewApplication.detail.noDocuments', 'No documents uploaded yet.')}
+                  </p>
+                ) : (
+                  <ul className="divide-y divide-gray-200">
+                    {applicationDocuments.map((doc) => {
+                      const url = docPublicUrl(doc.file_path)
+                      const verified = !!doc.verified_at
+                      return (
+                        <li key={doc.id} className={`py-4 flex items-start justify-between gap-4 ${isArabicLayout ? 'flex-row-reverse' : ''}`}>
+                          <div className="min-w-0">
+                            <div className={`flex items-center gap-2 ${isArabicLayout ? 'flex-row-reverse' : ''}`}>
+                              <span className="font-semibold text-gray-900 text-sm">{doc.document_type}</span>
+                              {verified ? (
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 text-xs font-bold">
+                                  <CheckCircle className="w-3.5 h-3.5" />
+                                  {t('admissions.viewApplication.detail.verified', 'Verified')}
+                                </span>
+                              ) : (
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-100 text-amber-900 text-xs font-bold">
+                                  <Clock className="w-3.5 h-3.5" />
+                                  {t('admissions.viewApplication.detail.pendingVerification', 'Pending')}
+                                </span>
+                              )}
+                            </div>
+                            <div className="text-xs text-gray-600 mt-1 break-all">
+                              {doc.file_name || doc.file_path}
+                            </div>
+                            <div className="text-xs text-gray-500 mt-1">
+                              {doc.uploaded_at ? new Date(doc.uploaded_at).toLocaleString(isArabicLayout ? 'ar' : undefined) : ''}
+                            </div>
+                          </div>
+                          <div className={`flex items-center gap-2 shrink-0 ${isArabicLayout ? 'flex-row-reverse' : ''}`}>
+                            {url && (
+                              <a
+                                href={url}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="px-3 py-2 border border-gray-200 rounded-lg text-sm font-semibold text-gray-700 hover:bg-gray-50 inline-flex items-center gap-2 no-underline"
+                              >
+                                <ArrowDown className="w-4 h-4" />
+                                {t('admissions.viewApplication.detail.open', 'Open')}
+                              </a>
+                            )}
+                            {!verified && (
+                              <button
+                                type="button"
+                                onClick={() => handleVerifyDocument(doc.id)}
+                                disabled={verifyingDocId === doc.id}
+                                className="px-3 py-2 bg-emerald-600 text-white rounded-lg text-sm font-semibold hover:bg-emerald-700 disabled:opacity-50"
+                              >
+                                {verifyingDocId === doc.id
+                                  ? t('admissions.viewApplication.detail.verifying', 'Verifying…')
+                                  : t('admissions.viewApplication.detail.verify', 'Verify')}
+                              </button>
+                            )}
+                          </div>
+                        </li>
+                      )
+                    })}
+                  </ul>
+                )}
+
+                {documentRequests.filter((r) => r.status === 'open').length > 0 && (
+                  <div className="mt-6 rounded-xl border border-amber-200 bg-amber-50 p-4">
+                    <div className={`font-bold text-amber-950 mb-2 ${alignStart}`}>
+                      {t('admissions.viewApplication.detail.openRequests', 'Open requests')}
+                    </div>
+                    <ul className="space-y-2">
+                      {documentRequests
+                        .filter((r) => r.status === 'open')
+                        .slice(0, 3)
+                        .map((r) => (
+                          <li key={r.id} className={`text-sm text-amber-950 ${alignStart}`}>
+                            <span className="font-mono text-xs text-amber-900/80 me-2">#{r.id}</span>
+                            {r.message}
+                          </li>
+                        ))}
+                    </ul>
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+
+          {showReceiveFeeModal && (
+            <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
+              <div className="bg-white rounded-2xl shadow-xl max-w-lg w-full p-6">
+                <div className={`flex items-start justify-between gap-3 mb-4 ${isArabicLayout ? 'flex-row-reverse' : ''}`}>
+                  <div className={alignStart}>
+                    <h3 className="text-lg font-bold text-gray-900">
+                      {t('admissions.viewApplication.receiveRegistrationFee', 'Receive registration fee')}
+                    </h3>
+                    <p className="text-sm text-gray-600 mt-1">
+                      {t(
+                        'admissions.viewApplication.receiveRegistrationFeeHint',
+                        'After documents are verified, enable registration fee payment for the applicant. This will move the application to Payment Pending (APPN) so the applicant can pay from their portal.'
+                      )}
+                    </p>
+                  </div>
+                  <button type="button" onClick={() => setShowReceiveFeeModal(false)} className="p-2 rounded-lg hover:bg-gray-100">
+                    <X className="w-5 h-5 text-gray-600" />
+                  </button>
+                </div>
+
+                <div className="space-y-4">
+                  <div>
+                    <label className="block text-sm font-semibold text-gray-700 mb-2">
+                      {t('admissions.viewApplication.feeAmount', 'Fee amount')}
+                    </label>
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={receiveFeeAmount}
+                      onChange={(e) => setReceiveFeeAmount(e.target.value)}
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-semibold text-gray-700 mb-2">
+                      {t('admissions.viewApplication.paymentMethod', 'Payment method')}
+                    </label>
+                    <select
+                      value={receiveFeeMethod}
+                      onChange={(e) => setReceiveFeeMethod(e.target.value)}
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg"
+                    >
+                      <option value="cash">{t('payments.methodCash', 'Cash')}</option>
+                      <option value="bank_transfer">{t('payments.methodBank', 'Bank transfer')}</option>
+                      <option value="online_payment">{t('payments.methodOnline', 'Online payment')}</option>
+                      <option value="check">{t('payments.methodCheck', 'Check')}</option>
+                      <option value="other">{t('payments.methodOther', 'Other')}</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div className={`mt-6 flex items-center ${isArabicLayout ? 'flex-row-reverse' : ''} justify-end gap-2`}>
+                  <button
+                    type="button"
+                    onClick={() => setShowReceiveFeeModal(false)}
+                    className="px-4 py-2 rounded-lg border border-gray-300 bg-white hover:bg-gray-50"
+                    disabled={receivingFee}
+                  >
+                    {t('common.cancel', 'Cancel')}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleReceiveRegistrationFee}
+                    className="px-4 py-2 rounded-lg bg-amber-600 text-white font-bold hover:bg-amber-700 disabled:opacity-60"
+                    disabled={receivingFee}
+                  >
+                    {receivingFee ? t('admissions.viewApplication.receiving', 'Saving…') : t('common.save', 'Save')}
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* Emergency Contact */}
           {application?.emergency_contact_name && (

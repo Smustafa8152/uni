@@ -1,21 +1,11 @@
-import { useState, useEffect } from 'react'
+import { useMemo, useState, useEffect } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { useLanguage } from '../../contexts/LanguageContext'
 import { useAuth } from '../../contexts/AuthContext'
 import { getLocalizedName } from '../../utils/localizedName'
 import { supabase } from '../../lib/supabase'
-import {
-  AlertTriangle,
-  CreditCard,
-  FileText,
-  Calendar,
-  GraduationCap,
-  PenLine,
-  ClipboardList,
-  GraduationCap as AdvisingIcon,
-  HelpCircle,
-} from 'lucide-react'
+import { AlertTriangle, CreditCard, Calendar, GraduationCap, PenLine, Bell, Search, Receipt, GitBranch, HelpCircle, ClipboardList } from 'lucide-react'
 
 const STUDENT_PORTAL_BG = '#1a3a6b'
 
@@ -49,7 +39,7 @@ export default function StudentDashboard() {
       setLoading(true)
       const { data: studentData, error: studentErr } = await supabase
         .from('students')
-        .select('id, student_id, name_en, name_ar, first_name, last_name, gpa, college_id, major_id, colleges(id, name_en, name_ar), majors(id, name_en, name_ar)')
+        .select('id, student_id, name_en, name_ar, first_name, last_name, gpa, college_id, major_id, financial_hold_reason_code, financial_milestone_code, colleges(id, name_en, name_ar), majors(id, name_en, name_ar)')
         .eq('email', user.email)
         .eq('status', 'active')
         .single()
@@ -61,7 +51,7 @@ export default function StudentDashboard() {
 
       const { data: invData } = await supabase
         .from('invoices')
-        .select('id, total_amount, paid_amount, pending_amount, status, invoice_type')
+        .select('id, invoice_number, total_amount, paid_amount, pending_amount, status, invoice_type, due_date, invoice_date')
         .eq('student_id', studentData.id)
       setInvoices(invData || [])
 
@@ -140,11 +130,54 @@ export default function StudentDashboard() {
   }
 
   const balanceDue = invoices.reduce((sum, inv) => sum + parseFloat(inv.pending_amount || 0), 0)
-  const hasFinancialHold = balanceDue > 0
+  const amountPaid = invoices.reduce((sum, inv) => sum + parseFloat(inv.paid_amount || 0), 0)
+  const hasFinancialHold = balanceDue > 0 || !!student?.financial_hold_reason_code
   const dayNum = new Date().getDay()
   const dayName = language === 'ar' ? DAY_NAMES_AR[DAYS[dayNum]] : DAY_NAMES_EN[DAYS[dayNum]]
   // Prefer GPA computed from enrollment grades; fallback to students.gpa
   const displayGpa = computedGpa != null ? computedGpa : (student?.gpa != null ? Number(student.gpa) : 0)
+
+  const isArabic = isRTL || language === 'ar'
+  const tx = (ar, en) => (isArabic ? ar : en)
+
+  const activeHoldCount = hasFinancialHold ? 1 : 0
+  const registeredCourses = enrollments.filter((e) => String(e.status || '').toLowerCase() === 'enrolled').length
+  const waitlistedCourses = enrollments.filter((e) => String(e.status || '').toLowerCase() === 'waitlisted').length
+  const registeredHours = currentSemesterCredits || 0
+  const maxHoursThisTerm = 21
+  const daysRemaining = useMemo(() => {
+    const end = activeSemester?.end_date || null
+    if (!end) return null
+    const diff = Math.ceil((new Date(end).getTime() - Date.now()) / (1000 * 60 * 60 * 24))
+    return Number.isFinite(diff) ? Math.max(0, diff) : null
+  }, [activeSemester?.end_date])
+
+  const registrationWindowStatus = useMemo(() => {
+    const st = String(activeSemester?.status || '').toLowerCase()
+    if (st === 'registration_open') return { label: tx('مفتوحة', 'Open'), color: 'bg-emerald-50 text-emerald-800 border-emerald-200' }
+    if (st === 'active') return { label: tx('نشطة', 'Active'), color: 'bg-blue-50 text-blue-800 border-blue-200' }
+    return { label: tx('غير متوفر', 'N/A'), color: 'bg-gray-50 text-gray-700 border-gray-200' }
+  }, [activeSemester?.status, isArabic])
+
+  const financialDueDate = useMemo(() => {
+    const due = (invoices || []).map((i) => i?.due_date || i?.invoice_date).filter(Boolean).sort().at(0)
+    return due ? new Date(due).toLocaleDateString(isArabic ? 'ar' : undefined) : null
+  }, [invoices, isArabic])
+
+  const initials = useMemo(() => {
+    const name = (isArabic ? (student?.name_ar || '') : (student?.name_en || '')) || ''
+    const s = name.trim()
+    if (s) return s[0]
+    const email = user?.email || ''
+    return email ? email[0].toUpperCase() : 'S'
+  }, [student?.name_ar, student?.name_en, user?.email, isArabic])
+
+  const displayName = useMemo(() => {
+    const fallback = user?.email?.split('@')[0] || '—'
+    const ar = student?.name_ar || null
+    const en = student?.name_en || null
+    return (isArabic ? (ar || en) : (en || ar)) || fallback
+  }, [student?.name_ar, student?.name_en, user?.email, isArabic])
 
   if (loading && !student) {
     return (
@@ -163,223 +196,342 @@ export default function StudentDashboard() {
   }
 
   return (
-    <div className={`space-y-6 ${isRTL ? 'text-right' : 'text-left'}`}>
-      {/* Financial status banner */}
-      {hasFinancialHold && (
-        <div className="rounded-2xl text-white p-6 flex flex-col sm:flex-row sm:items-center gap-4" style={{ backgroundColor: STUDENT_PORTAL_BG }}>
-          <div className="flex-1">
-            <h3 className="font-bold text-lg mb-1">{t('studentPortal.nextRequiredProcedure', 'THE NEXT REQUIRED PROCEDURE')}</h3>
-            <p className="text-slate-200">{t('studentPortal.financialCommentSuspended', 'You have a financial comment — registration is suspended')}</p>
-            <p className="text-sm text-slate-300 mt-2">
-              {t('studentPortal.payRequiredFees', 'The required fees ({amount}) must be paid before registration for the courses can be completed.', { amount: `${balanceDue.toFixed(2)} SAR` })}
-            </p>
+    <div className={`space-y-6 ${isRTL ? 'text-right' : 'text-left'}`} dir={isArabic ? 'rtl' : 'ltr'}>
+      {/* Breadcrumb */}
+      <nav className="flex flex-wrap items-center gap-2 text-sm text-slate-500">
+        <Link to="/" className="hover:text-slate-900 no-underline">
+          {tx('الرئيسية', 'Home')}
+        </Link>
+        <span className="text-slate-300">/</span>
+        <span className="text-slate-700 font-semibold">{tx('بوابة الطالب', 'Student portal')}</span>
+      </nav>
+
+      {/* Page header */}
+      <div className="flex items-start justify-between gap-4 flex-wrap">
+        <div>
+          <h1 className="text-2xl font-extrabold" style={{ color: STUDENT_PORTAL_BG }}>
+            {tx('لوحة التحكم', 'Dashboard')}
+          </h1>
+          <p className="text-sm text-slate-500">{tx('نظرة عامة على وضعك الأكاديمي والمالي لهذا الفصل.', 'Overview of your academic and financial status this term.')}</p>
+        </div>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            className="h-9 w-9 rounded-full border border-slate-200 bg-white flex items-center justify-center"
+            title={tx('بحث', 'Search')}
+            onClick={() => navigate('/student/coming-soon')}
+          >
+            <Search className="w-4 h-4 text-slate-700" />
+          </button>
+          <button
+            type="button"
+            className="relative h-9 w-9 rounded-full border border-slate-200 bg-white flex items-center justify-center"
+            title={tx('الإشعارات', 'Notifications')}
+            onClick={() => navigate('/student/coming-soon')}
+          >
+            <Bell className="w-4 h-4 text-slate-700" />
+            {activeHoldCount > 0 && <span className="absolute top-1 right-1 h-2 w-2 rounded-full bg-red-600" />}
+          </button>
+          <div className="flex items-center gap-2 text-sm text-slate-600">
+            <div className="h-9 w-9 rounded-full flex items-center justify-center font-bold text-white" style={{ backgroundColor: STUDENT_PORTAL_BG }}>
+              {initials}
+            </div>
+            <span className="font-semibold text-slate-800">{displayName}</span>
           </div>
-          <div className="flex items-center gap-2 flex-shrink-0">
-            <AlertTriangle className="w-8 h-8 text-amber-400 flex-shrink-0" />
+        </div>
+      </div>
+
+      {/* Next Action Card */}
+      {hasFinancialHold && (
+        <div
+          className={`rounded-2xl p-6 text-white flex items-start justify-between gap-4 flex-wrap`}
+          style={{ background: `linear-gradient(135deg, ${STUDENT_PORTAL_BG} 0%, #2a5298 100%)` }}
+        >
+          <div className="flex items-start gap-4">
+            <div className="text-4xl leading-none">⚠️</div>
+            <div className="min-w-0">
+              <div className="text-xs font-extrabold tracking-wider opacity-80">{tx('الإجراء التالي المطلوب', 'Next required action')}</div>
+              <div className="text-xl font-extrabold mt-1">{tx('لديك تعليق مالي — التسجيل موقوف', 'Financial hold — registration suspended')}</div>
+              <div className="text-sm opacity-90 mt-1">
+                {tx(
+                  `يجب سداد الرسوم المستحقة (${balanceDue.toFixed(2)} ر.س) قبل التمكن من التسجيل في المقررات.`,
+                  `Please pay outstanding fees (${balanceDue.toFixed(2)} SAR) before course registration is allowed.`
+                )}
+              </div>
+            </div>
+          </div>
+          <div className="flex flex-col gap-2">
             <button
+              type="button"
               onClick={() => navigate('/student/payments')}
-              className="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-slate-900 font-medium rounded-lg flex items-center gap-2"
+              className="px-5 py-3 rounded-lg font-extrabold flex items-center justify-center gap-2"
+              style={{ backgroundColor: '#c8a84b', color: STUDENT_PORTAL_BG }}
             >
               <CreditCard className="w-4 h-4" />
-              {t('studentPortal.payNow', 'Pay now')}
+              {tx('ادفع الآن', 'Pay now')}
             </button>
             <button
+              type="button"
               onClick={() => navigate('/student/payments')}
-              className="px-4 py-2 border border-white/30 hover:bg-white/10 rounded-lg"
+              className="px-5 py-2 rounded-lg border border-white/30 bg-white/10 hover:bg-white/15"
             >
-              {t('studentPortal.viewComments', 'View comments')}
+              {tx('عرض التعليقات', 'View holds')}
             </button>
           </div>
         </div>
       )}
 
-      {/* KPI cards — order: Active comments, Completed hours, Balance due, Cumulative GPA, Recorded hours */}
-      <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
-        <div className="bg-white rounded-xl shadow-md border-t-4 border-red-500 p-4">
-          <p className="text-xs font-semibold text-slate-500 uppercase">{t('studentPortal.activeComments', 'Active comments')}</p>
-          <p className="text-2xl font-bold text-slate-900 mt-1">{hasFinancialHold ? 1 : 0}</p>
-          <p className="text-xs text-slate-500">{hasFinancialHold ? t('studentPortal.financialComment', 'Financial comment') : '—'}</p>
+      {/* Stats row */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
+        <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-4 border-t-4" style={{ borderTopColor: '#c8a84b' }}>
+          <div className="text-[11px] font-extrabold text-slate-500 uppercase tracking-wide">{tx('الساعات المسجّلة', 'Registered hours')}</div>
+          <div className="text-3xl font-extrabold mt-1" style={{ color: STUDENT_PORTAL_BG }}>{registeredHours}</div>
+          <div className="text-xs text-slate-500">{tx(`من ${maxHoursThisTerm} ساعة`, `of ${maxHoursThisTerm} hours`)}</div>
         </div>
-        <div className="bg-white rounded-xl shadow-md border-t-4 border-blue-500 p-4">
-          <p className="text-xs font-semibold text-slate-500 uppercase">{t('studentPortal.completedHours', 'Completed hours')}</p>
-          <p className="text-2xl font-bold text-slate-900 mt-1">{completedCredits}</p>
-          <p className="text-xs text-slate-500">{t('studentPortal.fromHours', 'From {total} hours', { total: totalCreditsRequired })}</p>
+        <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-4 border-t-4" style={{ borderTopColor: '#1a7a4a' }}>
+          <div className="text-[11px] font-extrabold text-slate-500 uppercase tracking-wide">{tx('المعدل التراكمي', 'Cumulative GPA')}</div>
+          <div className="text-3xl font-extrabold mt-1" style={{ color: STUDENT_PORTAL_BG }}>{displayGpa.toFixed(2)}</div>
+          <div className="text-xs text-slate-500">{tx('من 4.00', 'of 4.00')}</div>
         </div>
-        <div className="bg-white rounded-xl shadow-md border-t-4 border-amber-500 p-4">
-          <p className="text-xs font-semibold text-slate-500 uppercase">{t('studentPortal.balanceDue', 'Balance due')}</p>
-          <p className="text-2xl font-bold text-slate-900 mt-1">{balanceDue.toFixed(0)}</p>
-          <p className="text-xs text-slate-500">{t('studentPortal.saudiRiyal', 'Saudi Riyal')}</p>
+        <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-4 border-t-4" style={{ borderTopColor: '#b45309' }}>
+          <div className="text-[11px] font-extrabold text-slate-500 uppercase tracking-wide">{tx('الرصيد المستحق', 'Balance due')}</div>
+          <div className="text-3xl font-extrabold mt-1" style={{ color: STUDENT_PORTAL_BG }}>{balanceDue.toFixed(0)}</div>
+          <div className="text-xs text-slate-500">{tx('ريال سعودي', 'SAR')}</div>
         </div>
-        <div className="bg-white rounded-xl shadow-md border-t-4 border-green-500 p-4">
-          <p className="text-xs font-semibold text-slate-500 uppercase">{t('studentPortal.cumulativeGpa', 'Cumulative GPA')}</p>
-          <p className="text-2xl font-bold text-slate-900 mt-1">{displayGpa.toFixed(2)}</p>
-          <p className="text-xs text-slate-500">{t('studentPortal.from4', 'From 4.00')}</p>
+        <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-4 border-t-4" style={{ borderTopColor: '#1d4ed8' }}>
+          <div className="text-[11px] font-extrabold text-slate-500 uppercase tracking-wide">{tx('الساعات المكتملة', 'Completed hours')}</div>
+          <div className="text-3xl font-extrabold mt-1" style={{ color: STUDENT_PORTAL_BG }}>{completedCredits}</div>
+          <div className="text-xs text-slate-500">{tx(`من ${totalCreditsRequired} ساعة`, `of ${totalCreditsRequired} hours`)}</div>
         </div>
-        <div className="bg-white rounded-xl shadow-md border-t-4 border-sky-500 p-4">
-          <p className="text-xs font-semibold text-slate-500 uppercase">{t('studentPortal.recordedHours', 'Recorded hours')}</p>
-          <p className="text-2xl font-bold text-slate-900 mt-1">{currentSemesterCredits}</p>
-          <p className="text-xs text-slate-500">{t('studentPortal.fromHours', 'From {total} hours', { total: 21 })}</p>
+        <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-4 border-t-4" style={{ borderTopColor: '#b91c1c' }}>
+          <div className="text-[11px] font-extrabold text-slate-500 uppercase tracking-wide">{tx('تعليقات نشطة', 'Active holds')}</div>
+          <div className="text-3xl font-extrabold mt-1" style={{ color: STUDENT_PORTAL_BG }}>{activeHoldCount}</div>
+          <div className="text-xs text-slate-500">{hasFinancialHold ? tx('تعليق مالي', 'Financial hold') : '—'}</div>
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Academic progress */}
-        <div className="bg-white rounded-2xl shadow-md border border-slate-200 p-6">
-          <h2 className="text-lg font-bold text-slate-900 mb-2">{t('studentPortal.academicProgress', 'Academic progress')}</h2>
-          <p className="text-xs text-slate-500 mb-4">{t('studentPortal.theDetails', 'the details')}</p>
-          <div className="space-y-4">
-            <div>
-              <p className="text-3xl font-bold text-slate-900">{displayGpa.toFixed(2)}</p>
-              <p className="text-sm text-slate-500">{t('studentPortal.cumulativeGpa', 'Cumulative GPA')}</p>
-            </div>
-            <div className="h-2 bg-slate-100 rounded-full overflow-hidden">
-              <div className="h-full bg-green-500 rounded-full" style={{ width: `${Math.min(100, (completedCredits / totalCreditsRequired) * 100)}%` }} />
-            </div>
-            <p className="text-sm text-slate-600">{completedCredits}/{totalCreditsRequired} {t('studentPortal.completedHours', 'Completed hours')}</p>
-            <div className="h-2 bg-amber-100 rounded-full overflow-hidden">
-              <div className="h-full bg-amber-500 rounded-full" style={{ width: `${Math.min(100, (18 / 30) * 100)}%` }} />
-            </div>
-            <p className="text-sm text-slate-600">18/30 {t('studentPortal.collegeRequirements', 'College requirements')}</p>
-            <div className="h-2 bg-slate-200 rounded-full overflow-hidden">
-              <div className="h-full rounded-full" style={{ width: '45%', backgroundColor: STUDENT_PORTAL_BG }} />
-            </div>
-            <p className="text-sm text-slate-600">27/60 {t('studentPortal.mandatorySpecializationRequirements', 'Specialization requirements')}</p>
-          </div>
-          <button
-            onClick={() => navigate('/student/graduation-path')}
-            className="mt-4 w-full py-3 text-white font-medium rounded-xl flex items-center justify-center gap-2"
-            style={{ backgroundColor: STUDENT_PORTAL_BG }}
-          >
-            <GraduationCap className="w-5 h-5" />
-            {t('studentPortal.graduationPathPresentation', 'Graduation Pathway Presentation')}
-          </button>
-        </div>
-
-        {/* Registration window */}
-        <div className="bg-white rounded-2xl shadow-md border border-slate-200 p-6">
-          <h2 className="text-lg font-bold text-slate-900 mb-2">
-            {t('studentPortal.registrationWindow', 'Registration window')} — {activeSemester ? getLocalizedName(activeSemester, language === 'ar') : t('studentPortal.currentSemester', 'Current semester')}
-          </h2>
-          <p className="text-sm text-slate-500 mb-4">
-            {activeSemester?.status === 'registration_open' ? t('studentPortal.openUntil', 'Open until {date}', { date: activeSemester?.end_date || 'March 31, 2026' }) : t('studentPortal.closed', 'Closed')}
-          </p>
-          <div className={`grid grid-cols-3 gap-2 mb-4 ${isRTL ? 'rtl' : ''}`}>
-            <div className="bg-slate-50 rounded-lg p-3 text-center">
-              <p className="text-xl font-bold text-slate-900">{activeSemester?.status === 'registration_open' ? '33' : '0'}</p>
-              <p className="text-xs text-slate-500">{t('studentPortal.daysRemaining', 'One day remaining')}</p>
-            </div>
-            <div className="bg-slate-50 rounded-lg p-3 text-center">
-              <p className="text-xl font-bold text-slate-900">2</p>
-              <p className="text-xs text-slate-500">{t('studentPortal.inWaitingList', 'In the waiting list')}</p>
-            </div>
-            <div className="bg-slate-50 rounded-lg p-3 text-center">
-              <p className="text-xl font-bold text-slate-900">{enrollments.filter(e => e.status === 'enrolled').length || 5}</p>
-              <p className="text-xs text-slate-500">{t('studentPortal.recordedCourses', 'Recorded courses')}</p>
-            </div>
-          </div>
-          <div className="flex gap-2">
-            <button onClick={() => navigate('/student/schedule')} className="flex-1 py-2 border border-slate-300 rounded-lg text-sm font-medium hover:bg-slate-50 flex items-center justify-center gap-1">
-              <Calendar className="w-4 h-4" />
-              {t('studentPortal.classSchedule', 'Class schedule')}
-            </button>
-            <button onClick={() => navigate('/student/enroll')} className="flex-1 py-2 text-white rounded-lg text-sm font-medium flex items-center justify-center gap-1" style={{ backgroundColor: STUDENT_PORTAL_BG }}>
-              <PenLine className="w-4 h-4" />
-              {t('studentPortal.courseRegistration', 'Course registration')}
-            </button>
-          </div>
-        </div>
-
-        {/* Today's schedule */}
-        <div className="bg-white rounded-2xl shadow-md border border-slate-200 p-6">
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-lg font-bold text-slate-900">{t('studentPortal.todaysSchedule', "Today's schedule")} — {dayName}</h2>
-            <button onClick={() => navigate('/student/schedule')} className="text-sm text-slate-600 hover:text-slate-900 font-medium">
-              {t('studentPortal.fullTable', 'Full table')}
-            </button>
-          </div>
-          <div className="space-y-3">
-            {todaySchedule.length === 0 ? (
-              <p className="text-slate-500 text-sm">{t('studentPortal.noClassesToday', 'No classes scheduled for today')}</p>
-            ) : (
-              todaySchedule.slice(0, 3).map((item, i) => (
-                <div key={i} className={`rounded-xl bg-slate-50 border border-slate-100 p-3 flex ${isRTL ? 'flex-row-reverse' : ''} justify-between gap-3`}>
-                  <div className="min-w-0 flex-1">
-                    <p className="font-semibold text-slate-900">{item.code} — {item.name}</p>
-                    <p className="text-sm text-slate-600">{item.location} | {item.instructor}</p>
-                  </div>
-                  <p className={`text-sm text-slate-600 font-medium flex-shrink-0 ${isRTL ? 'text-left' : 'text-right'}`}>{item.start} - {item.end}</p>
+      <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)] gap-6">
+        <div className="space-y-6">
+          {/* Registration window */}
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6">
+            <div className="flex items-start justify-between gap-3 flex-wrap border-b border-slate-200 pb-4 mb-5">
+              <div>
+                <div className="text-lg font-extrabold" style={{ color: STUDENT_PORTAL_BG }}>
+                  {tx('نافذة التسجيل', 'Registration window')}
+                  {activeSemester ? ` — ${getLocalizedName(activeSemester, isArabic) || activeSemester.name_en || ''}` : ''}
                 </div>
-              ))
-            )}
-          </div>
-        </div>
-      </div>
+                <div className="text-sm text-slate-500">
+                  {daysRemaining != null
+                    ? tx(`مفتوحة حتى ${new Date(activeSemester?.end_date).toLocaleDateString('ar')}`, `Open until ${new Date(activeSemester?.end_date).toLocaleDateString()}`)
+                    : tx('مفتوحة حتى —', 'Open until —')}
+                </div>
+              </div>
+              <span className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-extrabold border ${registrationWindowStatus.color}`}>
+                {registrationWindowStatus.label}
+              </span>
+            </div>
 
-      {/* Financial Summary */}
-      <div className="bg-white rounded-2xl shadow-md border border-slate-200 p-6">
-        <h2 className="text-lg font-bold text-slate-900 mb-4">{t('studentPortal.financialSummary', 'Financial Summary')}</h2>
-        <p className="text-sm text-slate-500 mb-3">{t('studentPortal.invoiceDisplay', 'Invoice display')}</p>
-        <div className="space-y-2 mb-4">
-          <div className="flex justify-between items-center">
-            <span className="text-slate-600">{t('studentPortal.due', 'Due')}</span>
-            <span className="font-semibold">{balanceDue.toFixed(0)} SAR</span>
-          </div>
-          <p className="text-xs text-slate-500">{t('studentPortal.deadline', 'Deadline')}: {invoices[0]?.due_date || '2026-03-01'}</p>
-          <div className="flex justify-between items-center pt-2">
-            <span className="text-slate-600">{t('studentPortal.paid', 'paid')}</span>
-            <span className="text-green-600 font-medium">{(invoices.reduce((s, i) => s + parseFloat(i.paid_amount || 0), 0)).toFixed(0)} SAR</span>
-          </div>
-          <p className="text-xs text-slate-500">{t('studentPortal.acceptanceDeposit', 'Acceptance deposit')}</p>
-        </div>
-        <button
-          onClick={() => navigate('/student/payments')}
-          className="w-full py-2.5 text-white font-medium rounded-lg flex items-center justify-center gap-2"
-          style={{ backgroundColor: STUDENT_PORTAL_BG }}
-        >
-          <CreditCard className="w-4 h-4" />
-          {t('studentPortal.payRequiredFeesButton', 'Pay the required fees')}
-        </button>
-      </div>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-sm">
+              <div className="rounded-lg bg-slate-50 border border-slate-200 p-4 text-center">
+                <div className="text-2xl font-extrabold" style={{ color: STUDENT_PORTAL_BG }}>{registeredCourses || 0}</div>
+                <div className="text-slate-500">{tx('مقررات مسجّلة', 'Registered courses')}</div>
+              </div>
+              <div className="rounded-lg bg-slate-50 border border-slate-200 p-4 text-center">
+                <div className="text-2xl font-extrabold text-amber-700">{waitlistedCourses || 0}</div>
+                <div className="text-slate-500">{tx('في قائمة انتظار', 'Waitlisted')}</div>
+              </div>
+              <div className="rounded-lg bg-slate-50 border border-slate-200 p-4 text-center">
+                <div className="text-2xl font-extrabold text-emerald-700">{daysRemaining != null ? daysRemaining : '—'}</div>
+                <div className="text-slate-500">{tx('يوماً متبقياً', 'Days remaining')}</div>
+              </div>
+            </div>
 
-      {/* Latest notifications + Quick links row */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <div className="bg-white rounded-2xl shadow-md border border-slate-200 p-6">
-          <h2 className="text-lg font-bold text-slate-900 mb-2">{t('studentPortal.latestNotifications', 'Latest notifications')}</h2>
-          <p className="text-xs text-slate-500 mb-4">{t('studentPortal.everyone', 'everyone')}</p>
-          <ul className="space-y-3">
-            <li className="flex items-start gap-2 text-sm text-slate-700">
-              <AlertTriangle className="w-4 h-4 text-amber-500 flex-shrink-0 mt-0.5" />
-              {t('studentPortal.activeFinancialComment', 'Active financial comment')} (3 days ago)
-            </li>
-            <li className="flex items-start gap-2 text-sm text-slate-700">
-              <span className="text-green-500">✓</span>
-              {t('studentPortal.registrationWindowOpen', 'The registration window is open')} (5 days ago)
-            </li>
-            <li className="flex items-start gap-2 text-sm text-slate-700">
-              <FileText className="w-4 h-4 text-slate-500 flex-shrink-0 mt-0.5" />
-              {t('studentPortal.registrationLetterUnderReview', 'The registration letter request is under review')} (A week ago)
-            </li>
-          </ul>
+            <div className="flex gap-2 mt-4 flex-wrap">
+              <button
+                type="button"
+                onClick={() => navigate('/student/enroll')}
+                className="inline-flex items-center gap-2 px-4 py-2 rounded-lg font-bold text-white"
+                style={{ backgroundColor: STUDENT_PORTAL_BG }}
+              >
+                <PenLine className="w-4 h-4" />
+                {tx('تسجيل المقررات', 'Course registration')}
+              </button>
+              <button
+                type="button"
+                onClick={() => navigate('/student/schedule')}
+                className="inline-flex items-center gap-2 px-4 py-2 rounded-lg font-bold border border-slate-200 bg-slate-50 text-slate-800"
+              >
+                <Calendar className="w-4 h-4" />
+                {tx('الجدول الدراسي', 'Timetable')}
+              </button>
+            </div>
+          </div>
+
+          {/* Today's schedule */}
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6">
+            <div className="flex items-start justify-between gap-3 mb-5">
+              <div className="text-lg font-extrabold" style={{ color: STUDENT_PORTAL_BG }}>
+                {tx(`جدول اليوم — ${dayName}`, `Today's schedule — ${dayName}`)}
+              </div>
+              <button
+                type="button"
+                className="text-sm font-bold text-slate-600 hover:text-slate-900"
+                onClick={() => navigate('/student/schedule')}
+              >
+                {tx('الجدول الكامل', 'Full timetable')}
+              </button>
+            </div>
+
+            <div className="space-y-3">
+              {todaySchedule.length === 0 ? (
+                <div className="text-sm text-slate-500">{tx('لا توجد محاضرات اليوم', 'No classes scheduled for today')}</div>
+              ) : (
+                todaySchedule.slice(0, 3).map((c, idx) => (
+                  <div
+                    key={`${c.code}-${idx}`}
+                    className="flex items-center gap-4 p-4 rounded-lg border border-slate-200"
+                    style={{
+                      backgroundColor: idx === 0 ? '#dbeafe' : idx === 1 ? '#e6f7ef' : '#fef3c7',
+                      borderRight: isArabic ? `4px solid ${idx === 0 ? '#1d4ed8' : idx === 1 ? '#1a7a4a' : '#b45309'}` : undefined,
+                      borderLeft: !isArabic ? `4px solid ${idx === 0 ? '#1d4ed8' : idx === 1 ? '#1a7a4a' : '#b45309'}` : undefined,
+                    }}
+                  >
+                    <div className="text-xs font-extrabold min-w-[92px]" style={{ color: idx === 0 ? '#1d4ed8' : idx === 1 ? '#1a7a4a' : '#b45309' }}>
+                      {(c.start && c.end) ? `${c.start} - ${c.end}` : '—'}
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <div className="font-extrabold text-sm text-slate-900 truncate">{c.code} — {c.name}</div>
+                      <div className="text-xs text-slate-600 truncate">{c.location} | {c.instructor}</div>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+
+          {/* Financial summary */}
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6">
+            <div className="flex items-start justify-between gap-3 mb-5">
+              <div className="text-lg font-extrabold" style={{ color: STUDENT_PORTAL_BG }}>{tx('الملخص المالي', 'Financial summary')}</div>
+              <button type="button" className="text-sm font-bold text-slate-600 hover:text-slate-900" onClick={() => navigate('/student/payments')}>
+                {tx('عرض الفواتير', 'View invoices')}
+              </button>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="rounded-lg border p-4" style={{ borderColor: '#b91c1c', backgroundColor: '#fee2e2' }}>
+                <div className="text-[11px] font-extrabold uppercase tracking-wide text-red-700">{tx('مستحق الدفع', 'Due')}</div>
+                <div className="text-2xl font-extrabold text-red-700 mt-1">{balanceDue.toFixed(0)} {tx('ر.س', 'SAR')}</div>
+                <div className="text-xs text-red-700 mt-1">{financialDueDate ? tx(`آخر موعد: ${financialDueDate}`, `Deadline: ${financialDueDate}`) : tx('آخر موعد: —', 'Deadline: —')}</div>
+              </div>
+              <div className="rounded-lg border p-4" style={{ borderColor: '#1a7a4a', backgroundColor: '#e6f7ef' }}>
+                <div className="text-[11px] font-extrabold uppercase tracking-wide text-emerald-800">{tx('مدفوع', 'Paid')}</div>
+                <div className="text-2xl font-extrabold text-emerald-800 mt-1">{amountPaid.toFixed(0)} {tx('ر.س', 'SAR')}</div>
+                <div className="text-xs text-emerald-800 mt-1">{tx('ملخص المدفوعات', 'Payment summary')}</div>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => navigate('/student/payments')}
+              className="mt-4 w-full py-3 rounded-lg font-extrabold text-white flex items-center justify-center gap-2"
+              style={{ backgroundColor: '#1a7a4a' }}
+            >
+              <CreditCard className="w-5 h-5" />
+              {tx('ادفع الرسوم المستحقة', 'Pay outstanding fees')}
+            </button>
+          </div>
         </div>
-        <div className="bg-white rounded-2xl shadow-md border border-slate-200 p-6">
-          <h2 className="text-lg font-bold text-slate-900 mb-4">{t('studentPortal.quickLinks', 'Quick links')}</h2>
-          <div className="space-y-2">
-            <Link to="/student/coming-soon" className="flex items-center gap-2 text-slate-700 hover:text-slate-900 text-sm py-1.5">
-              <ClipboardList className="w-4 h-4" />
-              {t('studentPortal.submitServiceRequest', 'Submit a service request')}
-            </Link>
-            <Link to="/student/grades" className="flex items-center gap-2 text-slate-700 hover:text-slate-900 text-sm py-1.5">
-              <FileText className="w-4 h-4" />
-              {t('studentPortal.academicRecord', 'Academic Record')}
-            </Link>
-            <Link to="/student/coming-soon" className="flex items-center gap-2 text-slate-700 hover:text-slate-900 text-sm py-1.5">
-              <AdvisingIcon className="w-4 h-4" />
-              {t('studentPortal.academicAdvisingAppointment', 'Academic Advising Appointment')}
-            </Link>
-            <Link to="/student/coming-soon" className="flex items-center gap-2 text-slate-700 hover:text-slate-900 text-sm py-1.5">
-              <HelpCircle className="w-4 h-4" />
-              {t('studentPortal.helpCenter', 'Help Center')}
-            </Link>
+
+        <div className="space-y-6">
+          {/* Academic progress */}
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6">
+            <div className="flex items-start justify-between gap-3 mb-5">
+              <div className="text-lg font-extrabold" style={{ color: STUDENT_PORTAL_BG }}>{tx('التقدم الأكاديمي', 'Academic progress')}</div>
+              <button type="button" className="text-sm font-bold text-slate-600 hover:text-slate-900" onClick={() => navigate('/student/graduation-path')}>
+                {tx('التفاصيل', 'Details')}
+              </button>
+            </div>
+            <div className="text-center py-2">
+              <div className="text-5xl font-extrabold" style={{ color: STUDENT_PORTAL_BG }}>{displayGpa.toFixed(2)}</div>
+              <div className="text-sm text-slate-500">{tx('المعدل التراكمي', 'Cumulative GPA')}</div>
+            </div>
+            <div className="mt-4 space-y-3">
+              <div className="flex items-center justify-between text-sm">
+                <span className="text-slate-500">{tx('الساعات المكتملة', 'Completed hours')}</span>
+                <span className="font-extrabold text-slate-800">{completedCredits} / {totalCreditsRequired}</span>
+              </div>
+              <div className="h-2 bg-slate-200 rounded-full overflow-hidden">
+                <div className="h-full rounded-full bg-emerald-600" style={{ width: `${Math.min(100, (completedCredits / totalCreditsRequired) * 100)}%` }} />
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => navigate('/student/graduation-path')}
+              className="mt-5 w-full py-3 rounded-lg font-extrabold text-white flex items-center justify-center gap-2"
+              style={{ backgroundColor: STUDENT_PORTAL_BG }}
+            >
+              <GitBranch className="w-5 h-5" />
+              {tx('عرض مسار التخرج', 'View graduation path')}
+            </button>
+          </div>
+
+          {/* Notifications */}
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6">
+            <div className="flex items-start justify-between gap-3 mb-5">
+              <div className="text-lg font-extrabold" style={{ color: STUDENT_PORTAL_BG }}>{tx('آخر الإشعارات', 'Latest notifications')}</div>
+              <button type="button" className="text-sm font-bold text-slate-600 hover:text-slate-900" onClick={() => navigate('/student/coming-soon')}>
+                {tx('الكل', 'All')}
+              </button>
+            </div>
+            <div className="space-y-4">
+              {hasFinancialHold && (
+                <div className="flex items-start gap-3">
+                  <div className="h-9 w-9 rounded-full flex items-center justify-center border-2" style={{ backgroundColor: '#dbeafe', borderColor: '#1d4ed8' }}>⚠️</div>
+                  <div className="pt-1">
+                    <div className="font-extrabold text-sm text-slate-900">{tx('تعليق مالي نشط', 'Active financial hold')}</div>
+                    <div className="text-xs text-slate-500">{tx('حديثاً', 'Recently')}</div>
+                  </div>
+                </div>
+              )}
+              {activeSemester && (
+                <div className="flex items-start gap-3">
+                  <div className="h-9 w-9 rounded-full flex items-center justify-center border-2" style={{ backgroundColor: '#e6f7ef', borderColor: '#1a7a4a' }}>✓</div>
+                  <div className="pt-1">
+                    <div className="font-extrabold text-sm text-slate-900">{tx('نافذة التسجيل مفتوحة', 'Registration window open')}</div>
+                    <div className="text-xs text-slate-500">{tx('هذا الفصل', 'This term')}</div>
+                  </div>
+                </div>
+              )}
+              <div className="flex items-start gap-3">
+                <div className="h-9 w-9 rounded-full flex items-center justify-center border-2 bg-slate-50 border-slate-200">📋</div>
+                <div className="pt-1">
+                  <div className="font-extrabold text-sm text-slate-900">{tx('طلب خدمة قيد المراجعة', 'Service request in review')}</div>
+                  <div className="text-xs text-slate-500">{tx('منذ أسبوع', '1 week ago')}</div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Quick links */}
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6">
+            <div className="text-lg font-extrabold mb-4" style={{ color: STUDENT_PORTAL_BG }}>{tx('روابط سريعة', 'Quick links')}</div>
+            <div className="space-y-2">
+              <button type="button" onClick={() => navigate('/student/coming-soon')} className="w-full px-4 py-2 rounded-lg border border-slate-200 bg-slate-50 font-bold text-slate-800 flex items-center justify-center gap-2">
+                <ClipboardList className="w-4 h-4" />
+                {tx('تقديم طلب خدمة', 'Submit service request')}
+              </button>
+              <button type="button" onClick={() => navigate('/student/grades')} className="w-full px-4 py-2 rounded-lg border border-slate-200 bg-slate-50 font-bold text-slate-800 flex items-center justify-center gap-2">
+                <Receipt className="w-4 h-4" />
+                {tx('السجل الأكاديمي', 'Transcript')}
+              </button>
+              <button type="button" onClick={() => navigate('/student/coming-soon')} className="w-full px-4 py-2 rounded-lg border border-slate-200 bg-slate-50 font-bold text-slate-800 flex items-center justify-center gap-2">
+                <GraduationCap className="w-4 h-4" />
+                {tx('موعد إرشاد أكاديمي', 'Academic advising')}
+              </button>
+              <button type="button" onClick={() => navigate('/student/coming-soon')} className="w-full px-4 py-2 rounded-lg border border-slate-200 bg-slate-50 font-bold text-slate-800 flex items-center justify-center gap-2">
+                <HelpCircle className="w-4 h-4" />
+                {tx('مركز المساعدة', 'Help center')}
+              </button>
+            </div>
           </div>
         </div>
       </div>

@@ -28,41 +28,7 @@ export default function ApplicantRegister() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
 
-  // After clicking the email magic link, PKCE completes in AuthContext; resume at password step only then.
-  useEffect(() => {
-    let pkcePending = false
-    try {
-      pkcePending = sessionStorage.getItem('ums_auth_pkce_exchange') === '1'
-    } catch (_) {
-      return
-    }
-    if (!pkcePending) return
-    if (!user?.email) return
-    if (userRole === 'applicant') {
-      try {
-        sessionStorage.removeItem('ums_auth_pkce_exchange')
-      } catch (_) {
-        /* ignore */
-      }
-      return
-    }
-    if (userRole != null && userRole !== 'applicant') {
-      try {
-        sessionStorage.removeItem('ums_auth_pkce_exchange')
-      } catch (_) {
-        /* ignore */
-      }
-      return
-    }
-    if (step !== 1) return
-    try {
-      sessionStorage.removeItem('ums_auth_pkce_exchange')
-    } catch (_) {
-      /* ignore */
-    }
-    setEmail(user.email.trim().toLowerCase())
-    setStep(3)
-  }, [user, userRole, step])
+  // OTP-only flow: we do not rely on magic-link/PKCE redirects.
 
   const sendOtp = async (e) => {
     e.preventDefault()
@@ -74,13 +40,10 @@ export default function ApplicantRegister() {
     }
     setLoading(true)
     try {
-      const origin = typeof window !== 'undefined' ? window.location.origin : ''
       const { error: otpErr } = await supabase.auth.signInWithOtp({
         email: em,
         options: {
           shouldCreateUser: true,
-          // Keeps the optional one-time link pointed at registration (PKCE still works if they click it).
-          emailRedirectTo: origin ? `${origin}/register` : undefined,
         },
       })
       if (otpErr) throw otpErr

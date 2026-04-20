@@ -1,82 +1,78 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
-import { useTranslation } from 'react-i18next'
 import { useAuth } from '../contexts/AuthContext'
 import { useLanguage } from '../contexts/LanguageContext'
-import {
-  LayoutDashboard,
-  User,
-  FolderOpen,
-  Lock,
-  BookOpen,
-  BookMarked,
-  PenLine,
-  Hourglass,
-  Calendar,
-  BarChart3,
-  FileText,
-  GitBranch,
-  Receipt,
-  CreditCard,
-  Trophy,
-  Menu,
-  X,
-  Bell,
-  Search,
-  ChevronDown,
-  ClipboardList,
-  GraduationCap,
-  Megaphone,
-  HelpCircle,
-  ScrollText,
-  Home,
-} from 'lucide-react'
+import { ChevronDown, Menu, X } from 'lucide-react'
 
-const STUDENT_PORTAL_BG = '#1a3a6b'
-const STUDENT_PORTAL_HOVER = '#254a7a'
-const STUDENT_PORTAL_BORDER = 'rgba(255,255,255,0.1)'
+const UI = {
+  p: '#1a3a6b',
+  pl: '#2a5298',
+  acc: '#c8a84b',
+  bg: '#f4f6fb',
+  sur: '#ffffff',
+  bdr: '#dde3ef',
+  muted: '#6b7a99',
+}
 
-const studentNavigation = [
-  { name: 'Control panel', translationKey: 'studentPortal.controlPanel', href: '/dashboard', icon: LayoutDashboard },
-  { name: 'My profile', translationKey: 'studentPortal.myProfile', href: '/student/profile', icon: User },
-  { name: 'Document Center', translationKey: 'studentPortal.documentCenter', href: '/student/coming-soon', icon: FolderOpen },
-  { name: 'Comments and blocking', translationKey: 'studentPortal.commentsBlocking', href: '/student/coming-soon', icon: Lock },
-  { name: 'My courses', translationKey: 'studentPortal.myCourses', href: '/courses', icon: BookMarked },
-  { name: 'Course Guide', translationKey: 'studentPortal.courseGuide', href: '/student/course-guide', icon: BookOpen },
-  { name: 'Course registration', translationKey: 'studentPortal.courseRegistration', href: '/student/enroll', icon: PenLine },
-  { name: 'Waiting list', translationKey: 'studentPortal.waitingList', href: '/student/coming-soon', icon: Hourglass },
-  { name: 'Class schedule', translationKey: 'studentPortal.classSchedule', href: '/student/schedule', icon: Calendar },
-  { name: 'Grades and results', translationKey: 'studentPortal.gradesResults', href: '/student/grades', icon: BarChart3 },
-  { name: 'Academic record', translationKey: 'studentPortal.academicRecord', href: '/student/grades', icon: FileText },
-  { name: 'Graduation Path', translationKey: 'studentPortal.graduationPath', href: '/student/graduation-path', icon: GitBranch },
-  { name: 'Bills and fees', translationKey: 'studentPortal.billsFees', href: '/student/payments', icon: Receipt },
-  { name: 'Electronic payment', translationKey: 'studentPortal.electronicPayment', href: '/student/payments', icon: CreditCard },
-  { name: 'Grants and discounts', translationKey: 'studentPortal.grantsDiscounts', href: '/student/coming-soon', icon: Trophy },
-  { name: 'Order Center', translationKey: 'studentPortal.orderCenter', href: '/student/coming-soon', icon: ClipboardList },
-  { name: 'Academic Advising', translationKey: 'studentPortal.academicAdvising', href: '/student/coming-soon', icon: GraduationCap },
-  { name: 'notifications', translationKey: 'studentPortal.notifications', href: '/student/coming-soon', icon: Bell },
-  { name: 'Advertisements', translationKey: 'studentPortal.advertisements', href: '/student/coming-soon', icon: Megaphone },
-  { name: 'Help Center', translationKey: 'studentPortal.helpCenter', href: '/student/coming-soon', icon: HelpCircle },
-  { name: 'Search', translationKey: 'common.search', href: '/student/coming-soon', icon: Search },
-  { name: 'Activity log', translationKey: 'studentPortal.activityLog', href: '/student/coming-soon', icon: ScrollText },
-]
-
-const STUDENT_NAV_SECTIONS = [
-  { labelKey: 'studentPortal.main', labelFallback: 'Main', items: ['Control panel', 'My profile', 'Document Center', 'Comments and blocking'] },
-  { labelKey: 'studentPortal.academicRegistration', labelFallback: 'Academic Registration', items: ['My courses', 'Course Guide', 'Course registration', 'Waiting list', 'Class schedule'] },
-  { labelKey: 'studentPortal.academicRecordSection', labelFallback: 'Academic Record', items: ['Grades and results', 'Academic record', 'Graduation Path'] },
-  { labelKey: 'studentPortal.financialAffairs', labelFallback: 'Financial Affairs', items: ['Bills and fees', 'Electronic payment', 'Grants and discounts'] },
-  { labelKey: 'studentPortal.studentServices', labelFallback: 'Student Services', items: ['Order Center', 'Academic Advising'] },
-  { labelKey: 'studentPortal.communicationSupport', labelFallback: 'Communication and Support', items: ['notifications', 'Advertisements', 'Help Center', 'Search', 'Activity log'] },
+const NAV = [
+  {
+    label: { ar: 'الرئيسية', en: 'Main' },
+    items: [
+      { href: '/dashboard', label: { ar: 'لوحة التحكم', en: 'Dashboard' }, icon: '🏠' },
+      { href: '/student/profile', label: { ar: 'ملفي الشخصي', en: 'My profile' }, icon: '👤' },
+      { href: '/student/coming-soon', label: { ar: 'مركز الوثائق', en: 'Document center' }, icon: '📁' },
+      { href: '/student/coming-soon', label: { ar: 'التعليقات والحجب', en: 'Holds & blocks' }, icon: '🔒' },
+    ],
+  },
+  {
+    label: { ar: 'التسجيل الأكاديمي', en: 'Academic registration' },
+    items: [
+      { href: '/student/coming-soon', label: { ar: 'دليل المقررات', en: 'Course catalog' }, icon: '📚' },
+      { href: '/student/enroll', label: { ar: 'تسجيل المقررات', en: 'Course registration' }, icon: '✏️' },
+      { href: '/student/coming-soon', label: { ar: 'قائمة الانتظار', en: 'Waitlist' }, icon: '⏳' },
+      { href: '/student/schedule', label: { ar: 'الجدول الدراسي', en: 'Timetable' }, icon: '📅' },
+    ],
+  },
+  {
+    label: { ar: 'السجل الأكاديمي', en: 'Academic record' },
+    items: [
+      { href: '/student/grades', label: { ar: 'الدرجات والنتائج', en: 'Grades & results' }, icon: '📊' },
+      { href: '/student/grades', label: { ar: 'السجل الأكاديمي', en: 'Transcript' }, icon: '📜' },
+      { href: '/student/graduation-path', label: { ar: 'مسار التخرج', en: 'Degree audit' }, icon: '🎯' },
+    ],
+  },
+  {
+    label: { ar: 'الشؤون المالية', en: 'Financial affairs' },
+    items: [
+      { href: '/student/payments', label: { ar: 'الفواتير والرسوم', en: 'Invoices & fees' }, icon: '🧾' },
+      { href: '/student/payments', label: { ar: 'الدفع الإلكتروني', en: 'Online payment' }, icon: '💳' },
+      { href: '/student/coming-soon', label: { ar: 'المنح والخصومات', en: 'Scholarships & discounts' }, icon: '🏆' },
+    ],
+  },
+  {
+    label: { ar: 'الخدمات الطلابية', en: 'Student services' },
+    items: [
+      { href: '/student/coming-soon', label: { ar: 'مركز الطلبات', en: 'Requests center' }, icon: '📋' },
+      { href: '/student/coming-soon', label: { ar: 'الإرشاد الأكاديمي', en: 'Academic advising' }, icon: '🧑‍🏫' },
+    ],
+  },
+  {
+    label: { ar: 'التواصل والدعم', en: 'Support & communication' },
+    items: [
+      { href: '/student/coming-soon', label: { ar: 'الإشعارات', en: 'Notifications' }, icon: '🔔' },
+      { href: '/student/coming-soon', label: { ar: 'الإعلانات', en: 'Announcements' }, icon: '📢' },
+      { href: '/student/coming-soon', label: { ar: 'مركز المساعدة', en: 'Help center' }, icon: '❓' },
+      { href: '/student/coming-soon', label: { ar: 'البحث', en: 'Search' }, icon: '🔍' },
+      { href: '/student/coming-soon', label: { ar: 'سجل النشاط', en: 'Activity log' }, icon: '📜' },
+    ],
+  },
 ]
 
 export default function StudentLayout({ children }) {
-  const { t } = useTranslation()
   const { isRTL, language, changeLanguage } = useLanguage()
   const [sidebarOpen, setSidebarOpen] = useState(false)
-  const [userMenuOpen, setUserMenuOpen] = useState(false)
   const [langMenuOpen, setLangMenuOpen] = useState(false)
-  const { user, userRole, signOut } = useAuth()
+  const { user, signOut } = useAuth()
   const location = useLocation()
   const navigate = useNavigate()
 
@@ -85,171 +81,190 @@ export default function StudentLayout({ children }) {
     navigate('/login/student')
   }
 
-  const handleLanguageChange = (lang) => {
-    changeLanguage(lang)
-    setLangMenuOpen(false)
-  }
-
-  const getBreadcrumb = () => {
+  const pageTitle = useMemo(() => {
     const path = location.pathname
-    if (path === '/dashboard') return t('studentPortal.controlPanel', 'Control panel')
-    if (path.startsWith('/student/profile')) return t('studentPortal.myProfile', 'My profile')
-    if (path.startsWith('/student/schedule')) return t('studentPortal.classSchedule', 'Class schedule')
-    if (path.startsWith('/student/graduation-path')) return t('studentPortal.graduationPath', 'Graduation Path')
-    if (path.startsWith('/student/grades')) return t('studentPortal.gradesResults', 'Grades and results')
-    if (path.startsWith('/student/enroll')) return t('studentPortal.courseRegistration', 'Course registration')
-    if (path.startsWith('/student/course-guide')) return t('studentPortal.courseGuide', 'Course Guide')
-    if (path === '/courses') return t('studentPortal.myCourses', 'My courses')
-    if (path.startsWith('/student/payments')) return t('studentPortal.billsFees', 'Bills and fees')
-    const match = path.match(/\/student\/([^/]+)/)
-    if (match) return studentNavigation.find(n => n.href === path)?.name || match[1]
-    return t('studentPortal.studentPortal', 'Student Portal')
-  }
+    if (path === '/dashboard') return 'لوحة التحكم'
+    if (path.startsWith('/student/profile')) return 'ملفي الشخصي'
+    if (path.startsWith('/student/payments')) return 'الفواتير والرسوم'
+    if (path.startsWith('/student/enroll')) return 'تسجيل المقررات'
+    if (path.startsWith('/student/schedule')) return 'الجدول الدراسي'
+    if (path.startsWith('/student/grades')) return 'الدرجات والنتائج'
+    if (path.startsWith('/student/graduation-path')) return 'مسار التخرج'
+    return 'بوابة الطالب'
+  }, [location.pathname])
+
+  const displayName = useMemo(() => user?.email?.split('@')[0] || '—', [user?.email])
+  const avatarLetter = useMemo(() => (displayName || 'م').charAt(0).toUpperCase(), [displayName])
+  const isArabic = language === 'ar' || isRTL
+  const tx = (val) => (typeof val === 'string' ? val : (isArabic ? val?.ar : val?.en) || val?.ar || val?.en || '')
 
   return (
-    <div className={`min-h-screen bg-slate-100 flex ${isRTL ? 'rtl' : 'ltr'}`}>
-      {/* Mobile sidebar backdrop */}
-      {sidebarOpen && (
-        <div className="fixed inset-0 bg-black/50 z-40 lg:hidden" onClick={() => setSidebarOpen(false)} />
-      )}
+    <div className="min-h-screen" style={{ backgroundColor: UI.bg }} dir={isRTL ? 'rtl' : 'ltr'}>
+      {sidebarOpen && <div className="fixed inset-0 bg-black/50 z-40 lg:hidden" onClick={() => setSidebarOpen(false)} />}
+      {langMenuOpen && <div className="fixed inset-0 z-20" onClick={() => setLangMenuOpen(false)} />}
 
-      {/* Main content: margin for sidebar — left in English (LTR), right in Arabic (RTL) */}
-      <div className={`flex-1 flex flex-col min-w-0 ${isRTL ? 'lg:mr-72' : 'lg:ml-72'}`}>
-        {/* Top header - student portal colour #1a3a6b */}
-        <header className="text-white shadow-md sticky top-0 z-30 flex-shrink-0" style={{ backgroundColor: STUDENT_PORTAL_BG }}>
-          <div className={`flex items-center justify-between h-14 px-4 ${isRTL ? 'flex-row-reverse' : ''}`}>
-            <div className={`flex items-center gap-3 ${isRTL ? 'flex-row-reverse' : ''}`}>
-              <button
-                onClick={() => setSidebarOpen(true)}
-                className="lg:hidden p-2 rounded-lg hover:opacity-90"
-                style={{ backgroundColor: 'transparent' }}
-              >
-                <Menu className="w-5 h-5" />
-              </button>
-              <button
-                onClick={handleSignOut}
-                className="text-slate-200 hover:text-white text-sm"
-              >
-                {t('studentPortal.exit', 'Exit')}
-              </button>
-              <span className="text-slate-400 hidden sm:inline">|</span>
-              <span className="font-medium truncate max-w-[140px] sm:max-w-[200px]">
-                {user?.email?.split('@')[0] || 'Student'}
-              </span>
-              <div className="w-8 h-8 rounded-full bg-amber-500 flex items-center justify-center text-slate-900 font-bold text-sm flex-shrink-0">
-                {(user?.email || 'U').charAt(0).toUpperCase()}
-              </div>
+      {/* Sidebar */}
+      <aside
+        className={`fixed top-0 bottom-0 w-[270px] z-50 overflow-y-auto transition-transform duration-300 lg:translate-x-0 ${
+          isRTL ? 'right-0' : 'left-0'
+        } ${sidebarOpen ? 'translate-x-0' : isRTL ? 'translate-x-full' : '-translate-x-full'}`}
+        style={{ backgroundColor: UI.p }}
+        aria-label="القائمة الجانبية"
+      >
+        <div className="flex flex-col min-h-full">
+          <div className="flex items-center gap-3 px-4 py-4 border-b border-white/10">
+            <img src="/assets/IBU Logo.png" alt="شعار جامعة IBU" className="w-11 h-11 object-contain rounded-lg bg-white p-1" />
+            <div className="leading-tight">
+              <div className="text-white font-extrabold text-sm">جامعة IBU</div>
+              <div className="text-xs font-medium" style={{ color: UI.acc }}>بوابة الطالب</div>
             </div>
-            <div className={`flex items-center gap-2 ${isRTL ? 'flex-row-reverse' : ''}`}>
-              {/* Language switcher */}
-              <div className="relative">
-                <button
-                  onClick={() => setLangMenuOpen(!langMenuOpen)}
-                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg hover:opacity-90 text-slate-200 text-sm font-medium"
-                  style={{ backgroundColor: 'rgba(255,255,255,0.1)' }}
+            <button onClick={() => setSidebarOpen(false)} className="lg:hidden ml-auto text-white/70 hover:text-white">
+              <X className="w-6 h-6" />
+            </button>
+          </div>
+
+          <nav className="px-2 py-3 flex-1">
+            {NAV.map((section) => (
+              <div key={tx(section.label)} className="mb-3">
+                <div className="px-3 pt-3 pb-1 text-[10px] font-extrabold tracking-wider uppercase text-white/35">{tx(section.label)}</div>
+                <ul className="space-y-1">
+                  {section.items.map((item) => {
+                    const isActive = location.pathname === item.href || (item.href !== '/dashboard' && location.pathname.startsWith(item.href))
+                    return (
+                      <li key={`${section.label}-${item.href}-${item.label}`}>
+                        <Link
+                          to={item.href}
+                          onClick={() => setSidebarOpen(false)}
+                          aria-current={isActive ? 'page' : undefined}
+                          className={`flex items-center gap-2 px-3 py-2 rounded-md text-[13.5px] font-semibold transition-colors ${
+                            isActive ? 'bg-[#c8a84b] text-[#1a3a6b]' : 'text-[#cdd8f0] hover:bg-[#2a5298] hover:text-white'
+                          }`}
+                        >
+                          <span className="w-5 text-center text-[15px]">{item.icon}</span>
+                          <span>{tx(item.label)}</span>
+                        </Link>
+                      </li>
+                    )
+                  })}
+                </ul>
+              </div>
+            ))}
+          </nav>
+
+          <div className="mt-auto px-4 py-4 border-t border-white/10 text-white/45 text-xs">
+            <div>
+              <Link to="/" className="text-white/60 hover:text-white text-xs">
+                ⬅ الصفحة الرئيسية
+              </Link>
+            </div>
+            <div className="mt-1">الإصدار 1.0.0</div>
+          </div>
+        </div>
+      </aside>
+
+      {/* Main */}
+      <div className={`${isRTL ? 'lg:mr-[270px]' : 'lg:ml-[270px]'} min-h-screen flex flex-col`}>
+        {/* Topbar */}
+        <header
+          className="sticky top-0 z-30 h-16 flex items-center justify-between px-6 shadow-sm border-b"
+          style={{ backgroundColor: UI.sur, borderColor: UI.bdr }}
+        >
+          <div className="flex items-center gap-3">
+            <button onClick={() => setSidebarOpen(true)} className="lg:hidden p-2 rounded-md border" style={{ borderColor: UI.bdr, backgroundColor: UI.bg }}>
+              <Menu className="w-5 h-5" style={{ color: UI.p }} />
+            </button>
+            <div className="text-[17px] font-extrabold" style={{ color: UI.p }}>{pageTitle}</div>
+          </div>
+
+          <div className="flex items-center gap-3">
+            {/* Language switcher */}
+            <div className="relative z-30">
+              <button
+                type="button"
+                onClick={() => setLangMenuOpen((v) => !v)}
+                className="h-9 px-3 rounded-full border flex items-center gap-2 text-sm font-semibold"
+                style={{ backgroundColor: UI.bg, borderColor: UI.bdr, color: '#1e2a3a' }}
+                aria-label="تغيير اللغة"
+                title="تغيير اللغة"
+              >
+                <span>{language === 'ar' ? 'العربية' : 'English'}</span>
+                <ChevronDown className="w-4 h-4" style={{ color: UI.muted }} />
+              </button>
+              {langMenuOpen && (
+                <div
+                  className={`absolute top-full mt-2 min-w-[140px] rounded-xl border shadow-md overflow-hidden ${
+                    isRTL ? 'right-0' : 'left-0'
+                  }`}
+                  style={{ backgroundColor: UI.sur, borderColor: UI.bdr }}
                 >
-                  <span>{language === 'ar' ? 'العربية' : 'English'}</span>
-                  <ChevronDown className="w-4 h-4" />
-                </button>
-                {langMenuOpen && (
-                  <>
-                    <div className="fixed inset-0 z-10" onClick={() => setLangMenuOpen(false)} />
-                    <div className={`absolute top-full mt-1 py-1 min-w-[120px] rounded-lg shadow-lg z-20 ${isRTL ? 'right-0' : 'left-0'}`} style={{ backgroundColor: STUDENT_PORTAL_HOVER }}>
-                      <button
-                        onClick={() => handleLanguageChange('en')}
-                        className={`w-full flex items-center gap-2 px-4 py-2 text-sm hover:opacity-90 transition-colors ${language === 'en' ? 'text-amber-400 font-medium' : 'text-slate-200'}`}
-                      >
-                        English
-                      </button>
-                      <button
-                        onClick={() => handleLanguageChange('ar')}
-                        className={`w-full flex items-center gap-2 px-4 py-2 text-sm hover:opacity-90 transition-colors ${language === 'ar' ? 'text-amber-400 font-medium' : 'text-slate-200'}`}
-                      >
-                        العربية
-                      </button>
-                    </div>
-                  </>
-                )}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      changeLanguage('ar')
+                      setLangMenuOpen(false)
+                    }}
+                    className={`w-full px-4 py-2.5 text-sm text-right hover:bg-[#f4f6fb] ${
+                      language === 'ar' ? 'font-extrabold text-[#1a3a6b]' : 'font-semibold text-[#1e2a3a]'
+                    }`}
+                  >
+                    العربية
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      changeLanguage('en')
+                      setLangMenuOpen(false)
+                    }}
+                    className={`w-full px-4 py-2.5 text-sm text-right hover:bg-[#f4f6fb] ${
+                      language === 'en' ? 'font-extrabold text-[#1a3a6b]' : 'font-semibold text-[#1e2a3a]'
+                    }`}
+                  >
+                    English
+                  </button>
+                </div>
+              )}
+            </div>
+
+            <Link
+              to="/student/coming-soon"
+              className="h-9 w-9 rounded-full border flex items-center justify-center text-[16px]"
+              style={{ backgroundColor: UI.bg, borderColor: UI.bdr }}
+              aria-label="بحث"
+              title="بحث"
+            >
+              🔍
+            </Link>
+            <Link
+              to="/student/coming-soon"
+              className="h-9 w-9 rounded-full border flex items-center justify-center text-[16px] relative"
+              style={{ backgroundColor: UI.bg, borderColor: UI.bdr }}
+              aria-label="الإشعارات"
+              title="الإشعارات"
+            >
+              🔔<span className="absolute top-1 right-1 h-2 w-2 rounded-full bg-red-600 border-2 border-white" />
+            </Link>
+            <div className="flex items-center gap-2 text-sm" style={{ color: UI.muted }}>
+              <div className="h-9 w-9 rounded-full flex items-center justify-center font-extrabold text-white" style={{ backgroundColor: UI.p }}>
+                {avatarLetter}
               </div>
-              <button className="p-2 rounded-lg hover:opacity-90 relative" title={t('studentPortal.notifications', 'Notifications')}>
-                <Bell className="w-5 h-5" />
+              <span className="font-semibold">{displayName}</span>
+              <button
+                type="button"
+                onClick={handleSignOut}
+                className="px-3 py-1.5 rounded-md border text-sm font-semibold"
+                style={{ backgroundColor: UI.bg, borderColor: UI.bdr, color: '#1e2a3a' }}
+              >
+                خروج
               </button>
-              <button className="p-2 rounded-lg hover:opacity-90" title={t('common.search', 'Search')}>
-                <Search className="w-5 h-5" />
-              </button>
-              <div className="hidden sm:flex items-center gap-1 text-slate-300 text-sm">
-                <span>{getBreadcrumb()}</span>
-                <span className="text-slate-500">/</span>
-                <span>{t('studentPortal.studentPortal', 'Student Portal')}</span>
-                <span className="text-slate-500">/</span>
-                <span>{t('studentPortal.main', 'Main')}</span>
-              </div>
             </div>
           </div>
         </header>
 
-        {/* Page content */}
-        <main className={`flex-1 overflow-y-auto p-4 sm:p-6 ${isRTL ? 'rtl' : 'ltr'}`}>{children}</main>
+        {/* Content */}
+        <main className="flex-1 px-8 py-7" style={{ backgroundColor: UI.bg }}>
+          {children}
+        </main>
       </div>
-
-      {/* Sidebar: #1a3a6b, left in English (LTR), right in Arabic (RTL) */}
-      <aside
-        className={`fixed top-0 bottom-0 w-72 shadow-xl z-50 transform transition-transform duration-300 ease-in-out lg:translate-x-0 ${
-          isRTL ? 'right-0' : 'left-0'
-        } ${sidebarOpen ? 'translate-x-0' : isRTL ? 'translate-x-full' : '-translate-x-full'}`}
-        style={{ backgroundColor: STUDENT_PORTAL_BG }}
-      >
-        <div className="flex flex-col h-full">
-          <div className="flex items-center justify-between h-14 px-4 flex-shrink-0" style={{ borderBottom: `1px solid ${STUDENT_PORTAL_BORDER}` }}>
-            <div className={`flex items-center gap-2 ${isRTL ? 'flex-row-reverse' : ''}`}>
-              <img src="/assets/IBU Logo.png" alt="IBU" className="h-8 w-auto object-contain" />
-              <div className="text-white font-semibold text-sm">
-                <div>{t('studentPortal.ibuUniversity', 'IBU University')}</div>
-                <div className="text-slate-400 text-xs">{t('studentPortal.studentPortal', 'Student Portal')}</div>
-              </div>
-            </div>
-            <button onClick={() => setSidebarOpen(false)} className="lg:hidden text-slate-400 hover:text-white">
-              <X className="w-6 h-6" />
-            </button>
-          </div>
-          <nav className="flex-1 overflow-y-auto py-4 px-3 space-y-6">
-            {STUDENT_NAV_SECTIONS.map((section) => (
-              <div key={section.labelKey}>
-                <p className="text-slate-400 text-xs font-semibold uppercase tracking-wider px-3 mb-2">
-                  {t(section.labelKey, { defaultValue: section.labelFallback })}
-                </p>
-                <div className="space-y-0.5">
-                  {studentNavigation
-                    .filter((n) => section.items.includes(n.name))
-                    .map((item) => {
-                      const isActive = location.pathname === item.href || (item.href !== '/dashboard' && location.pathname.startsWith(item.href))
-                      return (
-                        <Link
-                          key={item.name}
-                          to={item.href}
-                          onClick={() => setSidebarOpen(false)}
-                          className={`flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors ${
-                            isActive ? 'bg-amber-500/20 text-amber-400' : 'text-slate-300 hover:bg-[#254a7a]'
-                          } ${isRTL ? 'flex-row-reverse' : ''}`}
-                        >
-                          <item.icon className="w-5 h-5 flex-shrink-0" />
-                          <span className="text-sm font-medium">{t(item.translationKey, { defaultValue: item.name })}</span>
-                        </Link>
-                      )
-                    })}
-                </div>
-              </div>
-            ))}
-          </nav>
-          <div className="p-3 border-t flex-shrink-0" style={{ borderColor: STUDENT_PORTAL_BORDER }}>
-            <Link to="/dashboard" onClick={() => setSidebarOpen(false)} className={`flex items-center gap-2 px-3 py-2 rounded-lg text-slate-300 hover:text-white text-sm ${isRTL ? 'flex-row-reverse' : ''}`}>
-              <Home className="w-4 h-4" />
-              {t('studentPortal.home', 'Home')}
-            </Link>
-            <p className="text-slate-500 text-xs px-3 pt-2">{t('studentPortal.version', 'Version 1.0.0')}</p>
-          </div>
-        </div>
-      </aside>
     </div>
   )
 }

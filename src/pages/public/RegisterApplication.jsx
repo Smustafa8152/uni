@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { useLanguage } from '../../contexts/LanguageContext'
@@ -198,6 +198,28 @@ export default function RegisterApplication({ portal = false }) {
         .order('name_en')
 
       if (error) throw error
+
+      // Applicant portal: send a submission confirmation email (safe: applicant can only email themselves)
+      if (portal && !formData.submit_as_draft && formData.email) {
+        try {
+          await supabase.functions.invoke('send-admission-notification', {
+            body: {
+              scope: 'college',
+              collegeId: Number(selectedCollegeId),
+              to: String(formData.email).trim(),
+              type: 'submitted',
+              subject: t('track.submittedEmailSubject', 'Thanks for submitting your application'),
+              message: t(
+                'track.submittedEmailBody',
+                'Thank you for submitting your application. We will review it and get back to you soon. You can track your status anytime from your dashboard.'
+              ),
+              application: { id: application.id, application_number: application.application_number },
+            },
+          })
+        } catch (e) {
+          console.warn('Submission email failed:', e?.message || e)
+        }
+      }
       setColleges(data || [])
     } catch (err) {
       console.error('Error fetching colleges:', err)
@@ -212,7 +234,7 @@ export default function RegisterApplication({ portal = false }) {
     try {
       const { data, error } = await supabase
         .from('majors')
-        .select('id, name_en, code, degree_level')
+        .select('id, name_en, name_ar, code, degree_level, validation_rules')
         .in('major_status', MAJOR_STATUS_FOR_APPLICATION_DROPDOWN)
         .or(`college_id.eq.${selectedCollegeId},is_university_wide.eq.true`)
         .order('name_en')
@@ -223,6 +245,26 @@ export default function RegisterApplication({ portal = false }) {
       console.error('Error fetching majors:', err)
     }
   }
+
+  const selectedMajor = useMemo(
+    () => majors.find((m) => String(m.id) === String(formData.major_id)),
+    [majors, formData.major_id]
+  )
+
+  const certificateTypeOptions = useMemo(() => {
+    const allowed = selectedMajor?.validation_rules?.certificate_types_allowed
+    if (!Array.isArray(allowed)) return []
+    return allowed.map((x) => String(x || '').trim()).filter(Boolean)
+  }, [selectedMajor])
+
+  useEffect(() => {
+    if (certificateTypeOptions.length === 0) return
+    if (!formData.certificate_type) return
+    if (!certificateTypeOptions.includes(String(formData.certificate_type).trim())) {
+      setFormData((prev) => ({ ...prev, certificate_type: '' }))
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [certificateTypeOptions.join('|')])
 
   const fetchSemesters = async () => {
     if (!selectedCollegeId) return
@@ -240,6 +282,20 @@ export default function RegisterApplication({ portal = false }) {
     }
   }
 
+  const parseDecimalField = (raw, { scale, min = null, max = null }) => {
+    if (raw == null || String(raw).trim() === '') return { value: null, error: null }
+    const s = String(raw).trim()
+    // Allow only digits + optional decimal point + decimals
+    if (!/^\d+(\.\d+)?$/.test(s)) return { value: null, error: 'Invalid number format' }
+    const n = Number(s)
+    if (!Number.isFinite(n)) return { value: null, error: 'Invalid number' }
+    if (min != null && n < min) return { value: null, error: `Must be at least ${min}` }
+    if (max != null && n > max) return { value: null, error: `Must be at most ${max}` }
+    // Round to DB scale to avoid overflow from long decimals (e.g. 3.333333)
+    const rounded = Number(n.toFixed(scale))
+    return { value: rounded, error: null }
+  }
+
   const validateStep = (step) => {
     switch (step) {
       case 1:
@@ -251,7 +307,26 @@ export default function RegisterApplication({ portal = false }) {
         if (!formData.major_id) {
           return 'Please select a major'
         }
+        {
+          // DB: applications.gpa DECIMAL(3,2) (safe range < 10, we enforce 0-4)
+          const g = parseDecimalField(formData.gpa, { scale: 2, min: 0, max: 4 })
+          if (g.error) return `GPA: ${g.error}`
+        }
         break
+      case 5: {
+        // DB: ielts_score DECIMAL(3,1) — enforce 0.0 to 9.0
+        const i = parseDecimalField(formData.ielts_score, { scale: 1, min: 0, max: 9 })
+        if (i.error) return `IELTS: ${i.error}`
+        break
+      }
+      case 7: {
+        // DB: scholarship_percentage DECIMAL(5,2) — enforce 0-100
+        if (formData.scholarship_request) {
+          const sp = parseDecimalField(formData.scholarship_percentage, { scale: 2, min: 0, max: 100 })
+          if (sp.error) return `Scholarship percentage: ${sp.error}`
+        }
+        break
+      }
     }
     return null
   }
@@ -344,10 +419,12 @@ export default function RegisterApplication({ portal = false }) {
       let legacyStatus = 'pending'
 
       if (!formData.submit_as_draft && formData.major_id) {
+        const gpaParsed = parseDecimalField(formData.gpa, { scale: 2, min: 0, max: 4 }).value
+        const ieltsParsed = parseDecimalField(formData.ielts_score, { scale: 1, min: 0, max: 9 }).value
         validationResult = await validateApplicationAgainstMajor(parseInt(formData.major_id), {
           toefl_score: formData.toefl_score ? parseInt(formData.toefl_score) : null,
-          ielts_score: formData.ielts_score ? parseFloat(formData.ielts_score) : null,
-          gpa: formData.gpa ? parseFloat(formData.gpa) : null,
+          ielts_score: ieltsParsed,
+          gpa: gpaParsed,
           graduation_year: formData.graduation_year ? parseInt(formData.graduation_year) : null,
           certificate_type: formData.certificate_type?.trim() || null,
         })
@@ -357,8 +434,9 @@ export default function RegisterApplication({ portal = false }) {
           triggerCode = 'TRVF'
           legacyStatus = 'rejected'
         } else if (validationResult.requiresFee) {
-          finalStatusCode = 'APPN'
-          triggerCode = 'TRPW'
+          // Fee is required, but payment is only enabled after documents are verified.
+          finalStatusCode = 'RVDV'
+          triggerCode = 'TRVP'
           legacyStatus = 'pending'
         } else {
           finalStatusCode = 'RVQU'
@@ -374,6 +452,9 @@ export default function RegisterApplication({ portal = false }) {
       const emergencyPhone = formData.emergency_contact_phone || formData.emergency_phone || ''
       const scholarshipRequest = formData.scholarship_request || formData.has_scholarship || false
       const gpaValue = formData.gpa || formData.high_school_gpa || ''
+      const gpaParsed = parseDecimalField(gpaValue, { scale: 2, min: 0, max: 4 }).value
+      const ieltsParsed = parseDecimalField(formData.ielts_score, { scale: 1, min: 0, max: 9 }).value
+      const scholarshipParsed = parseDecimalField(formData.scholarship_percentage, { scale: 2, min: 0, max: 100 }).value
 
       // Insert application - only select essential fields to reduce query time
       const { data: application, error } = await supabase
@@ -406,10 +487,10 @@ export default function RegisterApplication({ portal = false }) {
           high_school_name: formData.high_school_name?.trim() || null,
           high_school_country: formData.high_school_country?.trim() || null,
           graduation_year: formData.graduation_year ? parseInt(formData.graduation_year) : null,
-          gpa: gpaValue ? parseFloat(gpaValue) : null,
+          gpa: gpaParsed,
           certificate_type: formData.certificate_type?.trim() || null,
           toefl_score: formData.toefl_score ? parseInt(formData.toefl_score) : null,
-          ielts_score: formData.ielts_score ? parseFloat(formData.ielts_score) : null,
+          ielts_score: ieltsParsed,
           sat_score: formData.sat_score ? parseInt(formData.sat_score) : null,
           gmat_score: formData.gmat_score ? parseInt(formData.gmat_score) : null,
           gre_score: formData.gre_score ? parseInt(formData.gre_score) : null,
@@ -419,7 +500,7 @@ export default function RegisterApplication({ portal = false }) {
           transfer_credits: formData.transfer_credits ? parseInt(formData.transfer_credits) : null,
           personal_statement: formData.personal_statement?.trim() || null,
           scholarship_request: scholarshipRequest,
-          scholarship_percentage: formData.scholarship_percentage ? parseFloat(formData.scholarship_percentage) : null,
+          scholarship_percentage: scholarshipRequest ? scholarshipParsed : null,
           college_id: parseInt(selectedCollegeId),
           status: legacyStatus,
           status_code: finalStatusCode,
@@ -478,18 +559,31 @@ export default function RegisterApplication({ portal = false }) {
               console.error('Document storage upload failed:', key, uploadError)
               continue
             }
-            const { error: insertError } = await supabase.from('application_documents').upsert(
-              {
-                application_id: application.id,
-                document_type: key,
-                file_path: storagePath,
-                file_name: file.name,
-                file_size: file.size,
-                content_type: file.type,
-              },
-              { onConflict: 'application_id,document_type' }
-            )
-            if (insertError) console.error('Application document record failed:', key, insertError)
+            const payload = {
+              application_id: application.id,
+              document_type: key,
+              file_path: storagePath,
+              file_name: file.name,
+              file_size: file.size,
+              content_type: file.type,
+              uploaded_at: new Date().toISOString(),
+            }
+            // Partial unique index is used (core docs only), so PostgREST "on_conflict" upsert is not valid.
+            // Do update-if-exists else insert.
+            const { data: existing, error: exErr } = await supabase
+              .from('application_documents')
+              .select('id')
+              .eq('application_id', application.id)
+              .eq('document_type', key)
+              .order('uploaded_at', { ascending: false })
+              .limit(1)
+              .maybeSingle()
+            if (exErr) throw exErr
+
+            const { error: writeErr } = existing?.id
+              ? await supabase.from('application_documents').update(payload).eq('id', existing.id)
+              : await supabase.from('application_documents').insert(payload)
+            if (writeErr) console.error('Application document record failed:', key, writeErr)
           } catch (docErr) {
             console.error('Document upload failed (applicant can upload on track page):', docErr)
           }
@@ -1327,14 +1421,30 @@ export default function RegisterApplication({ portal = false }) {
                     <label className="block text-sm font-medium text-gray-700 mb-2">
                       Certificate Type
                     </label>
-                    <input
-                      type="text"
-                      name="certificate_type"
-                      value={formData.certificate_type}
-                      onChange={handleChange}
-                      placeholder="e.g., High School Diploma"
-                      className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
-                    />
+                    {certificateTypeOptions.length > 0 ? (
+                      <select
+                        name="certificate_type"
+                        value={formData.certificate_type}
+                        onChange={handleChange}
+                        className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                      >
+                        <option value="">{t('admissions.createApplication.certificateTypePlaceholder', 'Select certificate type')}</option>
+                        {certificateTypeOptions.map((opt) => (
+                          <option key={opt} value={opt}>
+                            {opt}
+                          </option>
+                        ))}
+                      </select>
+                    ) : (
+                      <input
+                        type="text"
+                        name="certificate_type"
+                        value={formData.certificate_type}
+                        onChange={handleChange}
+                        placeholder={t('admissions.createApplication.certificateTypeHint', 'e.g., High School Diploma')}
+                        className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                      />
+                    )}
                   </div>
                 </div>
               </div>

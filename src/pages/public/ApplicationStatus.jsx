@@ -74,6 +74,13 @@ export default function ApplicationStatus() {
   const [student, setStudent] = useState(null)
   const [hasStudentPortalAccess, setHasStudentPortalAccess] = useState(false)
   const [applicationDocuments, setApplicationDocuments] = useState([])
+  const [documentRequests, setDocumentRequests] = useState([])
+  const [applicantRequests, setApplicantRequests] = useState([])
+  const [showApplicantRequestModal, setShowApplicantRequestModal] = useState(false)
+  const [applicantRequestType, setApplicantRequestType] = useState('reverification')
+  const [applicantRequestDocType, setApplicantRequestDocType] = useState('')
+  const [applicantRequestNote, setApplicantRequestNote] = useState('')
+  const [submittingApplicantRequest, setSubmittingApplicantRequest] = useState(false)
   const [uploadingDocType, setUploadingDocType] = useState(null)
   const [documentError, setDocumentError] = useState('')
   const applicationFetchInProgressRef = useRef(false)
@@ -120,12 +127,13 @@ export default function ApplicationStatus() {
     const appId = application?.id
     if (!appId) {
       setApplicationDocuments([])
+      setDocumentRequests([])
       return
     }
     const fetchDocs = async () => {
       const { data, error } = await supabase
         .from('application_documents')
-        .select('document_type, file_path, file_name, uploaded_at')
+        .select('id, document_type, document_label, file_path, file_name, uploaded_at, verified_at')
         .eq('application_id', appId)
       if (error) {
         console.error('Application documents fetch error:', error.message, error.code)
@@ -136,6 +144,81 @@ export default function ApplicationStatus() {
     }
     fetchDocs()
   }, [application?.id])
+
+  // Portal-only: fetch staff requests for additional documents/info
+  useEffect(() => {
+    const appId = application?.id
+    if (!portalMode || !appId) {
+      setDocumentRequests([])
+      setApplicantRequests([])
+      return
+    }
+    const fetchReqs = async () => {
+      const { data, error } = await supabase
+        .from('application_document_requests')
+        .select('id, message, created_at, status')
+        .eq('application_id', appId)
+        .order('created_at', { ascending: false })
+      if (error) {
+        console.warn('Document requests fetch error:', error.message)
+        setDocumentRequests([])
+        return
+      }
+      setDocumentRequests(data || [])
+    }
+    fetchReqs()
+  }, [portalMode, application?.id])
+
+  // Portal-only: applicant → admissions requests (resubmission / reverification)
+  useEffect(() => {
+    const appId = application?.id
+    if (!portalMode || !appId) {
+      setApplicantRequests([])
+      return
+    }
+    const fetchApplicantReqs = async () => {
+      const { data, error } = await supabase
+        .from('application_applicant_requests')
+        .select('id, document_type, request_type, note, created_at, status')
+        .eq('application_id', appId)
+        .order('created_at', { ascending: false })
+      if (error) {
+        console.warn('Applicant requests fetch error:', error.message)
+        setApplicantRequests([])
+        return
+      }
+      setApplicantRequests(data || [])
+    }
+    fetchApplicantReqs()
+  }, [portalMode, application?.id])
+
+  const submitApplicantRequest = async () => {
+    if (!portalMode || !application?.id) return
+    setSubmittingApplicantRequest(true)
+    setDocumentError('')
+    try {
+      const { data, error } = await supabase
+        .from('application_applicant_requests')
+        .insert({
+          application_id: application.id,
+          document_type: applicantRequestDocType || null,
+          request_type: applicantRequestType,
+          note: applicantRequestNote?.trim() || null,
+          status: 'open',
+        })
+        .select('id, document_type, request_type, note, created_at, status')
+        .single()
+      if (error) throw error
+      setApplicantRequests((prev) => [data, ...prev])
+      setShowApplicantRequestModal(false)
+      setApplicantRequestNote('')
+      setApplicantRequestDocType('')
+    } catch (e) {
+      setDocumentError(e?.message || t('track.documentUploadError', 'Upload failed. Please try again.'))
+    } finally {
+      setSubmittingApplicantRequest(false)
+    }
+  }
 
   // Fetch student + invoices by application email once per email (avoids duplicate students/invoices calls)
   useEffect(() => {
@@ -327,6 +410,38 @@ export default function ApplicationStatus() {
     return statusMap[statusCode] || { label: statusCode, color: 'bg-gray-100 text-gray-800 border-gray-200', icon: Clock }
   }
 
+  const activityLogSorted = useMemo(() => {
+    const arr = Array.isArray(activityLog) ? [...activityLog] : []
+    arr.sort((a, b) => new Date(b?.created_at || 0).getTime() - new Date(a?.created_at || 0).getTime())
+    return arr
+  }, [activityLog])
+
+  const latestDocumentsUploadedAt = useMemo(() => {
+    const docs = Array.isArray(applicationDocuments) ? applicationDocuments : []
+    const max = docs.reduce((acc, d) => {
+      const ts = d?.uploaded_at ? new Date(d.uploaded_at).getTime() : 0
+      return ts > acc ? ts : acc
+    }, 0)
+    return max || 0
+  }, [applicationDocuments])
+
+  const coreDocuments = useMemo(
+    () => (Array.isArray(applicationDocuments) ? applicationDocuments.filter((d) => d.document_type !== 'additional') : []),
+    [applicationDocuments],
+  )
+
+  const requiredCoreTypes = useMemo(() => new Set(['id_photo', 'transcript']), [])
+
+  const allRequiredCoreUploaded = useMemo(
+    () => Array.from(requiredCoreTypes).every((k) => coreDocuments.some((d) => d.document_type === k)),
+    [requiredCoreTypes, coreDocuments],
+  )
+
+  const allRequiredCoreVerified = useMemo(
+    () => Array.from(requiredCoreTypes).every((k) => coreDocuments.some((d) => d.document_type === k && d.verified_at)),
+    [requiredCoreTypes, coreDocuments],
+  )
+
   const getProcessingStages = () => {
     const code = application?.status_code || 'APDR'
     const currentIdx = getStageIndex(code)
@@ -335,41 +450,75 @@ export default function ApplicationStatus() {
     const formatDate = (d) =>
       d ? new Date(d).toLocaleDateString(locale, { year: 'numeric', month: '2-digit', day: '2-digit' }) : null
 
+    const findLogDate = (codes) => {
+      const set = codes instanceof Set ? codes : new Set(codes || [])
+      const hit = activityLogSorted.find((e) => set.has(String(e?.to_status_code || '').toUpperCase()))
+      return hit?.created_at ? formatDate(hit.created_at) : null
+    }
+
+    const paymentDate = formatDate(application?.registration_fee_paid_at) || findLogDate(['APPC'])
+    const latestUploadAt = latestDocumentsUploadedAt ? formatDate(new Date(latestDocumentsUploadedAt).toISOString()) : null
+    const hasAnyDocs = (Array.isArray(applicationDocuments) ? applicationDocuments.length : 0) > 0
+
     const stages = [
       {
         key: 1,
         title: t('track.stages.orderReceipt', 'Order receipt'),
         desc: t('track.stages.orderReceiptDesc', 'Your request has been received and registered in the system'),
         date: formatDate(created),
-        status: currentIdx >= getStageIndex('APSB') ? 'completed' : 'pending',
+        status: currentIdx >= getStageIndex('APSB') ? 'completed' : currentIdx > getStageIndex('APDR') ? 'in_progress' : 'pending',
       },
       {
         key: 2,
-        title: t('track.stages.documentVerification', 'Document verification'),
-        desc: t('track.stages.documentVerificationDesc', 'Uploaded documents are being verified'),
-        date: currentIdx >= getStageIndex('APPC') ? formatDate(created) : null,
-        status: currentIdx > getStageIndex('APPC') ? 'completed' : currentIdx === getStageIndex('APPC') ? 'in_progress' : 'pending',
+        title: t('track.stages.paymentConfirmation', 'Payment confirmation'),
+        desc: t('track.stages.paymentConfirmationDesc', 'Your payment is being processed / confirmed'),
+        date: paymentDate,
+        status: application?.registration_fee_paid_at
+          ? 'completed'
+          : (String(application?.status_code || '').toUpperCase() === 'APPN'
+              ? 'in_progress'
+              : 'pending'),
       },
       {
         key: 3,
-        title: t('track.stages.academicReview', 'Academic Review'),
-        desc: t('track.stages.academicReviewDesc', 'Under review — expected to be completed within 5-7 business days'),
-        date: null,
-        status: currentIdx > getStageIndex('RVRC') ? 'completed' : currentIdx >= getStageIndex('RVQU') ? 'in_progress' : 'pending',
+        title: t('track.stages.documentVerification', 'Document verification'),
+        desc: t('track.stages.documentVerificationDesc', 'Uploaded documents are being verified'),
+        date: latestUploadAt || findLogDate(['RVDV', 'RVRI', 'RVRC']),
+        status:
+          allRequiredCoreVerified || currentIdx > getStageIndex('RVDV')
+            ? 'completed'
+            : currentIdx >= getStageIndex('RVDV') || (currentIdx >= getStageIndex('APPC') && hasAnyDocs)
+              ? 'in_progress'
+              : allRequiredCoreUploaded && currentIdx >= getStageIndex('APPC')
+                ? 'in_progress'
+                : 'pending',
       },
       {
         key: 4,
-        title: t('track.stages.admissionDecision', 'Admission decision'),
-        desc: currentIdx >= getStageIndex('DCFA') ? t('track.stages.decisionMade', 'Decision made') : t('track.stages.awaitingReview', 'Awaiting completion of review'),
-        date: null,
-        status: currentIdx >= getStageIndex('DCFA') ? 'completed' : currentIdx === getStageIndex('DCPN') ? 'in_progress' : 'pending',
+        title: t('track.stages.academicReview', 'Academic Review'),
+        desc: t('track.stages.academicReviewDesc', 'Under review — expected to be completed within 5-7 business days'),
+        date: findLogDate(['RVQU', 'RVIN', 'RVHL', 'RVIV', 'RVEX']) || null,
+        status:
+          currentIdx >= getStageIndex('DCPN')
+            ? 'completed'
+            : currentIdx >= getStageIndex('RVQU')
+              ? 'in_progress'
+              : 'pending',
       },
       {
         key: 5,
-        title: t('track.stages.acceptanceLetter', 'Sending the acceptance letter'),
-        desc: currentIdx >= getStageIndex('ENCF') ? t('track.stages.sent', 'Sent') : t('track.stages.awaitingAcceptance', 'Awaiting acceptance decision'),
-        date: null,
-        status: currentIdx >= getStageIndex('ENCF') ? 'completed' : 'pending',
+        title: t('track.stages.admissionDecision', 'Admission decision'),
+        desc:
+          currentIdx >= getStageIndex('DCFA') || currentIdx >= getStageIndex('DCCA')
+            ? t('track.stages.decisionMade', 'Decision made')
+            : t('track.stages.awaitingReview', 'Awaiting completion of review'),
+        date: findLogDate(['DCPN', 'DCCA', 'DCFA', 'DCWL', 'DCRJ']) || null,
+        status:
+          currentIdx >= getStageIndex('DCCA') || currentIdx >= getStageIndex('DCFA') || currentIdx >= getStageIndex('DCWL') || currentIdx >= getStageIndex('DCRJ')
+            ? 'completed'
+            : currentIdx >= getStageIndex('DCPN')
+              ? 'in_progress'
+              : 'pending',
       },
     ]
     return stages
@@ -391,7 +540,29 @@ export default function ApplicationStatus() {
     ]
   }
 
-  const handleDocumentUpload = async (documentType, file) => {
+  const openStaffRequests = useMemo(
+    () => (portalMode ? documentRequests.filter((r) => r.status === 'open') : []),
+    [portalMode, documentRequests]
+  )
+
+  const additionalDocs = useMemo(
+    () => applicationDocuments.filter((d) => d.document_type === 'additional'),
+    [applicationDocuments]
+  )
+
+  const canRequestReview = useMemo(() => {
+    const c = String(application?.status_code || '').toUpperCase()
+    // Hide request button when accepted / rejected / cancelled / invalid / graduated/enrolled
+    const blocked = new Set([
+      'DCFA', 'DCCA', 'DCRJ',
+      'ENCA', 'ENCU', 'ENCF', 'ENAC',
+      'APIV',
+      'ACWD', 'GRAD', 'ALUM',
+    ])
+    return portalMode && !blocked.has(c)
+  }, [portalMode, application?.status_code])
+
+  const handleDocumentUpload = async (documentType, file, documentLabel = null) => {
     if (!application?.id || !file) return
     setDocumentError('')
     setUploadingDocType(documentType)
@@ -405,23 +576,65 @@ export default function ApplicationStatus() {
 
       if (uploadError) throw uploadError
 
-      const { error: insertError } = await supabase.from('application_documents').upsert(
-        {
-          application_id: application.id,
-          document_type: documentType,
-          file_path: storagePath,
-          file_name: file.name,
-          file_size: file.size,
-          content_type: file.type,
-          uploaded_at: new Date().toISOString(),
-        },
-        { onConflict: 'application_id,document_type' }
-      )
+      const payload = {
+        application_id: application.id,
+        document_type: documentType,
+        document_label: documentLabel,
+        file_path: storagePath,
+        file_name: file.name,
+        file_size: file.size,
+        content_type: file.type,
+        uploaded_at: new Date().toISOString(),
+      }
+
+      const isAdditional = documentType === 'additional'
+      let insertError = null
+      if (isAdditional) {
+        ;({ error: insertError } = await supabase.from('application_documents').insert(payload))
+      } else {
+        // We allow multiple documents overall (partial unique index), so "upsert on (application_id, document_type)"
+        // is not valid anymore. Do update-if-exists else insert for core docs.
+        const { data: existing, error: exErr } = await supabase
+          .from('application_documents')
+          .select('id')
+          .eq('application_id', application.id)
+          .eq('document_type', documentType)
+          .order('uploaded_at', { ascending: false })
+          .limit(1)
+          .maybeSingle()
+        if (exErr) throw exErr
+        if (existing?.id) {
+          ;({ error: insertError } = await supabase.from('application_documents').update(payload).eq('id', existing.id))
+        } else {
+          ;({ error: insertError } = await supabase.from('application_documents').insert(payload))
+        }
+      }
       if (insertError) throw insertError
 
       setApplicationDocuments((prev) => {
+        if (isAdditional) {
+          return [
+            ...prev,
+            {
+              document_type: documentType,
+              document_label: documentLabel,
+              file_path: storagePath,
+              file_name: file.name,
+              uploaded_at: new Date().toISOString(),
+            },
+          ]
+        }
         const rest = prev.filter((d) => d.document_type !== documentType)
-        return [...rest, { document_type: documentType, file_path: storagePath, file_name: file.name, uploaded_at: new Date().toISOString() }]
+        return [
+          ...rest,
+          {
+            document_type: documentType,
+            document_label: documentLabel,
+            file_path: storagePath,
+            file_name: file.name,
+            uploaded_at: new Date().toISOString(),
+          },
+        ]
       })
     } catch (err) {
       setDocumentError(err.message || t('track.documentUploadError', 'Upload failed. Please try again.'))
@@ -461,7 +674,11 @@ export default function ApplicationStatus() {
 
   const statusInfo = getStatusInfo(application.status_code)
   const StatusIcon = statusInfo.icon
-  const showRegistrationPayment = (application.status_code === 'APPN' || application.status_code === 'APSB') && !showPaymentModal
+  const showRegistrationPayment =
+    String(application?.status_code || '').toUpperCase() === 'APPN' &&
+    allRequiredCoreVerified &&
+    !application?.registration_fee_paid_at &&
+    !showPaymentModal
   const programName = getLocalizedName(application.majors, isRTL) || application.majors?.name_en || 'N/A'
   const dateLocale = isRTL ? 'ar-SA' : 'en-CA'
   const applicationDate = application.created_at
@@ -722,8 +939,95 @@ export default function ApplicationStatus() {
             <div id="status-documents-panel" className="rounded-[10px] border border-[#dde3ef] bg-white shadow-[0_2px_12px_rgba(26,58,107,0.1)] p-6">
               <div className={`flex items-center justify-between mb-4 pb-3.5 border-b border-[#dde3ef] ${isRTL ? 'flex-row-reverse' : ''}`}>
                 <h2 className="text-base font-bold text-[#1a3a6b]">{t('track.documentsTitle', 'Documents')}</h2>
+                {canRequestReview && (
+                  <button
+                    type="button"
+                    onClick={() => setShowApplicantRequestModal(true)}
+                    className="py-1.5 px-3 rounded-md border border-[#dde3ef] bg-[#f4f6fb] text-[#1a3a6b] text-xs font-bold hover:bg-[#dde3ef] transition-colors"
+                  >
+                    {t('track.requestReviewAction', 'Request review')}
+                  </button>
+                )}
               </div>
+              {portalMode && applicantRequests.some((r) => r.status === 'open') && (
+                <div className={`mb-3 rounded-md border border-[#93c5fd] bg-[#dbeafe] px-3 py-2 text-sm text-[#1d4ed8] ${isRTL ? 'text-end' : 'text-start'}`}>
+                  <div className="font-bold mb-1">{t('track.yourOpenRequestsTitle', 'Your requests')}</div>
+                  <div className="text-xs leading-relaxed">
+                    {applicantRequests
+                      .filter((r) => r.status === 'open')
+                      .slice(0, 1)
+                      .map((r) => r.note || t('track.requestSubmitted', 'Request submitted.'))
+                      .join('')}
+                  </div>
+                </div>
+              )}
+              {portalMode && openStaffRequests.length > 0 && (
+                <div className={`mb-3 rounded-md border border-[#f59e0b]/40 bg-[#fef3c7] px-3 py-2 text-sm text-[#92400e] ${isRTL ? 'text-end' : 'text-start'}`}>
+                  <div className="font-bold mb-1">{t('track.documentsRequestedTitle', 'Additional documents requested')}</div>
+                  <div className="text-xs leading-relaxed">
+                    {openStaffRequests.slice(0, 1).map((r) => r.message).join('')}
+                  </div>
+                </div>
+              )}
               {documentError && <p className="text-sm text-[#b91c1c] mb-3">{documentError}</p>}
+
+              {portalMode && openStaffRequests.length > 0 && (
+                <div className={`mb-3 rounded-md border border-[#dde3ef] bg-[#f4f6fb] px-3 py-3 ${isRTL ? 'text-end' : 'text-start'}`}>
+                  <div className="text-sm font-bold text-[#1a3a6b] mb-2">
+                    {t('track.uploadRequestedDocsTitle', 'Upload requested documents')}
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    <input
+                      value={applicantRequestDocType}
+                      onChange={(e) => setApplicantRequestDocType(e.target.value)}
+                      className="w-full rounded-md border border-[#dde3ef] px-3 py-2 text-sm"
+                      placeholder={t('track.requestedDocNamePlaceholder', 'Document name (e.g. Certificate)')}
+                    />
+                    <input
+                      type="file"
+                      className="w-full text-xs text-[#6b7a99] file:me-2 file:py-1.5 file:px-3 file:rounded-md file:border-0 file:bg-white file:text-[#1a3a6b] file:font-semibold file:cursor-pointer max-w-full"
+                      onChange={(e) => {
+                        const f = e.target.files?.[0]
+                        if (!f) return
+                        if (f.size > MAX_FILE_SIZE_MB * 1024 * 1024) {
+                          setDocumentError(t('track.documentFileTooBig', `File must be under ${MAX_FILE_SIZE_MB} MB`))
+                          return
+                        }
+                        const label = (applicantRequestDocType || '').trim() || t('track.additionalDocument', 'Additional document')
+                        handleDocumentUpload('additional', f, label)
+                        e.target.value = ''
+                      }}
+                      disabled={uploadingDocType !== null}
+                    />
+                  </div>
+                  <div className="text-xs text-[#6b7a99] mt-2">
+                    {t('track.requestedDocsHint', 'You can upload any number of additional documents requested by admissions.')}
+                  </div>
+                </div>
+              )}
+
+              {portalMode && additionalDocs.length > 0 && (
+                <div className={`mb-2 ${isRTL ? 'text-end' : 'text-start'}`}>
+                  <div className="text-xs font-bold text-[#6b7a99] mb-2">
+                    {t('track.additionalUploadsTitle', 'Additional uploads')}
+                  </div>
+                  <ul className="space-y-1">
+                    {additionalDocs
+                      .slice()
+                      .sort((a, b) => String(b.uploaded_at || '').localeCompare(String(a.uploaded_at || '')))
+                      .slice(0, 8)
+                      .map((d) => (
+                        <li key={d.id || d.file_path} className="flex items-center justify-between gap-2 text-xs border border-[#dde3ef] rounded-md px-3 py-2 bg-white">
+                          <span className="font-semibold text-[#1e2a3a] truncate">
+                            {d.document_label || t('track.additionalDocument', 'Additional document')}
+                          </span>
+                          <span className="text-[#6b7a99] truncate">{d.file_name || ''}</span>
+                        </li>
+                      ))}
+                  </ul>
+                </div>
+              )}
+
               <ul className="space-y-0">
                 {documentRows.map((item) => (
                   <li
@@ -753,7 +1057,7 @@ export default function ApplicationStatus() {
                                 setDocumentError(t('track.documentFileTooBig', `File must be under ${MAX_FILE_SIZE_MB} MB`))
                                 return
                               }
-                              handleDocumentUpload(item.key, f)
+                              handleDocumentUpload(item.key, f, null)
                               e.target.value = ''
                             }
                           }}
@@ -790,6 +1094,92 @@ export default function ApplicationStatus() {
                 </button>
               )}
             </div>
+
+            {portalMode && showApplicantRequestModal && (
+              <div className="fixed inset-0 bg-black/40 flex items-center justify-center p-4 z-[200]">
+                <div className="w-full max-w-lg rounded-xl border border-[#dde3ef] bg-white shadow-xl p-5">
+                  <div className={`flex items-start justify-between gap-3 mb-3 ${isRTL ? 'flex-row-reverse' : ''}`}>
+                    <div className={isRTL ? 'text-end' : 'text-start'}>
+                      <div className="font-extrabold text-[#1a3a6b]">{t('track.requestReviewAction', 'Request review')}</div>
+                      <div className="text-xs text-[#6b7a99] mt-1">
+                        {t('track.requestReviewHint', 'Ask admissions to allow resubmission or re-verify your documents.')}
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setShowApplicantRequestModal(false)}
+                      className="p-2 rounded-md hover:bg-[#f4f6fb]"
+                      aria-label="Close"
+                    >
+                      ✕
+                    </button>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-xs font-bold text-[#1e2a3a] mb-1">
+                        {t('track.requestType', 'Request type')}
+                      </label>
+                      <select
+                        value={applicantRequestType}
+                        onChange={(e) => setApplicantRequestType(e.target.value)}
+                        className="w-full rounded-md border border-[#dde3ef] px-3 py-2 text-sm"
+                      >
+                        <option value="reverification">{t('track.requestTypeReverify', 'Re-verification')}</option>
+                        <option value="resubmission">{t('track.requestTypeResubmit', 'Resubmission')}</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-xs font-bold text-[#1e2a3a] mb-1">
+                        {t('track.documentType', 'Document')}
+                      </label>
+                      <select
+                        value={applicantRequestDocType}
+                        onChange={(e) => setApplicantRequestDocType(e.target.value)}
+                        className="w-full rounded-md border border-[#dde3ef] px-3 py-2 text-sm"
+                      >
+                        <option value="">{t('track.documentAny', 'Any')}</option>
+                        {documentRows
+                          .filter((d) => d.uploadable)
+                          .map((d) => (
+                            <option key={d.key} value={d.key}>
+                              {d.label}
+                            </option>
+                          ))}
+                      </select>
+                    </div>
+                  </div>
+
+                  <div className="mt-3">
+                    <label className="block text-xs font-bold text-[#1e2a3a] mb-1">{t('track.note', 'Note')}</label>
+                    <textarea
+                      value={applicantRequestNote}
+                      onChange={(e) => setApplicantRequestNote(e.target.value)}
+                      className="w-full min-h-[110px] rounded-md border border-[#dde3ef] px-3 py-2 text-sm"
+                      placeholder={t('track.requestNotePlaceholder', 'Write a short note (optional)')}
+                    />
+                  </div>
+
+                  <div className={`flex items-center justify-end gap-2 mt-4 ${isRTL ? 'flex-row-reverse' : ''}`}>
+                    <button
+                      type="button"
+                      onClick={() => setShowApplicantRequestModal(false)}
+                      className="py-2 px-3 rounded-md border border-[#dde3ef] bg-white text-sm font-bold text-[#1e2a3a] hover:bg-[#f4f6fb]"
+                    >
+                      {t('common.cancel', 'Cancel')}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={submitApplicantRequest}
+                      disabled={submittingApplicantRequest}
+                      className="py-2 px-3 rounded-md bg-[#1a3a6b] hover:bg-[#2a5298] text-white text-sm font-bold disabled:opacity-60"
+                    >
+                      {submittingApplicantRequest ? t('track.submitting', 'Submitting…') : t('track.submitRequest', 'Submit request')}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
 
             {mergedInvoices.length > 0 && (
               <div className="rounded-[10px] border border-[#dde3ef] bg-white shadow-[0_2px_12px_rgba(26,58,107,0.1)] p-6">

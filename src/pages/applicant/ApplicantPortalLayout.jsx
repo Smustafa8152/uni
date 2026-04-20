@@ -10,6 +10,7 @@ import {
   LogOut,
   Home,
   User,
+  Mail,
 } from 'lucide-react'
 
 const nav = [
@@ -17,6 +18,7 @@ const nav = [
   { to: '/portal/profile', icon: User, labelKey: 'applicantPortal.nav.profile' },
   { to: '/portal/apply', icon: FilePlus2, labelKey: 'applicantPortal.nav.newApplication' },
   { to: '/application-status', end: true, icon: ListChecks, labelKey: 'applicantPortal.nav.trackPublic' },
+  { to: '/portal/offer-letter', icon: Mail, labelKey: 'applicantPortal.nav.offerLetter' },
 ]
 
 export default function ApplicantPortalLayout() {

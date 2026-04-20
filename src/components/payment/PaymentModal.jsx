@@ -6,7 +6,7 @@ import { calculateFinancialMilestone } from '../../utils/financePermissions'
 import { resolveRegistrationFeeAmount } from '../../utils/resolveRegistrationFeeAmount'
 import { createApplicationRegistrationInvoice } from '../../utils/createApplicationRegistrationInvoice'
 
-export default function PaymentModal({ isOpen, onClose, application, invoice, student, onPaymentSuccess }) {
+export default function PaymentModal({ isOpen, onClose, application, invoice, student, onPaymentSuccess, purpose = 'registration' }) {
   const { t } = useTranslation()
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
@@ -26,11 +26,16 @@ export default function PaymentModal({ isOpen, onClose, application, invoice, st
         // Payment for an invoice
         setAmount(parseFloat(invoice.pending_amount || invoice.total_amount || 0))
       } else if (application) {
-        // Payment for application registration fee
-        fetchRegistrationFee()
+        // Payment for application (registration or tuition)
+        if (purpose === 'tuition') {
+          const a = parseFloat(application.tuition_fee_amount || 0)
+          setAmount(Number.isFinite(a) && a > 0 ? a : 0)
+        } else {
+          fetchRegistrationFee()
+        }
       }
     }
-  }, [isOpen, application, invoice])
+  }, [isOpen, application, invoice, purpose])
 
   const fetchRegistrationFee = async () => {
     try {
@@ -143,8 +148,16 @@ export default function PaymentModal({ isOpen, onClose, application, invoice, st
       }
       
       if (application) {
-        // Payment for application registration fee — amount from major.registration_fee, then finance config
-        const paidAmount = await resolveRegistrationFeeAmount(application)
+        // Payment for application — registration fee OR tuition fee (pre-student)
+        const isTuition = purpose === 'tuition'
+        const paidAmount = isTuition ? parseFloat(application.tuition_fee_amount || 0) : await resolveRegistrationFeeAmount(application)
+        if (!Number.isFinite(paidAmount) || paidAmount <= 0) {
+          throw new Error(
+            isTuition
+              ? t('payments.tuitionAmountMissing', 'Tuition fee amount is not set for this application.')
+              : t('payments.amountMissing', 'Payment amount is not available.')
+          )
+        }
         const newMilestone = 'PM10'
         const paymentDate = new Date().toISOString()
         const methodEnum = paymentMethod === 'online' ? 'online_payment' : 'bank_transfer'
@@ -152,12 +165,20 @@ export default function PaymentModal({ isOpen, onClose, application, invoice, st
         const { error: updateError } = await supabase
           .from('applications')
           .update({
-            financial_milestone_code: newMilestone,
-            status_code: application.status_code === 'APPN' ? 'APPC' : application.status_code,
-            status_changed_at: paymentDate,
-            registration_fee_amount: paidAmount,
-            registration_fee_paid_at: paymentDate,
-            registration_fee_payment_method: methodEnum,
+            ...(isTuition
+              ? {
+                  tuition_fee_amount: paidAmount,
+                  tuition_fee_paid_at: paymentDate,
+                  tuition_fee_payment_method: methodEnum,
+                }
+              : {
+                  financial_milestone_code: newMilestone,
+                  status_code: application.status_code === 'APPN' ? 'APPC' : application.status_code,
+                  status_changed_at: paymentDate,
+                  registration_fee_amount: paidAmount,
+                  registration_fee_paid_at: paymentDate,
+                  registration_fee_payment_method: methodEnum,
+                }),
           })
           .eq('id', application.id)
 
@@ -171,32 +192,36 @@ export default function PaymentModal({ isOpen, onClose, application, invoice, st
             from_status_code: application.status_code,
             to_status_code: application.status_code === 'APPN' ? 'APPC' : application.status_code,
             transition_reason_code: null,
-            trigger_code: 'TRWH',
-            notes: `Registration fee payment received: $${paidAmount.toFixed(2)} via ${paymentMethod === 'online' ? 'online payment' : 'bank transfer'}`
+            trigger_code: isTuition ? 'TRTP' : 'TRWH',
+            notes: `${isTuition ? 'Tuition fee' : 'Registration fee'} payment received: $${Number(paidAmount).toFixed(2)} via ${
+              paymentMethod === 'online' ? 'online payment' : 'bank transfer'
+            }`,
           })
 
         if (logError) console.error('Error logging status change:', logError)
 
-        let invoiceCreateFailed = false
-        try {
-          await createApplicationRegistrationInvoice(
-            { ...application, registration_fee_amount: paidAmount },
-            paidAmount,
-            methodEnum
-          )
-        } catch (invoiceErr) {
-          console.error('Application registration invoice error:', invoiceErr)
-          invoiceCreateFailed = true
-          setError(
-            t(
-              'payments.invoiceCreateFailed',
-              'Payment was recorded, but the invoice could not be generated. Please contact the finance office with your application number.'
+        if (!isTuition) {
+          let invoiceCreateFailed = false
+          try {
+            await createApplicationRegistrationInvoice(
+              { ...application, registration_fee_amount: paidAmount },
+              paidAmount,
+              methodEnum
             )
-          )
-        }
+          } catch (invoiceErr) {
+            console.error('Application registration invoice error:', invoiceErr)
+            invoiceCreateFailed = true
+            setError(
+              t(
+                'payments.invoiceCreateFailed',
+                'Payment was recorded, but the invoice could not be generated. Please contact the finance office with your application number.'
+              )
+            )
+          }
 
-        if (invoiceCreateFailed) {
-          return
+          if (invoiceCreateFailed) {
+            return
+          }
         }
         
         paymentRecord = {

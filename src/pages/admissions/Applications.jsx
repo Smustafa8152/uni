@@ -43,6 +43,7 @@ export default function Applications() {
   const [filteredApplications, setFilteredApplications] = useState([])
   const [searchQuery, setSearchQuery] = useState('')
   const [statusFilter, setStatusFilter] = useState(searchParams.get('status') || 'all')
+  const [pendingApplicantRequestMap, setPendingApplicantRequestMap] = useState({})
   const [stats, setStats] = useState({
     total: 0,
     pending: 0,
@@ -102,6 +103,24 @@ export default function Applications() {
 
       setApplications(data || [])
 
+      // Fetch open applicant requests and attach counts (used for filters/badges)
+      try {
+        const { data: reqs, error: rErr } = await supabase
+          .from('application_applicant_requests')
+          .select('application_id')
+          .eq('status', 'open')
+        if (!rErr) {
+          const m = (reqs || []).reduce((acc, r) => {
+            const k = String(r.application_id)
+            acc[k] = (acc[k] || 0) + 1
+            return acc
+          }, {})
+          setPendingApplicantRequestMap(m)
+        }
+      } catch {
+        // ignore
+      }
+
       const total = data?.length || 0
       const pending =
         data?.filter((a) => ['APSB', 'APPN', 'RVQU', 'RVIN', 'DCPN', 'ENPN'].includes(a.status_code)).length || 0
@@ -123,7 +142,7 @@ export default function Applications() {
 
   useEffect(() => {
     filterApplications()
-  }, [applications, searchQuery, statusFilter])
+  }, [applications, searchQuery, statusFilter, pendingApplicantRequestMap])
 
   const filterApplications = () => {
     let filtered = [...applications]
@@ -139,6 +158,8 @@ export default function Applications() {
         filtered = filtered.filter((app) => app.status_code === 'DCRJ')
       } else if (statusFilter === 'waitlisted') {
         filtered = filtered.filter((app) => app.status_code === 'DCWL')
+      } else if (statusFilter === 'pending_requests') {
+        filtered = filtered.filter((app) => (pendingApplicantRequestMap[String(app.id)] || 0) > 0)
       }
     }
 
@@ -306,6 +327,7 @@ export default function Applications() {
             <option value="accepted">{t('admissions.applicationsPage.filterAccepted')}</option>
             <option value="rejected">{t('admissions.applicationsPage.filterRejected')}</option>
             <option value="waitlisted">{t('admissions.applicationsPage.filterWaitlisted')}</option>
+            <option value="pending_requests">{t('admissions.applicationsPage.filterPendingRequests', 'Pending applicant requests')}</option>
           </select>
         </div>
       </div>
@@ -330,15 +352,23 @@ export default function Applications() {
                   </h3>
                   <p className="text-sm text-gray-600 break-all">{application.email}</p>
                 </div>
-                <span
-                  className={`inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-medium border shrink-0 ${getStatusColor(
-                    application.status_code
-                  )}`}
-                  dir={isArabicLayout ? 'rtl' : 'ltr'}
-                >
-                  {getStatusIcon(application.status_code)}
-                  <span>{getApplicationStatusLabel(t, application.status_code)}</span>
-                </span>
+                <div className={`flex items-center gap-2 shrink-0 ${isArabicLayout ? 'flex-row-reverse' : ''}`}>
+                  {(pendingApplicantRequestMap[String(application.id)] || 0) > 0 && (
+                    <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-bold border border-amber-200 bg-amber-50 text-amber-900">
+                      {t('admissions.applicationsPage.pendingRequestsShort', 'Requests')}{' '}
+                      {pendingApplicantRequestMap[String(application.id)]}
+                    </span>
+                  )}
+                  <span
+                    className={`inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-medium border ${getStatusColor(
+                      application.status_code
+                    )}`}
+                    dir={isArabicLayout ? 'rtl' : 'ltr'}
+                  >
+                    {getStatusIcon(application.status_code)}
+                    <span>{getApplicationStatusLabel(t, application.status_code)}</span>
+                  </span>
+                </div>
               </div>
 
               <div className={`space-y-2 mb-4 w-full ${alignStart}`}>

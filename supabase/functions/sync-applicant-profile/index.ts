@@ -85,7 +85,15 @@ serve(async (req) => {
 
     if (sameEmail?.role && ['student', 'instructor', 'admin', 'user'].includes(sameEmail.role as string)) {
       return new Response(
-        JSON.stringify({ error: 'This email is registered as a staff or enrolled student account. Use the appropriate login page.' }),
+        JSON.stringify({
+          error: 'This email is registered as a staff or enrolled student account. Use the appropriate login page.',
+          detail: {
+            user_id: sameEmail.id,
+            role: sameEmail.role,
+            hint:
+              'This record is in public.users. Deleting only the Auth user is not enough. If you intend to re-register this email as an applicant, remove/disable the public.users record (and any linked students/instructors row) for this email.',
+          },
+        }),
         { status: 409, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       )
     }
