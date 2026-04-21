@@ -4,6 +4,7 @@ import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
 import PaymentModal from '../../components/payment/PaymentModal'
 import { calculateFinancialMilestone, getMilestoneInfo } from '../../utils/financePermissions'
+import { useNavigate } from 'react-router-dom'
 import { 
   CreditCard, DollarSign, AlertCircle, CheckCircle, Clock, FileText,
   Download, Eye, Loader2, GraduationCap
@@ -12,6 +13,7 @@ import {
 export default function StudentPayments() {
   const { t } = useTranslation()
   const { user } = useAuth()
+  const navigate = useNavigate()
   const [loading, setLoading] = useState(true)
   const [student, setStudent] = useState(null)
   const [invoices, setInvoices] = useState([])
@@ -132,6 +134,32 @@ export default function StudentPayments() {
     if (newMilestone) {
       // Show success message
       alert(t('payments.paymentSuccessful'))
+    }
+
+    // If we have a real payment row, take student to the receipt
+    if (payment?.id) {
+      navigate(`/student/payments/receipt/${payment.id}`)
+    }
+  }
+
+  const openLatestReceiptForInvoice = async (invoiceId) => {
+    try {
+      const { data, error } = await supabase
+        .from('payments')
+        .select('id')
+        .eq('invoice_id', invoiceId)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle()
+      if (error) throw error
+      if (data?.id) {
+        navigate(`/student/payments/receipt/${data.id}`)
+      } else {
+        alert(t('payments.noReceiptYet', { defaultValue: 'No receipt available yet for this invoice.' }))
+      }
+    } catch (e) {
+      console.error('openLatestReceiptForInvoice error:', e)
+      alert(t('payments.noReceiptYet', { defaultValue: 'No receipt available yet for this invoice.' }))
     }
   }
 
@@ -401,7 +429,12 @@ export default function StudentPayments() {
                           {t('payments.payNow')}
                         </button>
                       )}
-                      <button className="text-gray-400 hover:text-gray-600" title={t('payments.downloadReceipt')}>
+                      <button
+                        type="button"
+                        className="text-gray-400 hover:text-gray-600"
+                        title={t('payments.downloadReceipt')}
+                        onClick={() => openLatestReceiptForInvoice(invoice.id)}
+                      >
                         <Download className="w-4 h-4" />
                       </button>
                     </div>
@@ -444,6 +477,15 @@ export default function StudentPayments() {
                   <div className="text-right">
                     <p className="text-lg font-bold text-green-600">${payment.amount?.toFixed(2)}</p>
                   </div>
+                </div>
+                <div className="mt-3 flex justify-end">
+                  <button
+                    type="button"
+                    className="text-sm font-semibold text-primary-600 hover:text-primary-700"
+                    onClick={() => navigate(`/student/payments/receipt/${payment.id}`)}
+                  >
+                    {t('payments.viewReceipt', { defaultValue: 'View receipt' })}
+                  </button>
                 </div>
               </div>
             ))}

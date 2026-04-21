@@ -88,7 +88,11 @@ import StudentProfile from './pages/student/StudentProfile'
 import StudentSchedule from './pages/student/StudentSchedule'
 import StudentGraduationPath from './pages/student/StudentGraduationPath'
 import StudentCourseGuide from './pages/student/StudentCourseGuide'
+import StudentCourseCatalog from './pages/student/StudentCourseCatalog'
+import StudentHolds from './pages/student/StudentHolds'
+import StudentPaymentReceipt from './pages/student/StudentPaymentReceipt'
 import StudentComingSoon from './pages/student/StudentComingSoon'
+import StudentDocuments from './pages/student/StudentDocuments'
 import InstructorSubjectView from './pages/instructor/InstructorSubjectView'
 import InstructorDashboard from './pages/instructor/InstructorDashboard'
 import InstructorMyCourses from './pages/instructor/InstructorMyCourses'
@@ -942,6 +946,16 @@ function App() {
             }
           />
           <Route
+            path="/student/payments/receipt/:paymentId"
+            element={
+              <ProtectedRoute allowedRoles={['student']}>
+                <RoleBasedLayout>
+                  <StudentPaymentReceipt />
+                </RoleBasedLayout>
+              </ProtectedRoute>
+            }
+          />
+          <Route
             path="/student/enroll"
             element={
               <ProtectedRoute allowedRoles={['student']}>
@@ -957,6 +971,16 @@ function App() {
               <ProtectedRoute allowedRoles={['student']}>
                 <RoleBasedLayout>
                   <StudentProfile />
+                </RoleBasedLayout>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/student/documents"
+            element={
+              <ProtectedRoute allowedRoles={['student']}>
+                <RoleBasedLayout>
+                  <StudentDocuments />
                 </RoleBasedLayout>
               </ProtectedRoute>
             }
@@ -987,6 +1011,26 @@ function App() {
               <ProtectedRoute allowedRoles={['student']}>
                 <RoleBasedLayout>
                   <StudentCourseGuide />
+                </RoleBasedLayout>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/student/course-catalog"
+            element={
+              <ProtectedRoute allowedRoles={['student']}>
+                <RoleBasedLayout>
+                  <StudentCourseCatalog />
+                </RoleBasedLayout>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/student/holds"
+            element={
+              <ProtectedRoute allowedRoles={['student']}>
+                <RoleBasedLayout>
+                  <StudentHolds />
                 </RoleBasedLayout>
               </ProtectedRoute>
             }

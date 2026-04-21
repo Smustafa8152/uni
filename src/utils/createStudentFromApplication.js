@@ -313,7 +313,7 @@ export async function createStudentFromApplication(application, customPassword =
         try {
           const { data: appDocs, error: appDocsError } = await supabase
             .from('application_documents')
-            .select('document_type, file_path, file_name, file_size, content_type, uploaded_at')
+            .select('document_type, file_path, file_name, file_size, content_type, uploaded_at, verified_at')
             .eq('application_id', application.id)
           if (!appDocsError && appDocs && appDocs.length > 0) {
             for (const doc of appDocs) {
@@ -326,6 +326,8 @@ export async function createStudentFromApplication(application, customPassword =
                   file_size: doc.file_size,
                   content_type: doc.content_type,
                   uploaded_at: doc.uploaded_at || new Date().toISOString(),
+                  status: doc.verified_at ? 'verified' : 'in_review',
+                  verified_at: doc.verified_at || null,
                 },
                 { onConflict: 'student_id,document_type' }
               )

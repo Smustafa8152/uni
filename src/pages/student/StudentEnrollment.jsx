@@ -1,25 +1,34 @@
-import { useState, useEffect } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useMemo, useState, useEffect } from 'react'
+import { useLocation, useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { useLanguage } from '../../contexts/LanguageContext'
 import { getSemesterCreditsFromUniversitySettings } from '../../utils/getCollegeSettings'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
-import { ArrowLeft, ArrowRight, Check, Calendar, BookOpen, FileCheck, AlertCircle, Clock } from 'lucide-react'
-import { getStudentSemesterMilestone, checkFinancePermission, getMilestoneInfo } from '../../utils/financePermissions'
+import { ArrowLeft, CreditCard } from 'lucide-react'
+import { getStudentSemesterMilestone, checkFinancePermission } from '../../utils/financePermissions'
+
+const UI = {
+  p: '#1a3a6b',
+  pl: '#2a5298',
+  acc: '#c8a84b',
+  bg: '#f4f6fb',
+  sur: '#ffffff',
+  bdr: '#dde3ef',
+  txt: '#1e2a3a',
+  muted: '#6b7a99',
+  ok: '#1a7a4a',
+  warn: '#b45309',
+  err: '#b91c1c',
+}
 
 export default function StudentEnrollment() {
   const { t } = useTranslation()
   const { isRTL } = useLanguage()
+  const location = useLocation()
   const navigate = useNavigate()
   const { user, userRole } = useAuth()
 
-  const steps = [
-    { id: 1, name: t('enrollments.selectSemester'), icon: Calendar },
-    { id: 2, name: t('enrollments.step3'), icon: BookOpen },
-    { id: 3, name: t('enrollments.step4'), icon: FileCheck },
-  ]
-  const [currentStep, setCurrentStep] = useState(1)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [success, setSuccess] = useState(false)
@@ -49,6 +58,25 @@ export default function StudentEnrollment() {
     status: 'enrolled',
   })
   const [courseGroups, setCourseGroups] = useState([])
+  const [enrolledRows, setEnrolledRows] = useState([]) // current registered courses for semester
+  const [financeBlockReason, setFinanceBlockReason] = useState('')
+
+  const scheduleToText = (sched) => {
+    if (!sched?.length) return '—'
+    const one = sched[0]
+    return `${one.day_of_week} ${one.start_time}-${one.end_time}`
+  }
+
+  // Must be declared before any early returns to keep hooks order stable.
+  const availableToAdd = useMemo(() => {
+    const enrolledClassIds = new Set((enrolledRows || []).map((r) => r.class_id))
+    return (classes || [])
+      .filter((c) => !enrolledClassIds.has(c.id))
+      .map((c) => {
+        const seats = (c.capacity || 0) - (c.enrolled || 0)
+        return { ...c, _seats: seats }
+      })
+  }, [classes, enrolledRows])
 
   useEffect(() => {
     if (user?.email) {
@@ -63,6 +91,16 @@ export default function StudentEnrollment() {
     }
   }, [student])
 
+  // Preselect semester from querystring (?semester=ID)
+  useEffect(() => {
+    const qs = new URLSearchParams(location.search || '')
+    const sem = qs.get('semester')
+    if (sem && !formData.semester_id) {
+      setFormData((p) => ({ ...p, semester_id: String(sem), class_ids: [] }))
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [location.search])
+
   useEffect(() => {
     if (formData.semester_id && student?.id) {
       fetchSemesterDetails()
@@ -70,6 +108,8 @@ export default function StudentEnrollment() {
       fetchClasses()
       fetchStudentMajorSheet()
       fetchCurrentSemesterEnrollments()
+      fetchEnrolledRows()
+      checkFinanceGate()
     }
   }, [formData.semester_id, student])
 
@@ -141,9 +181,78 @@ export default function StudentEnrollment() {
       if (error) throw error
 
       setSemesters(data || [])
+
+      // Default semester if none selected yet
+      if (!formData.semester_id && data?.length) {
+        const active = data.find((s) => s.status === 'registration_open' || s.status === 'active')
+        setFormData((p) => ({ ...p, semester_id: String(active?.id || data[0].id) }))
+      }
     } catch (err) {
       console.error('Error fetching semesters:', err)
       setError(err.message || 'Failed to load semesters')
+    }
+  }
+
+  const checkFinanceGate = async () => {
+    try {
+      if (!student?.id || !formData.semester_id) return
+      const { milestone, hold } = await getStudentSemesterMilestone(student.id, parseInt(formData.semester_id))
+      const check = checkFinancePermission('SE_REG', milestone, hold)
+      setFinanceBlockReason(check.allowed ? '' : (check.reason || 'Financial hold'))
+    } catch (e) {
+      console.error('Finance gate error:', e)
+      setFinanceBlockReason('')
+    }
+  }
+
+  const fetchEnrolledRows = async () => {
+    try {
+      if (!student?.id || !formData.semester_id) return
+      const { data, error } = await supabase
+        .from('enrollments')
+        .select(`
+          id,
+          class_id,
+          status,
+          classes (
+            id,
+            code,
+            section,
+            room,
+            building,
+            class_schedules(day_of_week, start_time, end_time, location),
+            subjects(code, name_en, name_ar, credit_hours)
+          )
+        `)
+        .eq('student_id', student.id)
+        .eq('semester_id', parseInt(formData.semester_id))
+        .eq('status', 'enrolled')
+        .order('id', { ascending: false })
+      if (error) throw error
+      setEnrolledRows(data || [])
+    } catch (e) {
+      console.error('Fetch enrolled rows error:', e)
+      setEnrolledRows([])
+    }
+  }
+
+  const dropEnrollment = async (enrollmentId, classId) => {
+    try {
+      setLoading(true)
+      setError('')
+      const { error: updErr } = await supabase
+        .from('enrollments')
+        .update({ status: 'dropped', updated_at: new Date().toISOString() })
+        .eq('id', enrollmentId)
+      if (updErr) throw updErr
+      await updateClassEnrollmentCount(classId, -1)
+      await fetchCurrentSemesterEnrollments()
+      await fetchEnrolledRows()
+    } catch (e) {
+      console.error('Drop enrollment error:', e)
+      setError(e?.message || 'Failed to drop course')
+    } finally {
+      setLoading(false)
     }
   }
 
@@ -557,37 +666,6 @@ export default function StudentEnrollment() {
     }
   }
 
-  const handleNext = () => {
-    if (currentStep === 1) {
-      if (!formData.semester_id) {
-        setError('Please select a semester')
-        return
-      }
-      if (!registrationStatus?.allowed) {
-        setError(registrationStatus?.reason || 'Registration is not open for the selected semester.')
-        return
-      }
-      setCurrentStep(2)
-    } else if (currentStep === 2) {
-      if (formData.class_ids.length === 0) {
-        setError('Please select at least one class')
-        return
-      }
-      if (validationErrors.length > 0) {
-        setError('Please fix the errors before proceeding.')
-        return
-      }
-      setCurrentStep(3)
-    }
-  }
-
-  const handleBack = () => {
-    if (currentStep > 1) {
-      setCurrentStep(currentStep - 1)
-      setError('')
-    }
-  }
-
   if (fetching) {
     return (
       <div className="flex items-center justify-center min-h-screen">
@@ -613,302 +691,230 @@ export default function StudentEnrollment() {
     )
   }
 
+  const canRegisterNow = !!registrationStatus?.allowed && !financeBlockReason
+  const totalHours = currentSemesterCredits
+  const waitlistedCount = 0
+  const maxHours = semesterCreditsFromUni?.max_credit_hours_with_permission || 21
+
   return (
-    <div className="space-y-6">
-      <div className={`flex items-center ${isRTL ? 'flex-row-reverse space-x-reverse' : 'space-x-4'}`}>
-        <button
-          onClick={() => navigate(-1)}
-          className={`flex items-center ${isRTL ? 'flex-row-reverse space-x-reverse' : 'space-x-2'} text-gray-600 hover:text-gray-900`}
-        >
-          <ArrowLeft className="w-5 h-5" />
-          <span>{t('common.back')}</span>
-        </button>
-        <div>
-          <h1 className="text-3xl font-bold text-gray-900">{t('enrollments.createTitle')}</h1>
-          <p className="text-gray-600 mt-1">{t('enrollments.createSubtitle')}</p>
-        </div>
+    <div className={`space-y-6 ${isRTL ? 'text-right' : 'text-left'}`}>
+      {/* Breadcrumb */}
+      <nav className="flex flex-wrap items-center gap-2 text-sm" style={{ color: UI.muted }}>
+        <a href="/" className="no-underline hover:underline" style={{ color: UI.muted }}>{t('studentPortal.profile.breadcrumbHome', { defaultValue: 'Home' })}</a>
+        <span style={{ color: UI.bdr }}>/</span>
+        <a href="/dashboard" className="no-underline hover:underline" style={{ color: UI.muted }}>{t('studentPortal.studentPortal', { defaultValue: 'Student Portal' })}</a>
+        <span style={{ color: UI.bdr }}>/</span>
+        <span className="font-semibold" style={{ color: UI.p }}>{t('studentPortal.courseRegistration', { defaultValue: 'Course registration' })}</span>
+      </nav>
+
+      <div>
+        <h1 className="text-2xl font-extrabold" style={{ color: UI.p }}>{t('studentPortal.courseRegistration', { defaultValue: 'Course registration' })}</h1>
+        <p className="text-sm" style={{ color: UI.muted }}>
+          {currentSemester?.name_en ? `${currentSemester?.name_en}` : t('studentPortal.currentSemester', { defaultValue: 'Current semester' })}
+        </p>
       </div>
 
-      {/* Progress Steps */}
-      <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6">
-        <div className={`flex items-center ${isRTL ? 'flex-row-reverse' : 'justify-between'}`}>
-          {steps.map((step, index) => (
-            <div key={step.id} className="flex items-center flex-1">
-              <div className="flex flex-col items-center flex-1">
-                <div
-                  className={`w-12 h-12 rounded-full flex items-center justify-center border-2 transition-all ${
-                    currentStep >= step.id
-                      ? 'bg-primary-gradient border-primary-600 text-white'
-                      : 'bg-gray-100 border-gray-300 text-gray-400'
-                  }`}
-                >
-                  <step.icon className="w-6 h-6" />
-                </div>
-                <div className="mt-2 text-xs font-medium text-gray-600 text-center">
-                  {step.name}
-                </div>
-              </div>
-              {index < steps.length - 1 && (
-                <div
-                  className={`flex-1 h-1 mx-2 ${
-                    currentStep > step.id ? 'bg-primary-600' : 'bg-gray-200'
-                  }`}
-                />
-              )}
-            </div>
-          ))}
+      {(financeBlockReason || !registrationStatus?.allowed) && (
+        <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+          🚫 <strong>{t('studentPortal.enrollmentBlocked', { defaultValue: 'Registration is blocked' })}</strong> —{' '}
+          {financeBlockReason ? financeBlockReason : (registrationStatus?.reason || t('studentPortal.registrationClosed', { defaultValue: 'Registration is closed.' }))}
+          {' '}
+          <a href="/student/payments" className="underline inline-flex items-center gap-1">
+            <CreditCard className="w-4 h-4" />
+            {t('studentPortal.payNow', { defaultValue: 'Pay now' })}
+          </a>
         </div>
-      </div>
+      )}
 
       {error && (
-        <div className="bg-red-50 border border-red-200 rounded-lg p-4 text-red-700">
-          {error}
-        </div>
+        <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>
       )}
 
-      {success && (
-        <div className={`bg-green-50 border border-green-200 rounded-lg p-4 text-green-700 flex items-center ${isRTL ? 'flex-row-reverse space-x-reverse' : 'space-x-2'}`}>
-          <Check className="w-5 h-5" />
-          <span>{t('enrollments.createdSuccess')}</span>
-        </div>
-      )}
-
-      {/* Step Content */}
-      <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-8">
-        {/* Step 1: Select Semester */}
-        {currentStep === 1 && (
-          <div className="space-y-6">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">{t('enrollments.semesterLabel')}</label>
-              <select
-                value={formData.semester_id}
-                onChange={(e) => {
-                  setFormData(prev => ({ ...prev, semester_id: e.target.value, class_ids: [] }))
-                  setError('')
-                  setRegistrationStatus(null)
-                }}
-                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
-              >
-                <option value="">{t('enrollments.semesterHint')}</option>
-                {semesters.map(semester => (
-                  <option key={semester.id} value={semester.id}>
-                    {semester.name_en} ({semester.code}) - {semester.academic_year || ''}
-                  </option>
-                ))}
-              </select>
+      <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)] gap-6">
+        <div className="space-y-6">
+          {/* Registered courses */}
+          <div className="bg-white rounded-xl border shadow-sm" style={{ borderColor: UI.bdr }}>
+            <div className="flex items-center justify-between px-6 py-4 border-b" style={{ borderColor: UI.bdr }}>
+              <div className="text-base font-extrabold" style={{ color: UI.p }}>
+                {t('studentPortal.registration.currentRegistered', { defaultValue: 'Currently registered courses' })}
+              </div>
+              <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-extrabold" style={{ backgroundColor: '#e6f7ef', color: UI.ok }}>
+                {totalHours} {t('studentPortal.hours', { defaultValue: 'hours' })}
+              </span>
             </div>
-
-            {registrationStatus && (
-              <div className={`p-4 rounded-lg border ${
-                registrationStatus.allowed 
-                  ? registrationStatus.isLateRegistration 
-                    ? 'bg-yellow-50 border-yellow-200 text-yellow-800'
-                    : 'bg-green-50 border-green-200 text-green-800'
-                  : 'bg-red-50 border-red-200 text-red-800'
-              }`}>
-                <div className="flex items-start space-x-2">
-                  {registrationStatus.allowed ? (
-                    registrationStatus.isLateRegistration ? (
-                      <Clock className="w-5 h-5 mt-0.5" />
-                    ) : (
-                      <Check className="w-5 h-5 mt-0.5" />
-                    )
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr style={{ backgroundColor: UI.p, color: 'white' }}>
+                    <th className="px-4 py-3 whitespace-nowrap">{t('studentPortal.registration.course', { defaultValue: 'Course' })}</th>
+                    <th className="px-4 py-3 whitespace-nowrap">{t('studentPortal.hours', { defaultValue: 'Hours' })}</th>
+                    <th className="px-4 py-3 whitespace-nowrap">{t('studentPortal.registration.time', { defaultValue: 'Time' })}</th>
+                    <th className="px-4 py-3 whitespace-nowrap">{t('studentPortal.theHall', { defaultValue: 'Hall' })}</th>
+                    <th className="px-4 py-3 whitespace-nowrap">{t('studentPortal.registration.status', { defaultValue: 'Status' })}</th>
+                    <th className="px-4 py-3 whitespace-nowrap">{t('studentPortal.documents.colActions', { defaultValue: 'Actions' })}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {enrolledRows.length === 0 ? (
+                    <tr>
+                      <td colSpan={6} className="px-4 py-6 text-center" style={{ color: UI.muted }}>
+                        {t('studentPortal.registration.none', { defaultValue: 'No registered courses yet.' })}
+                      </td>
+                    </tr>
                   ) : (
-                    <AlertCircle className="w-5 h-5 mt-0.5" />
+                    enrolledRows.map((r) => {
+                      const subj = r.classes?.subjects
+                      const hall = [r.classes?.building, r.classes?.room].filter(Boolean).join(' ') || '—'
+                      return (
+                        <tr key={r.id} className="border-b" style={{ borderColor: UI.bdr }}>
+                          <td className="px-4 py-3">
+                            <strong>{subj?.code || '—'}</strong> — {subj?.name_en || '—'}
+                          </td>
+                          <td className="px-4 py-3">{subj?.credit_hours || 0}</td>
+                          <td className="px-4 py-3">{scheduleToText(r.classes?.class_schedules)}</td>
+                          <td className="px-4 py-3">{hall}</td>
+                          <td className="px-4 py-3">
+                            <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-extrabold" style={{ backgroundColor: '#e6f7ef', color: UI.ok }}>
+                              {t('studentPortal.registration.confirmed', { defaultValue: 'Confirmed' })}
+                            </span>
+                          </td>
+                          <td className="px-4 py-3">
+                            <button
+                              type="button"
+                              disabled={!canRegisterNow || loading}
+                              onClick={() => dropEnrollment(r.id, r.class_id)}
+                              className="px-3 py-1.5 rounded-md text-xs font-extrabold text-white disabled:opacity-50"
+                              style={{ backgroundColor: UI.err }}
+                            >
+                              {t('studentPortal.registration.drop', { defaultValue: 'Drop' })}
+                            </button>
+                          </td>
+                        </tr>
+                      )
+                    })
                   )}
-                  <div className="flex-1">
-                    <p className="font-semibold">
-                      {registrationStatus.allowed 
-                        ? registrationStatus.isLateRegistration 
-                          ? t('academic.semesters.lateRegistrationPeriod')
-                          : t('academic.semesters.registration_open')
-                        : t('academic.semesters.registrationClosed')
-                      }
-                    </p>
-                    {registrationStatus.reason && (
-                      <p className="text-sm mt-1">{registrationStatus.reason}</p>
-                    )}
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {currentSemester && (
-              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-                <h4 className="font-semibold text-blue-900 mb-2">{t('academic.semesters.registrationDates')}</h4>
-                <div className="text-sm text-blue-700 space-y-1">
-                  {currentSemester.registration_start_date && (
-                    <p>{t('academic.semesters.start')}: {new Date(currentSemester.registration_start_date).toLocaleDateString()}</p>
-                  )}
-                  {currentSemester.registration_end_date && (
-                    <p>{t('academic.semesters.regularEnd')}: {new Date(currentSemester.registration_end_date).toLocaleDateString()}</p>
-                  )}
-                  {currentSemester.late_registration_end_date && (
-                    <p>{t('academic.semesters.lateRegistrationEnd')}: {new Date(currentSemester.late_registration_end_date).toLocaleDateString()}</p>
-                  )}
-                </div>
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* Step 2: Select Classes */}
-        {currentStep === 2 && (
-          <div className="space-y-6">
-            <div>
-              <h3 className="text-lg font-semibold text-gray-900 mb-4">{t('academic.semesters.selectClasses')}</h3>
-              <div className="space-y-2 max-h-96 overflow-y-auto">
-                {classes.length === 0 ? (
-                  <p className="text-gray-500 text-center py-8">No classes available for this semester.</p>
-                ) : (
-                  classes.map(cls => {
-                    const isSelected = formData.class_ids.includes(cls.id.toString())
-                    const availableSeats = (cls.capacity || 0) - (cls.enrolled || 0)
-                    const isDisabled = availableSeats <= 0
-
-                    return (
-                      <label
-                        key={cls.id}
-                        className={`flex items-start space-x-3 p-4 border-2 rounded-lg cursor-pointer transition-all ${
-                          isSelected
-                            ? 'border-primary-500 bg-primary-50'
-                            : isDisabled
-                            ? 'border-gray-200 bg-gray-50 cursor-not-allowed opacity-60'
-                            : 'border-gray-200 hover:border-primary-300 hover:bg-gray-50'
-                        }`}
-                      >
-                        <input
-                          type="checkbox"
-                          checked={isSelected}
-                          onChange={() => !isDisabled && handleClassToggle(cls.id)}
-                          disabled={isDisabled}
-                          className="mt-1 w-4 h-4 text-primary-600 border-gray-300 rounded focus:ring-primary-500"
-                        />
-                        <div className="flex-1">
-                          <div className="flex items-center justify-between">
-                            <div>
-                              <p className="font-semibold text-gray-900">
-                                {cls.code} - {cls.subjects?.name_en || 'N/A'}
-                              </p>
-                              <p className="text-sm text-gray-600">
-                                Section: {cls.section} • {cls.subjects?.credit_hours || 0} credits
-                              </p>
-                              <p className="text-sm text-gray-500">
-                                Instructor: {cls.instructors ? ((isRTL && cls.instructors.name_ar) ? cls.instructors.name_ar : cls.instructors.name_en) || 'TBA' : 'TBA'}
-                              </p>
-                            </div>
-                            <div className="text-right">
-                              <p className={`text-sm font-medium ${isDisabled ? 'text-red-600' : 'text-green-600'}`}>
-                                {availableSeats} seats available
-                              </p>
-                            </div>
-                          </div>
-                        </div>
-                      </label>
-                    )
-                  })
-                )}
-              </div>
+                </tbody>
+                <tfoot>
+                  <tr style={{ backgroundColor: UI.bg, fontWeight: 800 }}>
+                    <td className="px-4 py-3" colSpan={5}>{t('studentPortal.registration.totalHours', { defaultValue: 'Total registered hours' })}</td>
+                    <td className="px-4 py-3">{totalHours} {t('studentPortal.hours', { defaultValue: 'hours' })}</td>
+                  </tr>
+                </tfoot>
+              </table>
             </div>
+          </div>
 
-            {formData.class_ids.length > 0 && (
-              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-                <p className="text-sm font-semibold text-blue-900">
-                  {formData.class_ids.length} class(es) selected
-                </p>
-                <p className="text-sm text-blue-700 mt-1">
-                  Total Credits: {selectedClassObjs.reduce((sum, c) => sum + (parseInt(c.subjects?.credit_hours) || 0), 0)}
-                </p>
+          {/* Add course */}
+          <div className={`bg-white rounded-xl border shadow-sm ${!canRegisterNow ? 'opacity-60 pointer-events-none' : ''}`} style={{ borderColor: UI.bdr }}>
+            <div className="flex items-center justify-between px-6 py-4 border-b" style={{ borderColor: UI.bdr }}>
+              <div className="text-base font-extrabold" style={{ color: UI.p }}>{t('studentPortal.registration.addCourse', { defaultValue: 'Add course' })}</div>
+              <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-extrabold" style={{ backgroundColor: '#fee2e2', color: UI.err }}>
+                {canRegisterNow ? t('studentPortal.documents.statusActive', { defaultValue: 'Active' }) : t('studentPortal.registration.blocked', { defaultValue: 'Blocked' })}
+              </span>
+            </div>
+            <div className="p-6 grid grid-cols-1 sm:grid-cols-[minmax(0,1fr)_auto] gap-4 items-end">
+              <div>
+                <label className="block text-sm font-semibold mb-1" style={{ color: UI.txt }}>{t('studentPortal.registration.pickCourse', { defaultValue: 'Choose course' })}</label>
+                <select
+                  className="w-full px-3 py-2.5 rounded-md border bg-white"
+                  style={{ borderColor: UI.bdr }}
+                  value={formData.class_ids?.[0] || ''}
+                  onChange={(e) => setFormData((p) => ({ ...p, class_ids: e.target.value ? [e.target.value] : [] }))}
+                >
+                  <option value="">{t('common.select', { defaultValue: 'Select' })}</option>
+                  {availableToAdd.map((c) => (
+                    <option key={c.id} value={String(c.id)} disabled={c._seats <= 0}>
+                      {c.subjects?.code} — {c.subjects?.name_en} ({c._seats} seats)
+                    </option>
+                  ))}
+                </select>
               </div>
-            )}
-
+              <button
+                type="button"
+                disabled={!canRegisterNow || loading || (formData.class_ids || []).length === 0 || validationErrors.length > 0}
+                onClick={handleSubmit}
+                className="px-5 py-2.5 rounded-md font-extrabold text-white disabled:opacity-50"
+                style={{ backgroundColor: UI.p }}
+              >
+                + {t('studentPortal.registration.add', { defaultValue: 'Add' })}
+              </button>
+            </div>
             {validationErrors.length > 0 && (
-              <div className="bg-red-50 border border-red-200 rounded-lg p-4">
-                <h4 className="font-semibold text-red-900 mb-2">Errors</h4>
-                <ul className="list-disc list-inside text-sm text-red-700 space-y-1">
-                  {validationErrors.map((err, idx) => (
-                    <li key={idx}>{err}</li>
-                  ))}
-                </ul>
-              </div>
-            )}
-
-            {validationWarnings.length > 0 && (
-              <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
-                <h4 className="font-semibold text-yellow-900 mb-2">Warnings</h4>
-                <ul className="list-disc list-inside text-sm text-yellow-700 space-y-1">
-                  {validationWarnings.map((warning, idx) => (
-                    <li key={idx}>{warning}</li>
-                  ))}
-                </ul>
+              <div className="px-6 pb-5 text-sm text-red-700">
+                {validationErrors[0]}
               </div>
             )}
           </div>
-        )}
 
-        {/* Step 3: Review */}
-        {currentStep === 3 && (
-          <div className="space-y-6">
-            <h3 className="text-lg font-semibold text-gray-900 mb-4">{t('academic.semesters.reviewEnrollment')}</h3>
-            
-            <div className="space-y-4">
-              <div>
-                <h4 className="font-semibold text-gray-700 mb-2">{t('academic.semesters.selectedSemester')}</h4>
-                <p className="text-gray-900">
-                  {currentSemester?.name_en} ({currentSemester?.code})
-                </p>
+          {/* Rules */}
+          <div className="bg-white rounded-xl border shadow-sm" style={{ borderColor: UI.bdr }}>
+            <div className="px-6 py-4 border-b" style={{ borderColor: UI.bdr }}>
+              <div className="text-base font-extrabold" style={{ color: UI.p }}>{t('studentPortal.registration.rules', { defaultValue: 'Registration rules applied' })}</div>
+            </div>
+            <div className="p-6 grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
+              <div className="p-3 rounded-md" style={{ backgroundColor: UI.bg }}>
+                <div className="font-extrabold mb-1">{t('studentPortal.registration.minHours', { defaultValue: 'Minimum hours' })}</div>
+                <div style={{ color: UI.muted }}>{semesterCreditsFromUni.min_credit_hours} {t('studentPortal.hours', { defaultValue: 'hours' })}</div>
               </div>
-
-              <div>
-                <h4 className="font-semibold text-gray-700 mb-2">Selected Classes ({selectedClassObjs.length})</h4>
-                <div className="space-y-2">
-                  {selectedClassObjs.map(cls => (
-                    <div key={cls.id} className="border border-gray-200 rounded-lg p-3">
-                      <p className="font-medium">{cls.code} - {cls.subjects?.name_en}</p>
-                      <p className="text-sm text-gray-600">Section: {cls.section} • {cls.subjects?.credit_hours} credits</p>
-                    </div>
-                  ))}
-                </div>
+              <div className="p-3 rounded-md" style={{ backgroundColor: UI.bg }}>
+                <div className="font-extrabold mb-1">{t('studentPortal.registration.maxHours', { defaultValue: 'Maximum hours' })}</div>
+                <div style={{ color: UI.muted }}>{maxHours} {t('studentPortal.hours', { defaultValue: 'hours' })}</div>
               </div>
-
-              <div className="border-t pt-4">
-                <p className="text-sm font-semibold text-gray-700">Total Credits: {selectedClassObjs.reduce((sum, c) => sum + (parseInt(c.subjects?.credit_hours) || 0), 0)}</p>
+              <div className="p-3 rounded-md" style={{ backgroundColor: UI.bg }}>
+                <div className="font-extrabold mb-1">{t('studentPortal.registration.prereqs', { defaultValue: 'Prerequisites' })}</div>
+                <div style={{ color: UI.muted }}>{t('studentPortal.registration.prereqsAuto', { defaultValue: 'Applied automatically when adding' })}</div>
+              </div>
+              <div className="p-3 rounded-md" style={{ backgroundColor: UI.bg }}>
+                <div className="font-extrabold mb-1">{t('studentPortal.registration.conflicts', { defaultValue: 'Schedule conflicts' })}</div>
+                <div style={{ color: UI.muted }}>{t('studentPortal.registration.conflictsAuto', { defaultValue: 'Detected and reported immediately' })}</div>
               </div>
             </div>
           </div>
-        )}
+        </div>
 
-        {/* Navigation Buttons */}
-        <div className={`flex items-center justify-between mt-8 pt-6 border-t ${isRTL ? 'flex-row-reverse space-x-reverse' : 'space-x-4'}`}>
-          <button
-            onClick={handleBack}
-            disabled={currentStep === 1}
-            className={`px-6 py-2 border border-gray-300 rounded-lg ${currentStep === 1 ? 'opacity-50 cursor-not-allowed' : 'hover:bg-gray-50'} ${isRTL ? 'flex-row-reverse' : ''}`}
-          >
-            <ArrowLeft className="w-4 h-4 inline mr-2" />
-            {t('common.back')}
-          </button>
-          
-          {currentStep < steps.length ? (
-            <button
-              onClick={handleNext}
-              disabled={loading}
-              className="px-6 py-2 bg-primary-gradient text-white rounded-lg hover:shadow-lg transition-all disabled:opacity-50"
-            >
-              {t('common.next')}
-              <ArrowRight className="w-4 h-4 inline ml-2" />
-            </button>
-          ) : (
-            <button
-              onClick={handleSubmit}
-              disabled={loading || validationErrors.length > 0}
-              className="px-6 py-2 bg-primary-gradient text-white rounded-lg hover:shadow-lg transition-all disabled:opacity-50"
-            >
-              {loading ? t('common.loading') : t('enrollments.submit')}
-            </button>
-          )}
+        <div className="space-y-6">
+          {/* Summary */}
+          <div className="bg-white rounded-xl border shadow-sm" style={{ borderColor: UI.bdr }}>
+            <div className="px-6 py-4 border-b" style={{ borderColor: UI.bdr }}>
+              <div className="text-base font-extrabold" style={{ color: UI.p }}>{t('studentPortal.registration.summary', { defaultValue: 'Registration summary' })}</div>
+            </div>
+            <div className="p-6 space-y-3 text-sm">
+              <div className="flex items-center justify-between border-b pb-2" style={{ borderColor: UI.bdr }}>
+                <span style={{ color: UI.muted }}>{t('studentPortal.registration.registeredHours', { defaultValue: 'Registered hours' })}</span>
+                <strong>{totalHours}</strong>
+              </div>
+              <div className="flex items-center justify-between border-b pb-2" style={{ borderColor: UI.bdr }}>
+                <span style={{ color: UI.muted }}>{t('studentPortal.registration.max', { defaultValue: 'Maximum' })}</span>
+                <strong>{maxHours} {t('studentPortal.hours', { defaultValue: 'hours' })}</strong>
+              </div>
+              <div className="flex items-center justify-between border-b pb-2" style={{ borderColor: UI.bdr }}>
+                <span style={{ color: UI.muted }}>{t('studentPortal.registration.waitlisted', { defaultValue: 'Waitlisted' })}</span>
+                <strong>{waitlistedCount}</strong>
+              </div>
+              <div className="flex items-center justify-between">
+                <span style={{ color: UI.muted }}>{t('studentPortal.registration.state', { defaultValue: 'Registration status' })}</span>
+                <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-extrabold" style={{ backgroundColor: canRegisterNow ? '#e6f7ef' : '#fee2e2', color: canRegisterNow ? UI.ok : UI.err }}>
+                  {canRegisterNow ? t('studentPortal.registration.active', { defaultValue: 'Active' }) : t('studentPortal.registration.blocked', { defaultValue: 'Blocked' })}
+                </span>
+              </div>
+            </div>
+            {!canRegisterNow && (
+              <a
+                href="/student/payments"
+                className="mx-6 mb-6 inline-flex items-center justify-center gap-2 w-[calc(100%-3rem)] px-4 py-3 rounded-md font-extrabold text-white no-underline"
+                style={{ backgroundColor: UI.err }}
+              >
+                💳 {t('studentPortal.registration.payToLift', { defaultValue: 'Pay to lift the hold' })}
+              </a>
+            )}
+          </div>
         </div>
       </div>
+      {success && (
+        <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
+          {t('enrollments.createdSuccess', { defaultValue: 'Enrollment saved successfully.' })}
+        </div>
+      )}
     </div>
   )
 }

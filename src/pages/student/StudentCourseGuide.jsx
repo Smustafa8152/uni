@@ -25,6 +25,8 @@ export default function StudentCourseGuide() {
   const [financialHold, setFinancialHold] = useState(false)
   const [registrationAllowed, setRegistrationAllowed] = useState(false)
   const [filterCondition, setFilterCondition] = useState('all') // all | available | waiting | closed
+  const [deptFilter, setDeptFilter] = useState('') // '' | 'CS' | 'EE' ...
+  const [levelFilter, setLevelFilter] = useState('') // '' | '100' | '200' ...
   const [searchQuery, setSearchQuery] = useState('')
   const [majorSheetSubjectIds, setMajorSheetSubjectIds] = useState(null) // null = all, [] = none from plan, [ids] = filter
   const [enrolledOrCompletedSubjectIds, setEnrolledOrCompletedSubjectIds] = useState(new Set()) // subject_ids student already enrolled in (this sem) or completed
@@ -274,8 +276,32 @@ export default function StudentCourseGuide() {
         return name.toLowerCase().includes(q) || code.toLowerCase().includes(q)
       })
     }
+    if (deptFilter) {
+      list = list.filter((cls) => {
+        const code = String(cls.subjects?.code || '')
+        const prefix = code.match(/^[A-Za-z]+/)?.[0]?.toUpperCase() || ''
+        return prefix === deptFilter
+      })
+    }
+    if (levelFilter) {
+      list = list.filter((cls) => {
+        const code = String(cls.subjects?.code || '')
+        const num = code.match(/(\d{3})/)?.[1] || ''
+        return num ? num.startsWith(String(levelFilter).replace(/\D/g, '').slice(0, 1)) : false
+      })
+    }
     return list
-  }, [classes, filterCondition, searchQuery, currentSemester, isRTL])
+  }, [classes, filterCondition, searchQuery, currentSemester, isRTL, deptFilter, levelFilter])
+
+  const deptOptions = useMemo(() => {
+    const prefixes = new Set()
+    for (const c of classes) {
+      const code = String(c.subjects?.code || '')
+      const p = code.match(/^[A-Za-z]+/)?.[0]?.toUpperCase()
+      if (p) prefixes.add(p)
+    }
+    return Array.from(prefixes).sort()
+  }, [classes])
 
   const goToEnroll = () => {
     navigate(selectedSemesterId ? `/student/enroll?semester=${selectedSemesterId}` : '/student/enroll')
@@ -301,32 +327,82 @@ export default function StudentCourseGuide() {
 
   return (
     <div className={`space-y-6 ${isRTL ? 'text-right' : 'text-left'}`}>
-      <div>
-        <h1 className="text-2xl font-bold text-slate-900">{t('studentPortal.courseGuide', 'Course Guide')}</h1>
-        <p className="text-slate-600 text-sm mt-1">
-          {t('studentPortal.courseGuideSubtitle', 'Browse the courses available for registration')}
-          {semesterName ? ` — ${semesterName}` : ''}
-        </p>
+      {/* Breadcrumb */}
+      <nav className="flex flex-wrap items-center gap-2 text-sm text-slate-500" aria-label="breadcrumb">
+        <a href="/" className="hover:text-slate-900 no-underline">{t('studentPortal.profile.breadcrumbHome', { defaultValue: 'Home' })}</a>
+        <span className="text-slate-300">/</span>
+        <a href="/dashboard" className="hover:text-slate-900 no-underline">{t('studentPortal.studentPortal', { defaultValue: 'Student Portal' })}</a>
+        <span className="text-slate-300">/</span>
+        <span className="text-slate-900 font-semibold">{t('studentPortal.courseGuide', 'Course Guide')}</span>
+      </nav>
+
+      {/* Header */}
+      <div className="flex items-start justify-between flex-wrap gap-3">
+        <div>
+          <h1 className="text-2xl font-extrabold" style={{ color: PORTAL_BG }}>{t('studentPortal.courseGuide', 'Course Guide')}</h1>
+          <p className="text-sm text-slate-500">
+            {t('studentPortal.courseGuideSubtitle', 'Browse the courses available for registration')}
+            {semesterName ? ` — ${semesterName}` : ''}
+          </p>
+        </div>
       </div>
 
       {financialHold && !registrationAllowed && (
-        <div className="flex items-start gap-3 rounded-lg border border-red-200 bg-red-50 p-4">
-          <AlertTriangle className="w-5 h-5 text-red-600 flex-shrink-0 mt-0.5" />
-          <div>
-            <p className="text-sm font-medium text-red-900">
-              {t('studentPortal.viewComments', 'View comments.')} {t('studentPortal.financialHoldAlert', 'You have an active financial hold — registration is not possible until it is lifted.')}
-            </p>
-          </div>
+        <div className="rounded-lg bg-red-50 border border-red-200 p-4 text-sm text-red-700">
+          🚫 {t('studentPortal.financialHoldAlert', 'You have an active financial hold — registration is not possible until it is lifted.')}{' '}
+          <a href="/student/payments" className="underline">{t('studentPortal.viewComments', 'View comments')}</a>
         </div>
       )}
 
-      <div className={`flex flex-wrap items-center gap-4 ${isRTL ? 'flex-row-reverse' : ''}`}>
-        <div>
-          <label className="block text-xs font-medium text-slate-500 mb-1">{t('studentPortal.semester', 'Semester')}</label>
+      {/* Filters card */}
+      <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-5">
+        <div className="flex gap-3 flex-wrap">
+          <input
+            className="rounded-lg border border-slate-300 px-3 py-2 text-sm"
+            style={{ maxWidth: 260, width: '100%' }}
+            type="search"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder={t('studentPortal.searchByNameOrCode', 'Search by name or code...')}
+          />
           <select
+            className="rounded-lg border border-slate-300 px-3 py-2 text-sm"
+            style={{ maxWidth: 180, width: '100%' }}
+            value={deptFilter}
+            onChange={(e) => setDeptFilter(e.target.value)}
+          >
+            <option value="">{t('studentPortal.courseGuideDeptAll', { defaultValue: 'All departments' })}</option>
+            {deptOptions.map((p) => (
+              <option key={p} value={p}>{p}</option>
+            ))}
+          </select>
+          <select
+            className="rounded-lg border border-slate-300 px-3 py-2 text-sm"
+            style={{ maxWidth: 180, width: '100%' }}
+            value={levelFilter}
+            onChange={(e) => setLevelFilter(e.target.value)}
+          >
+            <option value="">{t('studentPortal.courseGuideLevelAll', { defaultValue: 'All levels' })}</option>
+            <option value="100">{t('studentPortal.courseGuideLevel100', { defaultValue: 'Level 100' })}</option>
+            <option value="200">{t('studentPortal.courseGuideLevel200', { defaultValue: 'Level 200' })}</option>
+            <option value="300">{t('studentPortal.courseGuideLevel300', { defaultValue: 'Level 300' })}</option>
+          </select>
+          <select
+            className="rounded-lg border border-slate-300 px-3 py-2 text-sm"
+            style={{ maxWidth: 180, width: '100%' }}
+            value={filterCondition}
+            onChange={(e) => setFilterCondition(e.target.value)}
+          >
+            <option value="all">{t('studentPortal.allConditions', 'All cases')}</option>
+            <option value="available">{t('studentPortal.available', 'Available')}</option>
+            <option value="waiting">{t('studentPortal.waiting', 'Waiting')}</option>
+            <option value="closed">{t('studentPortal.closed', 'Closed')}</option>
+          </select>
+          <select
+            className="rounded-lg border border-slate-300 px-3 py-2 text-sm"
+            style={{ maxWidth: 220, width: '100%' }}
             value={selectedSemesterId}
             onChange={(e) => setSelectedSemesterId(e.target.value)}
-            className="rounded-lg border border-slate-300 px-3 py-2 text-sm min-w-[200px]"
           >
             <option value="">{t('common.select', 'Select')}</option>
             {semesters.map((s) => (
@@ -334,49 +410,6 @@ export default function StudentCourseGuide() {
             ))}
           </select>
         </div>
-        <div>
-          <label className="block text-xs font-medium text-slate-500 mb-1">{t('studentPortal.condition', 'Condition')}</label>
-          <select
-            value={filterCondition}
-            onChange={(e) => setFilterCondition(e.target.value)}
-            className="rounded-lg border border-slate-300 px-3 py-2 text-sm"
-          >
-            <option value="all">{t('studentPortal.allConditions', 'All cases')}</option>
-            <option value="available">{t('studentPortal.available', 'Available')}</option>
-            <option value="waiting">{t('studentPortal.waiting', 'Waiting')}</option>
-            <option value="closed">{t('studentPortal.closed', 'Closed')}</option>
-          </select>
-        </div>
-        <div className="flex-1 min-w-[200px]">
-          <label className="block text-xs font-medium text-slate-500 mb-1">{t('common.search', 'Search')}</label>
-          <div className="relative">
-            <Search className={`absolute w-4 h-4 text-slate-400 top-1/2 -translate-y-1/2 ${isRTL ? 'right-3' : 'left-3'}`} />
-            <input
-              type="text"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder={t('studentPortal.searchByNameOrCode', 'Search by name or code...')}
-              className={`w-full rounded-lg border border-slate-300 py-2 text-sm ${isRTL ? 'pr-10 pl-3' : 'pl-10 pr-3'}`}
-            />
-          </div>
-        </div>
-      </div>
-
-      <div className="flex items-center justify-between">
-        <p className="text-sm text-slate-600">
-          {filteredClasses.length} {t('studentPortal.courses', 'courses')}
-        </p>
-        {registrationAllowed && currentSemester && isRegistrationOpenForSemester(currentSemester) && (
-          <button
-            type="button"
-            onClick={goToEnroll}
-            className="inline-flex items-center gap-2 px-4 py-2 text-white rounded-lg text-sm font-medium"
-            style={{ backgroundColor: PORTAL_BG }}
-          >
-            <UserPlus className="w-4 h-4" />
-            {t('studentPortal.goToCourseRegistration', 'Go to Course registration')}
-          </button>
-        )}
       </div>
 
       <div className="bg-white rounded-xl shadow border border-slate-200 overflow-hidden">
@@ -384,15 +417,15 @@ export default function StudentCourseGuide() {
           <table className="w-full text-sm">
             <thead>
               <tr className="text-white text-xs font-medium" style={{ backgroundColor: PORTAL_BG }}>
-                <th className="px-4 py-3 text-left">{t('studentPortal.courseCode', 'Course code')}</th>
-                <th className="px-4 py-3 text-left">{t('studentPortal.courseName', 'Course Name')}</th>
-                <th className="px-4 py-3 text-left">{t('studentPortal.hours', 'hours')}</th>
-                <th className="px-4 py-3 text-left">{t('studentPortal.professor', 'Professor')}</th>
-                <th className="px-4 py-3 text-left">{t('studentPortal.theHall', 'The hall')}</th>
-                <th className="px-4 py-3 text-left">{t('studentPortal.seats', 'Seats')}</th>
-                <th className="px-4 py-3 text-left">{t('studentPortal.prerequisite', 'Prerequisite')}</th>
-                <th className="px-4 py-3 text-left">{t('studentPortal.condition', 'Condition')}</th>
-                <th className="px-4 py-3 text-left">{t('studentPortal.procedure', 'Procedure')}</th>
+                <th className="px-4 py-3 whitespace-nowrap">{t('studentPortal.courseCode', 'Course code')}</th>
+                <th className="px-4 py-3 whitespace-nowrap">{t('studentPortal.courseName', 'Course Name')}</th>
+                <th className="px-4 py-3 whitespace-nowrap">{t('studentPortal.hours', 'Hours')}</th>
+                <th className="px-4 py-3 whitespace-nowrap">{t('studentPortal.professor', 'Professor')}</th>
+                <th className="px-4 py-3 whitespace-nowrap">{t('studentPortal.theHall', 'Hall')}</th>
+                <th className="px-4 py-3 whitespace-nowrap">{t('studentPortal.seats', 'Seats')}</th>
+                <th className="px-4 py-3 whitespace-nowrap">{t('studentPortal.prerequisite', 'Prerequisite')}</th>
+                <th className="px-4 py-3 whitespace-nowrap">{t('studentPortal.condition', 'Condition')}</th>
+                <th className="px-4 py-3 whitespace-nowrap">{t('studentPortal.procedure', 'Action')}</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-200">
@@ -417,18 +450,19 @@ export default function StudentCourseGuide() {
 
                   return (
                     <tr key={cls.id} className="hover:bg-slate-50">
-                      <td className="px-4 py-3 font-medium text-slate-900 text-left">{cls.subjects?.code || '—'}</td>
-                      <td className="px-4 py-3 text-slate-900 text-left">{getLocalizedName(cls.subjects, isRTL) || '—'}</td>
-                      <td className="px-4 py-3 text-slate-700 text-left">{cls.subjects?.credit_hours ?? '—'}</td>
-                      <td className="px-4 py-3 text-slate-700 text-left">{instructorName}</td>
-                      <td className="px-4 py-3 text-slate-700 text-left">{hall}</td>
-                      <td className="px-4 py-3 text-left">
+                      <td className="px-4 py-3 font-extrabold text-slate-900 whitespace-nowrap">{cls.subjects?.code || '—'}</td>
+                      <td className="px-4 py-3 text-slate-900 whitespace-nowrap">{getLocalizedName(cls.subjects, isRTL) || '—'}</td>
+                      <td className="px-4 py-3 text-slate-700 whitespace-nowrap">{cls.subjects?.credit_hours ?? '—'}</td>
+                      <td className="px-4 py-3 text-slate-700 whitespace-nowrap">{instructorName}</td>
+                      <td className="px-4 py-3 text-slate-700 whitespace-nowrap">{hall}</td>
+                      <td className="px-4 py-3 whitespace-nowrap">
                         <span className={hasSeats ? 'text-green-600' : 'text-red-600'}>
-                          {enrolled}/{capacity}
+                          {capacity - enrolled}
                         </span>
+                        <span className="text-slate-400"> / {capacity}</span>
                       </td>
-                      <td className="px-4 py-3 text-slate-600 text-left">{prereqCodes.length ? prereqCodes.join(', ') : '—'}</td>
-                      <td className="px-4 py-3 text-left">
+                      <td className="px-4 py-3 text-slate-600 whitespace-nowrap">{prereqCodes.length ? prereqCodes.join(', ') : '—'}</td>
+                      <td className="px-4 py-3 whitespace-nowrap">
                         <span className={
                           condition === 'available' ? 'text-green-600 font-medium' :
                           condition === 'waiting' ? 'text-amber-600' : 'text-red-600'
@@ -436,19 +470,27 @@ export default function StudentCourseGuide() {
                           {condition === 'available' ? t('studentPortal.available') : condition === 'waiting' ? t('studentPortal.waiting') : t('studentPortal.closed')}
                         </span>
                       </td>
-                      <td className="px-4 py-3 text-left">
-                        {condition === 'available' && canRegister ? (
+                      <td className="px-4 py-3 whitespace-nowrap">
+                        {condition === 'available' ? (
                           <button
                             type="button"
-                            onClick={() => navigate(`/student/enroll?semester=${selectedSemesterId}`)}
-                            className="text-green-600 font-medium hover:underline"
+                            disabled={!canRegister}
+                            title={!registrationAllowed ? t('studentPortal.financialHoldAlert', 'You have an active financial hold — registration is not possible until it is lifted.') : ''}
+                            onClick={goToEnroll}
+                            className={`px-3 py-1.5 rounded-md border text-xs font-extrabold ${
+                              canRegister ? 'bg-slate-50 border-slate-200 text-slate-900 hover:bg-slate-100' : 'bg-slate-100 border-slate-200 text-slate-400 cursor-not-allowed'
+                            }`}
                           >
-                            {t('studentPortal.registration', 'Registration')}
+                            {t('studentPortal.courseRegistration', 'Course registration')}
                           </button>
                         ) : condition === 'waiting' ? (
-                          <span className="text-amber-600 font-medium">{t('studentPortal.waitingList', 'Waiting list')}</span>
+                          <button type="button" disabled className="px-3 py-1.5 rounded-md bg-amber-100 text-amber-800 text-xs font-extrabold">
+                            {t('studentPortal.waitingList', 'Waiting list')}
+                          </button>
                         ) : (
-                          <span className="text-slate-500">{t('studentPortal.closed', 'closed')}</span>
+                          <button type="button" disabled className="px-3 py-1.5 rounded-md bg-slate-100 text-slate-500 text-xs font-extrabold">
+                            {t('studentPortal.closed', 'Closed')}
+                          </button>
                         )}
                       </td>
                     </tr>

@@ -262,10 +262,24 @@ serve(async (req) => {
           student_id: studentId,
           name_en: name_en || `${app.first_name} ${app.last_name}`,
           name_ar: name_ar || null,
+          first_name: app.first_name || null,
+          middle_name: app.middle_name || null,
+          last_name: app.last_name || null,
+          first_name_ar: app.first_name_ar || null,
+          middle_name_ar: app.middle_name_ar || null,
+          last_name_ar: app.last_name_ar || null,
           email: app.email,
           phone: app.phone || null,
+          mobile_phone: app.phone || null,
           date_of_birth: app.date_of_birth || null,
           gender: app.gender || null,
+          nationality: app.nationality || null,
+          national_id: app.national_id || null,
+          city: app.city || null,
+          postal_code: app.postal_code || null,
+          emergency_contact_name: app.emergency_contact_name || null,
+          emergency_contact_relation: app.emergency_contact_relation || null,
+          emergency_phone: app.emergency_contact_phone || app.emergency_phone || null,
           major_id: Number(app.major_id),
           college_id: Number(app.college_id),
           enrollment_date: enrollmentDate,
@@ -275,6 +289,69 @@ serve(async (req) => {
         .single()
       if (insErr) throw insErr
       createdStudent = inserted
+    }
+    // Keep student record in sync with the latest application data (best-effort update)
+    try {
+      if (createdStudent?.id) {
+        await supabaseAdmin
+          .from('students')
+          .update({
+            name_en: [app.first_name, app.middle_name, app.last_name].filter(Boolean).join(' ') || null,
+            name_ar: [app.first_name_ar, app.middle_name_ar, app.last_name_ar].filter(Boolean).join(' ') || null,
+            first_name: app.first_name || null,
+            middle_name: app.middle_name || null,
+            last_name: app.last_name || null,
+            first_name_ar: app.first_name_ar || null,
+            middle_name_ar: app.middle_name_ar || null,
+            last_name_ar: app.last_name_ar || null,
+            phone: app.phone || null,
+            mobile_phone: app.phone || null,
+            date_of_birth: app.date_of_birth || null,
+            gender: app.gender || null,
+            nationality: app.nationality || null,
+            national_id: app.national_id || null,
+            city: app.city || null,
+            postal_code: app.postal_code || null,
+            emergency_contact_name: app.emergency_contact_name || null,
+            emergency_contact_relation: app.emergency_contact_relation || null,
+            emergency_phone: app.emergency_contact_phone || app.emergency_phone || null,
+            major_id: Number(app.major_id),
+            college_id: Number(app.college_id),
+          })
+          .eq('id', createdStudent.id)
+      }
+    } catch {
+      // ignore
+    }
+
+    // Copy application documents → student_documents (so they appear in student portal & admin student view)
+    try {
+      if (createdStudent?.id) {
+        const { data: appDocs, error: appDocsErr } = await supabaseAdmin
+          .from('application_documents')
+          .select('document_type, file_path, file_name, file_size, content_type, uploaded_at, verified_at')
+          .eq('application_id', applicationId)
+        if (!appDocsErr && appDocs?.length) {
+          for (const doc of appDocs) {
+            await supabaseAdmin.from('student_documents').upsert(
+              {
+                student_id: createdStudent.id,
+                document_type: doc.document_type,
+                file_path: doc.file_path,
+                file_name: doc.file_name,
+                file_size: doc.file_size,
+                content_type: doc.content_type,
+                uploaded_at: doc.uploaded_at || new Date().toISOString(),
+                status: doc.verified_at ? 'verified' : 'in_review',
+                verified_at: doc.verified_at || null,
+              },
+              { onConflict: 'student_id,document_type' },
+            )
+          }
+        }
+      }
+    } catch {
+      // ignore
     }
 
     // Promote role to student (keeps same auth email/password)

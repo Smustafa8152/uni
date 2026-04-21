@@ -20,14 +20,14 @@ const NAV = [
     items: [
       { href: '/dashboard', label: { ar: 'لوحة التحكم', en: 'Dashboard' }, icon: '🏠' },
       { href: '/student/profile', label: { ar: 'ملفي الشخصي', en: 'My profile' }, icon: '👤' },
-      { href: '/student/coming-soon', label: { ar: 'مركز الوثائق', en: 'Document center' }, icon: '📁' },
-      { href: '/student/coming-soon', label: { ar: 'التعليقات والحجب', en: 'Holds & blocks' }, icon: '🔒' },
+      { href: '/student/documents', label: { ar: 'مركز الوثائق', en: 'Document center' }, icon: '📁' },
+      { href: '/student/holds', label: { ar: 'التعليقات والحجب', en: 'Holds & blocks' }, icon: '🔒' },
     ],
   },
   {
     label: { ar: 'التسجيل الأكاديمي', en: 'Academic registration' },
     items: [
-      { href: '/student/coming-soon', label: { ar: 'دليل المقررات', en: 'Course catalog' }, icon: '📚' },
+      { href: '/student/course-catalog', label: { ar: 'دليل المقررات', en: 'Course catalog' }, icon: '📚' },
       { href: '/student/enroll', label: { ar: 'تسجيل المقررات', en: 'Course registration' }, icon: '✏️' },
       { href: '/student/coming-soon', label: { ar: 'قائمة الانتظار', en: 'Waitlist' }, icon: '⏳' },
       { href: '/student/schedule', label: { ar: 'الجدول الدراسي', en: 'Timetable' }, icon: '📅' },
@@ -87,6 +87,7 @@ export default function StudentLayout({ children }) {
     if (path.startsWith('/student/profile')) return 'ملفي الشخصي'
     if (path.startsWith('/student/payments')) return 'الفواتير والرسوم'
     if (path.startsWith('/student/enroll')) return 'تسجيل المقررات'
+    if (path.startsWith('/student/holds')) return 'التعليقات والحجب'
     if (path.startsWith('/student/schedule')) return 'الجدول الدراسي'
     if (path.startsWith('/student/grades')) return 'الدرجات والنتائج'
     if (path.startsWith('/student/graduation-path')) return 'مسار التخرج'

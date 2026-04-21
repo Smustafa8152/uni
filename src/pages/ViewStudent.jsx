@@ -99,7 +99,7 @@ export default function ViewStudent() {
     const fetchDocs = async () => {
       const { data, error } = await supabase
         .from('student_documents')
-        .select('id, document_type, file_path, file_name, uploaded_at')
+        .select('id, document_type, file_path, file_name, uploaded_at, expiry_date, status, verified_at')
         .eq('student_id', id)
         .order('uploaded_at', { ascending: false })
       if (!error) setStudentDocuments(data || [])
@@ -709,6 +709,14 @@ export default function ViewStudent() {
                   {studentDocuments.map((doc) => {
                     const { data: urlData } = supabase.storage.from(SUPABASE_STORAGE_BUCKET).getPublicUrl(doc.file_path)
                     const label = STUDENT_DOCUMENT_LABELS[doc.document_type]
+                    const expired = doc.expiry_date ? new Date(doc.expiry_date) < new Date(new Date().toDateString()) : false
+                    const status = expired ? 'expired' : (doc.status || (doc.verified_at ? 'verified' : 'in_review'))
+                    const badge =
+                      status === 'verified'
+                        ? { bg: 'bg-emerald-50', text: 'text-emerald-700', label: t('common.verified', 'Verified') }
+                        : status === 'expired'
+                          ? { bg: 'bg-red-50', text: 'text-red-700', label: t('common.expired', 'Expired') }
+                          : { bg: 'bg-blue-50', text: 'text-blue-700', label: t('common.inReview', 'In review') }
                   return (
                     <li key={doc.id} className="flex items-center justify-between rounded-xl bg-gray-50 p-4 border border-gray-100">
                       <div className="flex items-center gap-3">
@@ -716,6 +724,16 @@ export default function ViewStudent() {
                         <div>
                           <p className="font-medium text-gray-900">{t(label || doc.document_type)}</p>
                           {doc.file_name && <p className="text-sm text-gray-500">{doc.file_name}</p>}
+                          <div className="flex items-center gap-2 mt-1">
+                            <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold ${badge.bg} ${badge.text}`}>
+                              {badge.label}
+                            </span>
+                            {doc.expiry_date && (
+                              <span className="text-[11px] text-gray-400">
+                                {t('viewStudent.documentsExpiry', 'Expiry')}: {new Date(doc.expiry_date).toLocaleDateString()}
+                              </span>
+                            )}
+                          </div>
                           {doc.uploaded_at && (
                             <p className="text-xs text-gray-400 mt-0.5">
                               {new Date(doc.uploaded_at).toLocaleDateString()}
