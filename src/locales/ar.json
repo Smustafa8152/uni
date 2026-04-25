@@ -244,7 +244,15 @@
     "newApplication": "طلب جديد",
     "studentRequests": "طلبات الطلاب",
     "settings": "الإعدادات",
-    "userSettings": "إعدادات المستخدم"
+    "userSettings": "إعدادات المستخدم",
+    "universityConfiguration": "إعدادات الجامعة",
+    "academicConfiguration": "الإعدادات الأكاديمية",
+    "admissionsConfiguration": "القبول والتسجيل",
+    "people": "الأشخاص",
+    "grades": "الدرجات",
+    "financialAssistance": "الدعم المالي",
+    "operations": "العمليات",
+    "curriculumMap": "خريطة المنهج"
   },
   "roleSelection": {
     "title": "جامعة الإمام البخاري",

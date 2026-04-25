@@ -243,7 +243,15 @@
     "newApplication": "New Application",
     "studentRequests": "Student requests",
     "settings": "Settings",
-    "userSettings": "User Settings"
+    "userSettings": "User Settings",
+    "universityConfiguration": "University configuration",
+    "academicConfiguration": "Academic configuration",
+    "admissionsConfiguration": "Admissions",
+    "people": "People",
+    "grades": "Grades",
+    "financialAssistance": "Financial assistance",
+    "operations": "Operations",
+    "curriculumMap": "Curriculum map"
   },
   "roleSelection": {
     "title": "Imam Bukhari University",
