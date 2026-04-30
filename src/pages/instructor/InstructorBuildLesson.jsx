@@ -55,6 +55,19 @@ function createElement(type) {
   }
 }
 
+function getSubjectMajorIds(subject) {
+  const ids = new Set()
+  if (subject?.major_id != null) {
+    ids.add(Number(subject.major_id))
+  }
+  for (const row of subject?.subject_majors || []) {
+    if (row?.major_id != null) {
+      ids.add(Number(row.major_id))
+    }
+  }
+  return [...ids]
+}
+
 /** @param {'instructor'|'admin'} variant — admin: create lessons + metadata; instructor: elements only */
 export default function InstructorBuildLesson({ embedded = false, embedClassId = null, variant = 'instructor' } = {}) {
   const { t } = useTranslation()
@@ -66,9 +79,14 @@ export default function InstructorBuildLesson({ embedded = false, embedClassId =
 
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
+  const [colleges, setColleges] = useState([])
+  const [majors, setMajors] = useState([])
   const [classes, setClasses] = useState([])
   const [clos, setClos] = useState([])
   const [lessons, setLessons] = useState([])
+  const [allowedSubjectIds, setAllowedSubjectIds] = useState([])
+  const [selectedCollegeId, setSelectedCollegeId] = useState(null)
+  const [selectedMajorId, setSelectedMajorId] = useState(null)
   const [selectedClassId, setSelectedClassId] = useState(null)
   const [selectedLessonId, setSelectedLessonId] = useState(null)
 
@@ -81,6 +99,30 @@ export default function InstructorBuildLesson({ embedded = false, embedClassId =
   const [canAddLessonContent, setCanAddLessonContent] = useState(isAdmin)
 
   const lessonEditBlocked = elementsOnly && !canAddLessonContent
+
+  const filteredMajors = useMemo(() => {
+    if (!isAdmin) return majors
+    if (!selectedCollegeId) return []
+    return majors.filter((major) => {
+      if (major.is_university_wide) return true
+      return Number(major.college_id) === Number(selectedCollegeId)
+    })
+  }, [isAdmin, majors, selectedCollegeId])
+
+  const filteredClasses = useMemo(() => {
+    if (!isAdmin) return classes
+    if (!selectedCollegeId || !selectedMajorId) return []
+    return classes.filter((cls) => {
+      const subjectCollegeId = cls.subjects?.college_id != null ? Number(cls.subjects.college_id) : null
+      const classCollegeId = cls.college_id != null ? Number(cls.college_id) : null
+      const matchesCollege =
+        classCollegeId === Number(selectedCollegeId) ||
+        (classCollegeId == null &&
+          (subjectCollegeId === Number(selectedCollegeId) || cls.subjects?.is_university_wide === true))
+      const matchesMajor = allowedSubjectIds.includes(Number(cls.subject_id))
+      return matchesCollege && matchesMajor
+    })
+  }, [isAdmin, classes, selectedCollegeId, selectedMajorId, allowedSubjectIds])
 
   const selectedClass = useMemo(
     () => classes.find((c) => c.id === selectedClassId) || null,
@@ -97,6 +139,60 @@ export default function InstructorBuildLesson({ embedded = false, embedClassId =
     if (!selectedClassId) return
     loadClassData(selectedClassId)
   }, [selectedClassId, embedded, searchParams])
+
+  useEffect(() => {
+    if (!isAdmin) return
+    if (!selectedCollegeId) {
+      setAllowedSubjectIds([])
+      setSelectedMajorId(null)
+      setSelectedClassId(null)
+      setSelectedLessonId(null)
+      return
+    }
+
+    if (selectedMajorId && !filteredMajors.some((major) => major.id === selectedMajorId)) {
+      setSelectedMajorId(null)
+    }
+  }, [isAdmin, selectedCollegeId, selectedMajorId, filteredMajors])
+
+  useEffect(() => {
+    if (!isAdmin) return
+    if (!selectedCollegeId) {
+      setAllowedSubjectIds([])
+      return
+    }
+    loadAdminSubjectScope(selectedCollegeId, selectedMajorId)
+  }, [isAdmin, selectedCollegeId, selectedMajorId])
+
+  useEffect(() => {
+    if (!isAdmin) return
+
+    if (!filteredClasses.length) {
+      if (selectedClassId !== null) {
+        setSelectedClassId(null)
+      }
+      setSelectedLessonId(null)
+      setClos([])
+      setLessons([])
+      return
+    }
+
+    if (!filteredClasses.some((cls) => cls.id === selectedClassId)) {
+      const classIdFromQuery = embedded && embedClassId ? Number(embedClassId) : Number(searchParams.get('classId'))
+      const nextClassId = filteredClasses.find((cls) => cls.id === classIdFromQuery)?.id || filteredClasses[0]?.id || null
+      setSelectedClassId(nextClassId)
+      setSelectedLessonId(null)
+
+      if (!embedded && nextClassId) {
+        setSearchParams((prev) => {
+          const next = new URLSearchParams(prev)
+          next.set('classId', String(nextClassId))
+          next.delete('lessonId')
+          return next
+        }, { replace: true })
+      }
+    }
+  }, [isAdmin, filteredClasses, selectedClassId, embedded, embedClassId, searchParams, setSearchParams])
 
   useEffect(() => {
     if (!selectedLessonId) {
@@ -150,24 +246,126 @@ export default function InstructorBuildLesson({ embedded = false, embedClassId =
   const loadAdminClasses = async () => {
     setLoading(true)
     try {
-      const { data: cls } = await supabase
-        .from('classes')
-        .select('id, section, subject_id, subjects(id, code, name_en, name_ar)')
-        .eq('status', 'active')
-        .order('id', { ascending: false })
-        .limit(500)
+      const [{ data: collegeRows }, { data: majorRows }, { data: cls }] = await Promise.all([
+        supabase
+          .from('colleges')
+          .select('id, name_en, name_ar, code')
+          .eq('status', 'active')
+          .order('name_en', { ascending: true }),
+        supabase
+          .from('majors')
+          .select('id, name_en, name_ar, code, college_id, is_university_wide')
+          .eq('status', 'active')
+          .order('name_en', { ascending: true }),
+        supabase
+          .from('classes')
+          .select('id, section, subject_id, college_id, subjects(id, code, name_en, name_ar, college_id, is_university_wide)')
+          .eq('status', 'active')
+          .order('id', { ascending: false })
+          .limit(2000),
+      ])
 
-      const list = cls || []
-      setClasses(list)
+      const collegeList = collegeRows || []
+      const majorList = majorRows || []
+      const classList = cls || []
 
-      const classIdFromQuery = embedded && embedClassId ? embedClassId : Number(searchParams.get('classId'))
-      const initialClassId = list.find((c) => c.id === classIdFromQuery)?.id || list[0]?.id || null
-      setSelectedClassId(initialClassId)
+      setColleges(collegeList)
+      setMajors(majorList)
+      setClasses(classList)
 
-      if (!initialClassId) setLoading(false)
+      const classIdFromQuery = embedded && embedClassId ? Number(embedClassId) : Number(searchParams.get('classId'))
+      const initialClass = classList.find((c) => c.id === classIdFromQuery) || classList[0] || null
+      const initialCollegeId = initialClass?.college_id || collegeList[0]?.id || null
+      let initialMajorId = null
+
+      if (initialClass?.subject_id != null) {
+        const { data: directSubject } = await supabase
+          .from('subjects')
+          .select('major_id, subject_majors(major_id)')
+          .eq('id', initialClass.subject_id)
+          .maybeSingle()
+
+        initialMajorId = getSubjectMajorIds(directSubject)[0] || null
+      }
+
+      setSelectedCollegeId(initialCollegeId)
+      setSelectedMajorId(initialMajorId)
+      setSelectedClassId(initialClass?.id || null)
+
+      if (!initialClass?.id) setLoading(false)
     } catch (err) {
       console.error(err)
       setLoading(false)
+    }
+  }
+
+  const loadAdminSubjectScope = async (collegeId, majorId) => {
+    try {
+      const numericCollegeId = Number(collegeId)
+      const numericMajorId = majorId != null ? Number(majorId) : null
+
+      if (!Number.isFinite(numericCollegeId)) {
+        setAllowedSubjectIds([])
+        return
+      }
+
+      // If major isn't selected (or invalid), show all subjects for the selected college.
+      // This is important for subjects that have `major_id = NULL`.
+      if (numericMajorId == null || !Number.isFinite(numericMajorId)) {
+        const { data: subjectsData, error } = await supabase
+          .from('subjects')
+          .select('id')
+          .eq('status', 'active')
+          .or(`college_id.eq.${numericCollegeId},is_university_wide.eq.true`)
+
+        if (error) throw error
+
+        setAllowedSubjectIds(
+          (subjectsData || [])
+            .map((row) => Number(row.id))
+            .filter(Number.isFinite),
+        )
+        return
+      }
+
+      const { data: subjectMajorRows } = await supabase
+        .from('subject_majors')
+        .select('subject_id')
+        .eq('major_id', numericMajorId)
+
+      const subjectIdsFromJunction = (subjectMajorRows || [])
+        .map((row) => Number(row.subject_id))
+        .filter(Number.isFinite)
+
+      const orParts = [
+        `major_id.eq.${numericMajorId}`,
+        'is_university_wide.eq.true',
+        `and(applies_to_all_majors_of_college.eq.true,college_id.eq.${numericCollegeId})`,
+        // Subjects with no major should still be visible in the lesson builder
+        // for the selected college (e.g., college-level core subjects).
+        `and(major_id.is.null,college_id.eq.${numericCollegeId})`,
+      ]
+
+      if (subjectIdsFromJunction.length > 0) {
+        orParts.push(`id.in.(${subjectIdsFromJunction.join(',')})`)
+      }
+
+      const { data: subjectsData, error } = await supabase
+        .from('subjects')
+        .select('id')
+        .eq('status', 'active')
+        .or(orParts.join(','))
+
+      if (error) throw error
+
+      setAllowedSubjectIds(
+        (subjectsData || [])
+          .map((row) => Number(row.id))
+          .filter(Number.isFinite)
+      )
+    } catch (err) {
+      console.error(err)
+      setAllowedSubjectIds([])
     }
   }
 
@@ -578,25 +776,91 @@ export default function InstructorBuildLesson({ embedded = false, embedClassId =
       <div className="card" style={{ marginBottom: 16 }}>
         <div className="fr">
           <div className="fg">
+            {isAdmin && (
+              <>
+                <label className="fl">{t('navigation.colleges', 'Colleges')}</label>
+                <select
+                  className="fc"
+                  value={selectedCollegeId || ''}
+                  onChange={(e) => {
+                    const nextCollegeId = e.target.value ? Number(e.target.value) : null
+                    setSelectedCollegeId(nextCollegeId)
+                    setSelectedMajorId(null)
+                    setSelectedClassId(null)
+                    setSelectedLessonId(null)
+                    if (!embedded) {
+                      setSearchParams((prev) => {
+                        const next = new URLSearchParams(prev)
+                        next.delete('classId')
+                        next.delete('lessonId')
+                        return next
+                      }, { replace: true })
+                    }
+                  }}
+                >
+                  <option value="">{t('common.select', 'Select')}</option>
+                  {colleges.map((college) => (
+                    <option key={college.id} value={college.id}>
+                      {college.code ? `${college.code} - ` : ''}{getLocalizedName(college, language === 'ar')}
+                    </option>
+                  ))}
+                </select>
+              </>
+            )}
+          </div>
+          {isAdmin && (
+            <div className="fg">
+              <label className="fl">{t('navigation.majors', 'Majors')}</label>
+              <select
+                className="fc"
+                value={selectedMajorId || ''}
+                onChange={(e) => {
+                  const nextMajorId = e.target.value ? Number(e.target.value) : null
+                  setSelectedMajorId(nextMajorId)
+                  setSelectedClassId(null)
+                  setSelectedLessonId(null)
+                  if (!embedded) {
+                    setSearchParams((prev) => {
+                      const next = new URLSearchParams(prev)
+                      next.delete('classId')
+                      next.delete('lessonId')
+                      return next
+                    }, { replace: true })
+                  }
+                }}
+              >
+                <option value="">{t('common.select', 'Select')}</option>
+                {filteredMajors.map((major) => (
+                  <option key={major.id} value={major.id}>
+                    {major.code ? `${major.code} - ` : ''}{getLocalizedName(major, language === 'ar')}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+          <div className="fg">
             <label className="fl">{t('instructorPortal.courseName')}</label>
             <select
               className="fc"
-              disabled={lessonEditBlocked}
+              disabled={lessonEditBlocked || (isAdmin && (!selectedCollegeId || !selectedMajorId))}
               value={selectedClassId || ''}
               onChange={(e) => {
-                const id = Number(e.target.value)
+                const id = e.target.value ? Number(e.target.value) : null
                 setSelectedClassId(id)
+                setSelectedLessonId(null)
                 if (!embedded) {
                   setSearchParams((prev) => {
                     const next = new URLSearchParams(prev)
-                    next.set('classId', String(id))
+                    if (id) next.set('classId', String(id))
+                    else next.delete('classId')
                     next.delete('lessonId')
                     return next
                   }, { replace: true })
                 }
               }}
             >
-              {classes.map((cls) => (
+              {isAdmin && <option value="">{t('common.select', 'Select')}</option>}
+              {filteredClasses.map((cls) => (
                 <option key={cls.id} value={cls.id}>
                   {cls.subjects?.code} - {getLocalizedName(cls.subjects, language === 'ar')} ({t('instructorPortal.section')} {cls.section})
                 </option>
