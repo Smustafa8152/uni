@@ -4,6 +4,7 @@ import { useAuth } from '../contexts/AuthContext'
 import { supabase } from '../lib/supabase'
 import { canLoginWithoutSemesterPm10Milestone, checkFinancePermission } from '../utils/financePermissions'
 import { getPaymentsEnabled } from '../utils/getPaymentsEnabled'
+import { getEmailLookupCandidates } from '../utils/emailLookup'
 import { Mail, Lock, Eye, EyeOff, ArrowLeft, AlertCircle } from 'lucide-react'
 import LanguageToggle from '../components/LanguageToggle'
 
@@ -44,16 +45,28 @@ export default function LoginStudent() {
       const { data, error: signInError } = await signIn(email, password, 'student')
       if (signInError) throw signInError
 
+      const sessionEmail = data?.user?.email || email
+
       // Check if student has FA_LGN (Login permission) based on financial milestone
       // For login, check if student has at least one active semester with PM10+ milestone
-      const { data: studentData, error: studentError } = await supabase
-        .from('students')
-        .select('id, college_id, financial_hold_reason_code, current_status_code')
-        .eq('email', email)
-        .eq('status', 'active')
-        .single()
+      let studentData = null
+      let studentError = null
+      for (const candidate of getEmailLookupCandidates(sessionEmail)) {
+        const res = await supabase
+          .from('students')
+          .select('id, college_id, financial_hold_reason_code, current_status_code')
+          .eq('email', candidate)
+          .eq('status', 'active')
+          .maybeSingle()
+        if (res.data) {
+          studentData = res.data
+          studentError = null
+          break
+        }
+        studentError = res.error
+      }
 
-      if (studentError) {
+      if (studentError || !studentData) {
         console.error('Error fetching student data:', studentError)
         // Allow login even if student data fetch fails (might be new account)
         navigate('/dashboard')
@@ -101,9 +114,13 @@ export default function LoginStudent() {
         return
       }
 
-      // Check if student status allows login
+      // Check if student status allows login (enrollment lifecycle). When payments are disabled
+      // university-wide or for this college, skip this gate so finance-off deployments don't lock students out.
       const allowedStatuses = ['ENAC', 'ACAC', 'ACPR', 'ENCF', 'ENPN']
-      if (!allowedStatuses.includes(studentData.current_status_code || '')) {
+      if (
+        paymentsEnabled &&
+        !allowedStatuses.includes(studentData.current_status_code || '')
+      ) {
         // Sign out the user since their status doesn't allow login
         if (signOut) {
           await signOut()

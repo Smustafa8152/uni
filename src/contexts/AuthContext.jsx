@@ -1,5 +1,6 @@
 import { createContext, useContext, useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
+import { getEmailLookupCandidates } from '../utils/emailLookup'
 
 const defaultAuthValue = {
   user: null,
@@ -47,12 +48,20 @@ export const AuthProvider = ({ children }) => {
       return null
     }
     try {
-      const { data, error } = await supabase
-        .from('users')
-        .select('role, college_id')
-        .eq('email', email)
-        .single()
-      
+      let data = null
+      let error = null
+      let matchedEmail = null
+      for (const candidate of getEmailLookupCandidates(email)) {
+        const res = await supabase.from('users').select('role, college_id').eq('email', candidate).maybeSingle()
+        if (res.data) {
+          data = res.data
+          matchedEmail = candidate
+          error = null
+          break
+        }
+        error = res.error
+      }
+
       if (!error && data) {
         setUserRole(data.role)
         let finalCollegeId = data.college_id
@@ -79,7 +88,7 @@ export const AuthProvider = ({ children }) => {
                 const { error: updateError } = await supabase
                   .from('users')
                   .update({ college_id: finalCollegeId })
-                  .eq('email', email)
+                  .eq('email', matchedEmail)
                 
                 if (!updateError) {
                   console.log('✅ Updated user record with college_id:', finalCollegeId)
@@ -107,7 +116,7 @@ export const AuthProvider = ({ children }) => {
             const { data: instructorData, error: instructorError } = await supabase
               .from('instructors')
               .select('department_id, college_id')
-              .eq('email', email)
+              .eq('email', matchedEmail)
               .eq('college_id', finalCollegeId)
               .limit(1)
             
@@ -367,11 +376,18 @@ export const AuthProvider = ({ children }) => {
     // If role is specified, verify user has that role
     if (expectedRole && data?.user) {
       try {
-        const { data: userData, error: userError } = await supabase
-          .from('users')
-          .select('role, college_id')
-          .eq('email', email)
-          .single()
+        const sessionEmail = data.user.email || email
+        let userData = null
+        let userError = null
+        for (const candidate of getEmailLookupCandidates(sessionEmail)) {
+          const res = await supabase.from('users').select('role, college_id').eq('email', candidate).maybeSingle()
+          if (res.data) {
+            userData = res.data
+            userError = null
+            break
+          }
+          userError = res.error
+        }
 
         if (userError || !userData) {
           await supabase.auth.signOut()
