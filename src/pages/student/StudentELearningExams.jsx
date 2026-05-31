@@ -72,13 +72,6 @@ export default function StudentELearningExams() {
   const [rows, setRows] = useState([])
   const [tab, setTab] = useState('upcoming')
   const [tick, setTick] = useState(0)
-  const [debug, setDebug] = useState({
-    sid: null,
-    examsErr: null,
-    sampleExam: null,
-    enrollSample: null,
-    exam2: null,
-  })
 
   useEffect(() => {
     const timer = setInterval(() => setTick((x) => x + 1), 1000)
@@ -92,7 +85,6 @@ export default function StudentELearningExams() {
       try {
         const { data: sid, error: sidErr } = await supabase.rpc('current_student_id')
         if (sidErr) throw sidErr
-        setDebug((d) => ({ ...d, sid }))
         if (!sid) {
           setStudent(null)
           setRows([])
@@ -107,31 +99,6 @@ export default function StudentELearningExams() {
         if (stErr) throw stErr
         setStudent(st || null)
 
-        const { data: enrollSample, error: enrollErr } = await supabase
-          .from('enrollments')
-          .select('id, class_id, status')
-          .eq('student_id', sid)
-          .order('id', { ascending: false })
-          .limit(5)
-        setDebug((d) => ({
-          ...d,
-          enrollSample: enrollErr
-            ? { error: { message: enrollErr.message, code: enrollErr.code, details: enrollErr.details, hint: enrollErr.hint } }
-            : enrollSample || [],
-        }))
-
-        const { data: exam2, error: exam2Err } = await supabase
-          .from('subject_exams')
-          .select('id, status, class_id, scheduled_date, start_time, end_time')
-          .eq('id', 2)
-          .maybeSingle()
-        setDebug((d) => ({
-          ...d,
-          exam2: exam2Err
-            ? { error: { message: exam2Err.message, code: exam2Err.code, details: exam2Err.details, hint: exam2Err.hint } }
-            : exam2 || null,
-        }))
-
         const { data: exams, error } = await supabase
           .from('subject_exams')
           .select(
@@ -144,27 +111,7 @@ export default function StudentELearningExams() {
           )
           .in('status', ['EX_SCH', 'EX_OPN', 'EX_CLS', 'EX_REL'])
           .order('scheduled_date', { ascending: true })
-        if (error) {
-          setDebug((d) => ({ ...d, examsErr: { message: error.message, code: error.code, details: error.details, hint: error.hint } }))
-          throw error
-        } else {
-          setDebug((d) => ({ ...d, examsErr: null }))
-        }
-
-        // Sample a raw exam fetch (helps distinguish "0 rows" from "RLS forbidden")
-        const { data: sampleExam, error: sampleErr } = await supabase
-          .from('subject_exams')
-          .select('id, status, class_id, scheduled_date, start_time, end_time')
-          .in('status', ['EX_SCH', 'EX_OPN', 'EX_CLS', 'EX_REL'])
-          .order('id', { ascending: false })
-          .limit(1)
-          .maybeSingle()
-        setDebug((d) => ({
-          ...d,
-          sampleExam: sampleErr
-            ? { error: { message: sampleErr.message, code: sampleErr.code, details: sampleErr.details, hint: sampleErr.hint } }
-            : sampleExam || null,
-        }))
+        if (error) throw error
 
         const examIds = (exams || []).map((x) => x.id)
         const { data: subs } = await supabase
@@ -394,30 +341,8 @@ export default function StudentELearningExams() {
         })}
 
         {list.length === 0 && (
-          <div className="space-y-3">
-            <div className="bg-white rounded-xl border p-6 text-sm" style={{ borderColor: UI.bdr, color: UI.muted }}>
-              {t('common.noData', 'No data found')}
-            </div>
-            <div className="bg-white rounded-xl border p-4 text-xs" style={{ borderColor: UI.bdr, color: UI.muted }}>
-              <div className="font-extrabold" style={{ color: UI.txt }}>
-                Debug
-              </div>
-              <div>current_student_id(): {debug.sid ?? 'null'}</div>
-              {debug.examsErr && (
-                <div style={{ marginTop: 6, color: UI.err }}>
-                  subject_exams error: {debug.examsErr.message} {debug.examsErr.code ? `(${debug.examsErr.code})` : ''}
-                </div>
-              )}
-              <div style={{ marginTop: 6 }}>
-                sampleExam: {debug.sampleExam ? JSON.stringify(debug.sampleExam) : 'null'}
-              </div>
-              <div style={{ marginTop: 6 }}>
-                enrollments(sample): {debug.enrollSample ? JSON.stringify(debug.enrollSample) : 'null'}
-              </div>
-              <div style={{ marginTop: 6 }}>
-                exam(id=2): {debug.exam2 ? JSON.stringify(debug.exam2) : 'null'}
-              </div>
-            </div>
+          <div className="bg-white rounded-xl border p-6 text-sm" style={{ borderColor: UI.bdr, color: UI.muted }}>
+            {t('common.noData', 'No data found')}
           </div>
         )}
       </div>

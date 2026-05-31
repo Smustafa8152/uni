@@ -4,8 +4,10 @@ import { useTranslation } from 'react-i18next'
 import { useLanguage } from '../../contexts/LanguageContext'
 import { useAuth } from '../../contexts/AuthContext'
 import { getLocalizedName } from '../../utils/localizedName'
+import { getEmailLookupCandidates } from '../../utils/emailLookup'
+import { formatTimeRange12h } from '../../utils/timeFormat'
 import { supabase } from '../../lib/supabase'
-import { AlertTriangle, CreditCard, Calendar, GraduationCap, PenLine, Bell, Search, Receipt, GitBranch, HelpCircle, ClipboardList } from 'lucide-react'
+import { AlertTriangle, CreditCard, Calendar, GraduationCap, PenLine, Bell, Search, Receipt, GitBranch, HelpCircle, ClipboardList, Video, ExternalLink } from 'lucide-react'
 
 const STUDENT_PORTAL_BG = '#1a3a6b'
 
@@ -24,6 +26,7 @@ export default function StudentDashboard() {
   const [enrollments, setEnrollments] = useState([])
   const [activeSemester, setActiveSemester] = useState(null)
   const [todaySchedule, setTodaySchedule] = useState([])
+  const [termCourses, setTermCourses] = useState([])
   const [totalCreditsRequired, setTotalCreditsRequired] = useState(120)
   const [completedCredits, setCompletedCredits] = useState(0)
   const [currentSemesterCredits, setCurrentSemesterCredits] = useState(0)
@@ -37,17 +40,25 @@ export default function StudentDashboard() {
     if (!user?.email) return
     try {
       setLoading(true)
-      const { data: studentData, error: studentErr } = await supabase
+      const emailCandidates = getEmailLookupCandidates(user.email)
+      let studentQuery = supabase
         .from('students')
-        .select('id, student_id, name_en, name_ar, first_name, last_name, gpa, college_id, major_id, financial_hold_reason_code, financial_milestone_code, colleges(id, name_en, name_ar), majors(id, name_en, name_ar)')
-        .eq('email', user.email)
+        .select('id, student_id, name_en, name_ar, first_name, last_name, gpa, college_id, major_id, total_credits_earned, financial_hold_reason_code, financial_milestone_code, colleges(id, name_en, name_ar), majors(id, name_en, name_ar, total_credits)')
         .eq('status', 'active')
-        .single()
+
+      studentQuery =
+        emailCandidates.length > 1
+          ? studentQuery.in('email', emailCandidates)
+          : studentQuery.eq('email', emailCandidates[0] || user.email)
+
+      const { data: studentData, error: studentErr } = await studentQuery.maybeSingle()
       if (studentErr || !studentData) {
         setLoading(false)
         return
       }
       setStudent(studentData)
+      setTotalCreditsRequired(studentData.majors?.total_credits || 120)
+      setCompletedCredits(studentData.total_credits_earned || 0)
 
       const { data: invData } = await supabase
         .from('invoices')
@@ -69,59 +80,119 @@ export default function StudentDashboard() {
         .select(`
           id,
           status,
+          semester_id,
           grade_points,
           grade,
           numeric_grade,
           classes(
+            id,
+            code,
             subjects(credit_hours, code, name_en, name_ar),
-            class_schedules(day_of_week, start_time, end_time, location),
+            class_schedules(id, day_of_week, start_time, end_time, location, teams_meeting_url),
             instructors(name_en, name_ar)
           )
         `)
         .eq('student_id', studentData.id)
-      setEnrollments(enrollData || [])
 
-      const creditsFromEnrollments = (enrollData || []).reduce((sum, e) => {
+      const allEnrollments = enrollData || []
+      setEnrollments(allEnrollments)
+
+      const termEnrollments = semData
+        ? allEnrollments.filter(
+            (e) =>
+              String(e.semester_id) === String(semData.id) &&
+              String(e.status || '').toLowerCase() === 'enrolled',
+          )
+        : allEnrollments.filter((e) => String(e.status || '').toLowerCase() === 'enrolled')
+
+      const termCredits = termEnrollments.reduce((sum, e) => {
         const cred = e.classes?.subjects?.credit_hours
         return sum + (typeof cred === 'number' ? cred : parseInt(cred, 10) || 3)
       }, 0)
-      setCompletedCredits(creditsFromEnrollments)
-      setCurrentSemesterCredits(creditsFromEnrollments)
+      setCurrentSemesterCredits(termCredits)
 
-      // Cumulative GPA from enrollments that have grade_points (weighted by credit hours)
-      let gpaFromEnrollments = null
       let totalWeighted = 0
       let totalCreditsGraded = 0
-      ;(enrollData || []).forEach((e) => {
+      allEnrollments.forEach((e) => {
         const points = e.grade_points != null ? Number(e.grade_points) : null
-        if (points == null || points === '') return
+        if (points == null || Number.isNaN(points)) return
         const cred = e.classes?.subjects?.credit_hours
         const ch = typeof cred === 'number' ? cred : parseInt(cred, 10) || 3
         totalWeighted += points * ch
         totalCreditsGraded += ch
       })
-      if (totalCreditsGraded > 0) {
-        gpaFromEnrollments = totalWeighted / totalCreditsGraded
+      setComputedGpa(totalCreditsGraded > 0 ? totalWeighted / totalCreditsGraded : null)
+
+      const classIds = [...new Set(termEnrollments.map((e) => e.classes?.id).filter(Boolean))]
+      const todayIso = new Date().toISOString().split('T')[0]
+      const meetingsByClass = {}
+      if (classIds.length > 0) {
+        const { data: todayMeetings } = await supabase
+          .from('class_teams_meetings')
+          .select('class_id, teams_join_url, meeting_date')
+          .in('class_id', classIds)
+          .eq('is_active', true)
+          .gte('meeting_date', `${todayIso}T00:00:00`)
+          .lte('meeting_date', `${todayIso}T23:59:59.999`)
+        ;(todayMeetings || []).forEach((m) => {
+          if (m.class_id && m.teams_join_url) {
+            meetingsByClass[m.class_id] = m.teams_join_url
+          }
+        })
       }
-      setComputedGpa(gpaFromEnrollments)
 
       const dayIndex = new Date().getDay()
       const todayKey = DAYS[dayIndex]
-      const todayItems = (enrollData || [])
-        .filter(e => e.classes?.class_schedules?.some(s => String(s.day_of_week).toLowerCase() === todayKey))
-        .map(e => {
-          const sched = e.classes?.class_schedules?.find(s => String(s.day_of_week).toLowerCase() === todayKey)
+      const todayItems = termEnrollments
+        .filter((e) =>
+          e.classes?.class_schedules?.some((s) => String(s.day_of_week).toLowerCase() === todayKey),
+        )
+        .map((e) => {
+          const sched = e.classes?.class_schedules?.find(
+            (s) => String(s.day_of_week).toLowerCase() === todayKey,
+          )
+          const classId = e.classes?.id
+          const joinUrl =
+            (classId && meetingsByClass[classId]) || sched?.teams_meeting_url || null
           return {
-            code: e.classes?.subjects?.code || '—',
+            classId,
+            code: e.classes?.subjects?.code || e.classes?.code || '—',
             name: getLocalizedName(e.classes?.subjects, language === 'ar') || '—',
             location: sched?.location || '—',
             instructor: getLocalizedName(e.classes?.instructors, language === 'ar') || '—',
             start: sched?.start_time,
             end: sched?.end_time,
+            joinUrl,
           }
         })
-        .sort((a, b) => (a.start || '').localeCompare(b.start || ''))
+        .sort((a, b) => String(a.start || '').localeCompare(String(b.start || '')))
       setTodaySchedule(todayItems)
+
+      const courses = termEnrollments.map((e) => {
+        const schedules = e.classes?.class_schedules || []
+        const joinUrl =
+          (e.classes?.id && meetingsByClass[e.classes.id]) ||
+          schedules.find((s) => s.teams_meeting_url)?.teams_meeting_url ||
+          null
+        const scheduleSummary = schedules
+          .map((s) => {
+            const day =
+              language === 'ar'
+                ? DAY_NAMES_AR[String(s.day_of_week).toLowerCase()] || s.day_of_week
+                : DAY_NAMES_EN[String(s.day_of_week).toLowerCase()] || s.day_of_week
+            return `${day} ${formatTimeRange12h(s.start_time, s.end_time, language === 'ar')}`
+          })
+          .join(' · ')
+        return {
+          classId: e.classes?.id,
+          code: e.classes?.subjects?.code || e.classes?.code || '—',
+          name: getLocalizedName(e.classes?.subjects, language === 'ar') || '—',
+          instructor: getLocalizedName(e.classes?.instructors, language === 'ar') || '—',
+          scheduleSummary: scheduleSummary || '—',
+          joinUrl,
+        }
+      })
+      setTermCourses(courses)
     } catch (err) {
       console.error('Student dashboard fetch error:', err)
     } finally {
@@ -141,8 +212,21 @@ export default function StudentDashboard() {
   const tx = (ar, en) => (isArabic ? ar : en)
 
   const activeHoldCount = hasFinancialHold ? 1 : 0
-  const registeredCourses = enrollments.filter((e) => String(e.status || '').toLowerCase() === 'enrolled').length
-  const waitlistedCourses = enrollments.filter((e) => String(e.status || '').toLowerCase() === 'waitlisted').length
+  const termEnrolled = activeSemester
+    ? enrollments.filter(
+        (e) =>
+          String(e.semester_id) === String(activeSemester.id) &&
+          String(e.status || '').toLowerCase() === 'enrolled',
+      )
+    : enrollments.filter((e) => String(e.status || '').toLowerCase() === 'enrolled')
+  const registeredCourses = termEnrolled.length
+  const waitlistedCourses = activeSemester
+    ? enrollments.filter(
+        (e) =>
+          String(e.semester_id) === String(activeSemester.id) &&
+          String(e.status || '').toLowerCase() === 'waitlisted',
+      ).length
+    : enrollments.filter((e) => String(e.status || '').toLowerCase() === 'waitlisted').length
   const registeredHours = currentSemesterCredits || 0
   const maxHoursThisTerm = 21
   const daysRemaining = useMemo(() => {
@@ -322,7 +406,10 @@ export default function StudentDashboard() {
                 </div>
                 <div className="text-sm text-slate-500">
                   {daysRemaining != null
-                    ? tx(`مفتوحة حتى ${new Date(activeSemester?.end_date).toLocaleDateString('ar')}`, `Open until ${new Date(activeSemester?.end_date).toLocaleDateString()}`)
+                    ? tx(
+                        `مفتوحة حتى ${new Date(activeSemester?.end_date).toLocaleDateString(isArabic ? 'ar' : undefined)}`,
+                        `Open until ${new Date(activeSemester?.end_date).toLocaleDateString()}`,
+                      )
                     : tx('مفتوحة حتى —', 'Open until —')}
                 </div>
               </div>
@@ -386,28 +473,113 @@ export default function StudentDashboard() {
               {todaySchedule.length === 0 ? (
                 <div className="text-sm text-slate-500">{tx('لا توجد محاضرات اليوم', 'No classes scheduled for today')}</div>
               ) : (
-                todaySchedule.slice(0, 3).map((c, idx) => (
-                  <div
-                    key={`${c.code}-${idx}`}
-                    className="flex items-center gap-4 p-4 rounded-lg border border-slate-200"
-                    style={{
-                      backgroundColor: idx === 0 ? '#dbeafe' : idx === 1 ? '#e6f7ef' : '#fef3c7',
-                      borderRight: isArabic ? `4px solid ${idx === 0 ? '#1d4ed8' : idx === 1 ? '#1a7a4a' : '#b45309'}` : undefined,
-                      borderLeft: !isArabic ? `4px solid ${idx === 0 ? '#1d4ed8' : idx === 1 ? '#1a7a4a' : '#b45309'}` : undefined,
-                    }}
-                  >
-                    <div className="text-xs font-extrabold min-w-[92px]" style={{ color: idx === 0 ? '#1d4ed8' : idx === 1 ? '#1a7a4a' : '#b45309' }}>
-                      {(c.start && c.end) ? `${c.start} - ${c.end}` : '—'}
+                todaySchedule.map((c, idx) => {
+                  const accent = idx % 3
+                  const barColor = accent === 0 ? '#1d4ed8' : accent === 1 ? '#1a7a4a' : '#b45309'
+                  const bgColor = accent === 0 ? '#dbeafe' : accent === 1 ? '#e6f7ef' : '#fef3c7'
+                  const textColor = barColor
+                  return (
+                    <div
+                      key={`${c.classId || c.code}-${idx}`}
+                      className="flex flex-col sm:flex-row sm:items-center gap-3 p-4 rounded-lg border border-slate-200"
+                      style={{
+                        backgroundColor: bgColor,
+                        borderRight: isArabic ? `4px solid ${barColor}` : undefined,
+                        borderLeft: !isArabic ? `4px solid ${barColor}` : undefined,
+                      }}
+                    >
+                      <div className="text-xs font-extrabold min-w-[92px] shrink-0" style={{ color: textColor }}>
+                        {(c.start && c.end)
+                          ? formatTimeRange12h(c.start, c.end, isArabic)
+                          : '—'}
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <div className="font-extrabold text-sm text-slate-900">{c.code} — {c.name}</div>
+                        <div className="text-xs text-slate-600 mt-0.5">
+                          {c.location} · {c.instructor}
+                        </div>
+                      </div>
+                      <div className="shrink-0">
+                        {c.joinUrl ? (
+                          <a
+                            href={c.joinUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-bold text-white whitespace-nowrap"
+                            style={{ backgroundColor: STUDENT_PORTAL_BG }}
+                          >
+                            <Video className="w-3.5 h-3.5" />
+                            {t('classes.joinTeamsMeeting', 'Join Teams Meeting')}
+                            <ExternalLink className="w-3 h-3 opacity-80" />
+                          </a>
+                        ) : (
+                          <span className="text-xs text-slate-500">{t('classes.noTeamsLink', 'No Teams link yet')}</span>
+                        )}
+                      </div>
                     </div>
-                    <div className="min-w-0 flex-1">
-                      <div className="font-extrabold text-sm text-slate-900 truncate">{c.code} — {c.name}</div>
-                      <div className="text-xs text-slate-600 truncate">{c.location} | {c.instructor}</div>
-                    </div>
-                  </div>
-                ))
+                  )
+                })
               )}
             </div>
           </div>
+
+          {/* Term courses with Teams links */}
+          {termCourses.length > 0 && (
+            <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6">
+              <div className="flex items-start justify-between gap-3 mb-5">
+                <div>
+                  <div className="text-lg font-extrabold" style={{ color: STUDENT_PORTAL_BG }}>
+                    {tx('مقررات هذا الفصل', 'Courses this term')}
+                  </div>
+                  <div className="text-sm text-slate-500">
+                    {activeSemester
+                      ? getLocalizedName(activeSemester, isArabic) || activeSemester.name_en
+                      : tx('الفصل الحالي', 'Current semester')}
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  className="text-sm font-bold text-slate-600 hover:text-slate-900"
+                  onClick={() => navigate('/student/elearning/sessions')}
+                >
+                  {tx('جميع الجلسات', 'All sessions')}
+                </button>
+              </div>
+              <div className="divide-y divide-slate-100">
+                {termCourses.map((course) => (
+                  <div
+                    key={course.classId || course.code}
+                    className="flex flex-col sm:flex-row sm:items-center gap-3 py-4 first:pt-0 last:pb-0"
+                  >
+                    <div className="min-w-0 flex-1">
+                      <div className="font-extrabold text-sm text-slate-900">
+                        {course.code} — {course.name}
+                      </div>
+                      <div className="text-xs text-slate-500 mt-1">
+                        {course.instructor} · {course.scheduleSummary}
+                      </div>
+                    </div>
+                    <div className="shrink-0">
+                      {course.joinUrl ? (
+                        <a
+                          href={course.joinUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-bold border border-slate-200 bg-slate-50 text-slate-800 hover:bg-slate-100 whitespace-nowrap"
+                        >
+                          <Video className="w-3.5 h-3.5" style={{ color: STUDENT_PORTAL_BG }} />
+                          {t('studentPortal.elearning.joinTeams', 'Join via Teams')}
+                          <ExternalLink className="w-3 h-3 opacity-60" />
+                        </a>
+                      ) : (
+                        <span className="text-xs text-slate-400">{t('studentPortal.elearning.noJoinLink', 'No meeting link')}</span>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
 
           {/* Financial summary */}
           <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6">
@@ -490,22 +662,18 @@ export default function StudentDashboard() {
                   </div>
                 </div>
               )}
-              {activeSemester && (
+              {activeSemester && String(activeSemester.status || '').toLowerCase() === 'registration_open' && (
                 <div className="flex items-start gap-3">
                   <div className="h-9 w-9 rounded-full flex items-center justify-center border-2" style={{ backgroundColor: '#e6f7ef', borderColor: '#1a7a4a' }}>✓</div>
                   <div className="pt-1">
                     <div className="font-extrabold text-sm text-slate-900">{tx('نافذة التسجيل مفتوحة', 'Registration window open')}</div>
-                    <div className="text-xs text-slate-500">{tx('هذا الفصل', 'This term')}</div>
+                    <div className="text-xs text-slate-500">{getLocalizedName(activeSemester, isArabic) || activeSemester.name_en}</div>
                   </div>
                 </div>
               )}
-              <div className="flex items-start gap-3">
-                <div className="h-9 w-9 rounded-full flex items-center justify-center border-2 bg-slate-50 border-slate-200">📋</div>
-                <div className="pt-1">
-                  <div className="font-extrabold text-sm text-slate-900">{tx('طلب خدمة قيد المراجعة', 'Service request in review')}</div>
-                  <div className="text-xs text-slate-500">{tx('منذ أسبوع', '1 week ago')}</div>
-                </div>
-              </div>
+              {!hasFinancialHold && String(activeSemester?.status || '').toLowerCase() !== 'registration_open' && (
+                <div className="text-sm text-slate-500">{tx('لا توجد إشعارات جديدة', 'No new notifications')}</div>
+              )}
             </div>
           </div>
 

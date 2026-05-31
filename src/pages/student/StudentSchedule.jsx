@@ -1,10 +1,12 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useLanguage } from '../../contexts/LanguageContext'
 import { useAuth } from '../../contexts/AuthContext'
 import { getLocalizedName } from '../../utils/localizedName'
+import { getEmailLookupCandidates } from '../../utils/emailLookup'
+import { formatTime12h, formatTimeRange12h, normalizeTime } from '../../utils/timeFormat'
 import { supabase } from '../../lib/supabase'
-import { Calendar, Printer, Download } from 'lucide-react'
+import { Calendar, Printer, Video, ExternalLink, X } from 'lucide-react'
 
 const DAYS = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday']
 const DAY_NAMES_EN = { sunday: 'Sunday', monday: 'Monday', tuesday: 'Tuesday', wednesday: 'Wednesday', thursday: 'Thursday', friday: 'Friday', saturday: 'Saturday' }
@@ -24,6 +26,9 @@ export default function StudentSchedule() {
   const [grid, setGrid] = useState({})
   const [courseList, setCourseList] = useState([])
   const [timeSlots, setTimeSlots] = useState(DEFAULT_TIME_SLOTS)
+  const [selectedSession, setSelectedSession] = useState(null)
+
+  const isArabic = isRTL || language === 'ar'
 
   useEffect(() => {
     if (user?.email) fetchStudent()
@@ -35,12 +40,16 @@ export default function StudentSchedule() {
 
   const fetchStudent = async () => {
     try {
-      const { data, error } = await supabase
+      const emailCandidates = getEmailLookupCandidates(user.email)
+      let query = supabase
         .from('students')
         .select('id, student_id, name_en, name_ar')
-        .eq('email', user.email)
         .eq('status', 'active')
-        .single()
+      query =
+        emailCandidates.length > 1
+          ? query.in('email', emailCandidates)
+          : query.eq('email', emailCandidates[0] || user.email)
+      const { data, error } = await query.maybeSingle()
       if (error || !data) return
       setStudent(data)
       const { data: enrolls } = await supabase.from('enrollments').select('semester_id').eq('student_id', data.id).eq('status', 'enrolled')
@@ -68,7 +77,7 @@ export default function StudentSchedule() {
             id,
             code,
             subjects(id, code, name_en, name_ar),
-            class_schedules(day_of_week, start_time, end_time, location),
+            class_schedules(id, day_of_week, start_time, end_time, location, teams_meeting_url),
             room,
             building,
             instructors(name_en, name_ar)
@@ -78,6 +87,23 @@ export default function StudentSchedule() {
         .eq('semester_id', selectedSemesterId)
         .eq('status', 'enrolled')
       if (error) throw error
+
+      const classIds = [...new Set((enrollments || []).map((e) => e.classes?.id).filter(Boolean))]
+      const teamsByClass = {}
+      if (classIds.length) {
+        const { data: meetings } = await supabase
+          .from('class_teams_meetings')
+          .select('class_id, teams_join_url')
+          .in('class_id', classIds)
+          .eq('is_active', true)
+          .order('meeting_date', { ascending: false })
+        ;(meetings || []).forEach((m) => {
+          if (m.class_id && m.teams_join_url && !teamsByClass[m.class_id]) {
+            teamsByClass[m.class_id] = m.teams_join_url
+          }
+        })
+      }
+
       const gridMap = {}
       const seen = new Set()
       const list = []
@@ -86,23 +112,30 @@ export default function StudentSchedule() {
         const cls = enr.classes
         if (!cls?.class_schedules?.length) return
         const sub = cls.subjects
-        const code = sub?.code || '—'
+        const code = sub?.code || cls.code || '—'
         const name = getLocalizedName(sub, language === 'ar') || '—'
         const color = COLORS[idx % COLORS.length]
         cls.class_schedules.forEach(s => {
           const day = String(s.day_of_week || '').toLowerCase()
           if (!DAYS.includes(day)) return
-          const startNorm = (s.start_time || '').slice(0, 5)
+          const startNorm = normalizeTime(s.start_time)
+          const endNorm = normalizeTime(s.end_time)
           if (startNorm) slotSet.add(startNorm)
           const key = `${day}_${startNorm}`
           if (!gridMap[key]) gridMap[key] = []
-          const endNorm = (s.end_time || '').slice(0, 5)
+          const joinUrl = s.teams_meeting_url || teamsByClass[cls.id] || null
           gridMap[key].push({
+            classId: cls.id,
+            scheduleId: s.id,
             code,
             name,
+            day,
+            dayLabel: isArabic ? DAY_NAMES_AR[day] : DAY_NAMES_EN[day],
             location: s.location || [cls.building, cls.room].filter(Boolean).join(' ') || '—',
             instructor: getLocalizedName(cls.instructors, language === 'ar') || '—',
-            time: `${startNorm} - ${endNorm}`,
+            startTime: startNorm,
+            endTime: endNorm,
+            joinUrl,
             color,
           })
           const listKey = `${code}-${name}`
@@ -124,6 +157,30 @@ export default function StudentSchedule() {
 
   const currentSemester = semesters.find(s => String(s.id) === selectedSemesterId)
   const displayDays = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday']
+
+  const getRowEndTime = (slot) => {
+    let maxEnd = ''
+    displayDays.forEach((day) => {
+      const cells = grid[`${day}_${slot}`] || []
+      cells.forEach((c) => {
+        if (c.endTime && (!maxEnd || c.endTime > maxEnd)) maxEnd = c.endTime
+      })
+    })
+    if (maxEnd) return maxEnd
+    const idx = timeSlots.indexOf(slot)
+    return idx >= 0 && idx < timeSlots.length - 1 ? timeSlots[idx + 1] : null
+  }
+
+  const rowTimeLabels = useMemo(() => {
+    const labels = {}
+    timeSlots.forEach((slot) => {
+      const end = getRowEndTime(slot)
+      labels[slot] = end
+        ? formatTimeRange12h(slot, end, isArabic)
+        : formatTime12h(slot, isArabic)
+    })
+    return labels
+  }, [timeSlots, grid, isArabic])
 
   if (loading && !student) {
     return (
@@ -183,10 +240,10 @@ export default function StudentSchedule() {
               </tr>
             </thead>
             <tbody>
-              {timeSlots.map((slot, rowIdx) => (
+              {timeSlots.map((slot) => (
                 <tr key={slot} className="border-b border-slate-100">
                   <td className={`px-3 py-2 text-slate-600 text-sm font-medium bg-slate-50 align-top whitespace-nowrap ${isRTL ? 'text-right' : 'text-left'}`}>
-                    {slot} – {timeSlots[rowIdx + 1] || '18:30'}
+                    {rowTimeLabels[slot] || formatTime12h(slot, isArabic)}
                   </td>
                   {displayDays.map((day) => {
                     const key = `${day}_${slot}`
@@ -198,11 +255,25 @@ export default function StudentSchedule() {
                         ) : (
                           <div className={`space-y-1 ${isRTL ? 'text-right' : 'text-left'}`}>
                             {cells.map((c, i) => (
-                              <div key={i} className={`rounded-lg p-2.5 text-white text-xs shadow-sm ${c.color} ${isRTL ? 'text-right' : 'text-left'}`}>
+                              <button
+                                key={`${c.scheduleId || c.code}-${i}`}
+                                type="button"
+                                onClick={() => setSelectedSession(c)}
+                                className={`w-full rounded-lg p-2.5 text-white text-xs shadow-sm text-left transition-transform hover:scale-[1.02] hover:shadow-md focus:outline-none focus:ring-2 focus:ring-white/60 ${c.color} ${isRTL ? 'text-right' : 'text-left'} ${c.joinUrl ? 'cursor-pointer' : 'cursor-pointer opacity-95'}`}
+                                title={c.joinUrl ? t('classes.joinTeamsMeeting', 'Join Teams Meeting') : t('classes.noTeamsLink', 'No Teams link yet')}
+                              >
                                 <p className="font-semibold">{c.code}</p>
                                 <p className="opacity-95 truncate mt-0.5">{c.name}</p>
-                                <p className="opacity-90 mt-1 text-[11px]">{c.location}</p>
-                              </div>
+                                <p className="opacity-90 mt-1 text-[11px]">
+                                  {formatTimeRange12h(c.startTime, c.endTime, isArabic)}
+                                </p>
+                                <p className="opacity-90 text-[11px]">{c.location}</p>
+                                {c.joinUrl && (
+                                  <p className="opacity-80 mt-1.5 text-[10px] font-semibold underline underline-offset-2">
+                                    {t('studentPortal.elearning.joinTeams', 'Join via Teams')}
+                                  </p>
+                                )}
+                              </button>
                             ))}
                           </div>
                         )}
@@ -225,6 +296,76 @@ export default function StudentSchedule() {
           </div>
         )}
       </div>
+
+      {selectedSession && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50"
+          onClick={() => setSelectedSession(null)}
+          role="presentation"
+        >
+          <div
+            className={`bg-white rounded-2xl shadow-xl max-w-md w-full p-6 ${isRTL ? 'text-right' : 'text-left'}`}
+            dir={isRTL ? 'rtl' : 'ltr'}
+            onClick={(e) => e.stopPropagation()}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="session-modal-title"
+          >
+            <div className={`flex items-start justify-between gap-3 mb-4 ${isRTL ? 'flex-row-reverse' : ''}`}>
+              <div>
+                <h2 id="session-modal-title" className="text-lg font-bold text-slate-900">
+                  {selectedSession.code} — {selectedSession.name}
+                </h2>
+                <p className="text-sm text-slate-500 mt-1">
+                  {selectedSession.dayLabel} · {formatTimeRange12h(selectedSession.startTime, selectedSession.endTime, isArabic)}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setSelectedSession(null)}
+                className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-500"
+                aria-label={t('common.close', 'Close')}
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <dl className="space-y-2 text-sm mb-5">
+              <div className={`flex gap-2 ${isRTL ? 'flex-row-reverse' : ''}`}>
+                <dt className="text-slate-500 shrink-0">{t('studentPortal.time', 'Time')}:</dt>
+                <dd className="font-medium text-slate-800">
+                  {formatTimeRange12h(selectedSession.startTime, selectedSession.endTime, isArabic)}
+                </dd>
+              </div>
+              <div className={`flex gap-2 ${isRTL ? 'flex-row-reverse' : ''}`}>
+                <dt className="text-slate-500 shrink-0">{t('classes.location', 'Location')}:</dt>
+                <dd className="font-medium text-slate-800">{selectedSession.location}</dd>
+              </div>
+              <div className={`flex gap-2 ${isRTL ? 'flex-row-reverse' : ''}`}>
+                <dt className="text-slate-500 shrink-0">{t('classes.instructor', 'Instructor')}:</dt>
+                <dd className="font-medium text-slate-800">{selectedSession.instructor}</dd>
+              </div>
+            </dl>
+
+            {selectedSession.joinUrl ? (
+              <a
+                href={selectedSession.joinUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className={`w-full inline-flex items-center justify-center gap-2 px-4 py-3 rounded-xl bg-blue-600 text-white font-semibold hover:bg-blue-700 transition-colors ${isRTL ? 'flex-row-reverse' : ''}`}
+              >
+                <Video className="w-5 h-5" />
+                {t('classes.joinTeamsMeeting', 'Join Teams Meeting')}
+                <ExternalLink className="w-4 h-4 opacity-80" />
+              </a>
+            ) : (
+              <p className="text-sm text-slate-500 text-center py-2">
+                {t('studentPortal.elearning.noJoinLink', 'No meeting link')}
+              </p>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   )
 }

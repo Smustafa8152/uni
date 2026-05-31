@@ -50,8 +50,8 @@ function fmtTimeRange(startAt, endAt, isArabic) {
   if (!startAt || !endAt) return '—'
   const a = new Date(startAt)
   const b = new Date(endAt)
-  const opts = { hour: '2-digit', minute: '2-digit' }
-  const locale = isArabic ? 'ar-SA' : undefined
+  const opts = { hour: 'numeric', minute: '2-digit', hour12: true }
+  const locale = isArabic ? 'ar-SA' : 'en-US'
   return `${a.toLocaleTimeString(locale, opts)} – ${b.toLocaleTimeString(locale, opts)}`
 }
 
@@ -315,10 +315,6 @@ export default function StudentTeamsSessions() {
     })
   }, [weekSessions, now])
 
-  const upcomingJoinable = useMemo(() => {
-    return (upcomingThisWeek || []).filter((s) => Boolean(s?.meeting?.teams_join_url || s?.teams_meeting_url))
-  }, [upcomingThisWeek])
-
   const titleFor = (o) => {
     if (o?.meeting?.meeting_title) return o.meeting.meeting_title
     const sub = o?.classes?.subjects
@@ -580,11 +576,13 @@ export default function StudentTeamsSessions() {
 
         {loading ? (
           <div className="text-sm" style={{ color: UI.muted }}>{t('common.loading', 'Loading...')}</div>
-        ) : upcomingJoinable.length === 0 ? (
+        ) : upcomingThisWeek.length === 0 ? (
           <div className="text-sm" style={{ color: UI.muted }}>{t('studentPortal.elearning.noUpcoming', 'No upcoming sessions this week.')}</div>
         ) : (
           <div className="divide-y" style={{ borderColor: UI.bdr }}>
-            {upcomingJoinable.map((s) => (
+            {upcomingThisWeek.map((s) => {
+              const joinHref = s?.meeting?.teams_join_url || s?.teams_meeting_url || ''
+              return (
               <div key={s.key} className="py-4 flex flex-wrap items-start justify-between gap-3">
                 <div className="flex items-start gap-4">
                   <div className="w-12 h-12 rounded-xl flex items-center justify-center text-2xl" style={{ backgroundColor: UI.teamsBg }}>
@@ -603,21 +601,35 @@ export default function StudentTeamsSessions() {
                     <div className="text-sm mt-2" style={{ color: UI.muted }}>{instructorFor(s?.classes)}</div>
                   </div>
                 </div>
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 flex-wrap">
                   <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-extrabold" style={{ backgroundColor: UI.infoBg, color: UI.info }}>
                     {s?.meeting?.teams_join_url ? t('studentPortal.elearning.meetingScheduled', 'Meeting scheduled') : t('studentPortal.elearning.timetableSlot', 'Timetable slot')}
                   </span>
+                  {joinHref ? (
+                    <a
+                      className="px-4 py-2 rounded-md font-extrabold text-white text-sm"
+                      style={{ backgroundColor: UI.teams }}
+                      href={joinHref}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                    >
+                      🎥 {t('studentPortal.elearning.joinTeams', 'Join via Teams')}
+                    </a>
+                  ) : (
+                    <span className="text-xs" style={{ color: UI.muted }}>{t('studentPortal.elearning.noJoinLink', 'No meeting link')}</span>
+                  )}
                   <button
                     type="button"
                     className="px-3 py-2 rounded-md border text-sm font-semibold"
-                    style={{ borderColor: UI.p, color: UI.p, backgroundColor: 'transparent' }}
+                    style={{ borderColor: UI.bdr, backgroundColor: UI.bg, color: UI.txt }}
                     onClick={() => navigate(`/student/elearning/sessions/${s.class_schedule_id}/${s.session_date}/lobby`)}
                   >
                     📋 {t('studentPortal.elearning.sessionDetails', 'Session details')}
                   </button>
                 </div>
               </div>
-            ))}
+              )
+            })}
           </div>
         )}
       </div>
