@@ -116,7 +116,7 @@ export const AuthProvider = ({ children }) => {
             const { data: instructorData, error: instructorError } = await supabase
               .from('instructors')
               .select('department_id, college_id')
-              .eq('email', matchedEmail)
+              .ilike('email', matchedEmail)
               .eq('college_id', finalCollegeId)
               .limit(1)
             
@@ -135,6 +135,33 @@ export const AuthProvider = ({ children }) => {
         
         return data.role
       } else {
+        // Fallback for instructor accounts: sometimes auth exists but `public.users` is not populated.
+        // In that case, try resolving role + scope from `instructors` by email.
+        try {
+          let inst = null
+          for (const candidate of getEmailLookupCandidates(email)) {
+            const res = await supabase
+              .from('instructors')
+              .select('id, college_id, department_id, email')
+              .eq('status', 'active')
+              .ilike('email', candidate)
+              .maybeSingle()
+            if (res.data) {
+              inst = res.data
+              break
+            }
+          }
+
+          if (inst) {
+            setUserRole('instructor')
+            setCollegeId(inst.college_id ?? null)
+            setDepartmentId(inst.department_id ?? null)
+            return 'instructor'
+          }
+        } catch (fallbackErr) {
+          console.warn('Fallback instructor lookup failed:', fallbackErr)
+        }
+
         // User not found in users table, but has auth session
         // Set role to null but don't block the app
         console.warn('User not found in users table:', email, 'Error:', error)
@@ -390,10 +417,39 @@ export const AuthProvider = ({ children }) => {
         }
 
         if (userError || !userData) {
+          // Allow instructor login even if `public.users` row is missing:
+          // verify against `instructors` table instead of blocking sign-in.
+          if (expectedRole === 'instructor') {
+            let inst = null
+            for (const candidate of getEmailLookupCandidates(sessionEmail)) {
+              const res = await supabase
+                .from('instructors')
+                .select('id, college_id, department_id, email')
+                .eq('status', 'active')
+                .ilike('email', candidate)
+                .maybeSingle()
+              if (res.data) {
+                inst = res.data
+                break
+              }
+            }
+
+            if (inst) {
+              if (data.session) {
+                data.session.user.user_metadata = {
+                  ...data.session.user.user_metadata,
+                  role: 'instructor',
+                  college_id: inst.college_id ?? null,
+                }
+              }
+              return { data, error: null }
+            }
+          }
+
           await supabase.auth.signOut()
-          return { 
-            data: null, 
-            error: { message: 'User not found in system' } 
+          return {
+            data: null,
+            error: { message: 'User not found in system' },
           }
         }
 

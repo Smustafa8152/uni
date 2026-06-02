@@ -5,7 +5,7 @@ import { useLanguage } from '../../contexts/LanguageContext'
 import { getLocalizedName } from '../../utils/localizedName'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
-import { Plus, Library, Search, Eye, Edit } from 'lucide-react'
+import { Plus, Library, Search, Eye, Edit, Trash2, Loader2 } from 'lucide-react'
 
 export default function Classes() {
   const { t } = useTranslation()
@@ -15,6 +15,8 @@ export default function Classes() {
   const [classes, setClasses] = useState([])
   const [loading, setLoading] = useState(true)
   const [searchQuery, setSearchQuery] = useState('')
+  const [deletingId, setDeletingId] = useState(null)
+  const [toast, setToast] = useState('')
 
   useEffect(() => {
     fetchClasses()
@@ -43,6 +45,51 @@ export default function Classes() {
     }
   }
 
+  const deleteSession = async (cls) => {
+    if (!cls?.id) return
+    const ok = window.confirm(
+      t(
+        'classes.confirmDelete',
+        'Delete this session section? This can only be done if there are no enrollments.',
+      ),
+    )
+    if (!ok) return
+
+    try {
+      setDeletingId(cls.id)
+      setToast('')
+
+      const { count: enrollCount, error: enrollErr } = await supabase
+        .from('enrollments')
+        .select('id', { count: 'exact', head: true })
+        .eq('class_id', cls.id)
+      if (enrollErr) throw enrollErr
+      if ((enrollCount || 0) > 0) {
+        setToast(`ERR::${t('classes.cannotDeleteHasEnrollments', 'Cannot delete: students are enrolled. You can deactivate instead.')}`)
+        return
+      }
+
+      // Clean up dependent rows (FKs are NO ACTION for class_schedules)
+      const { error: schedErr } = await supabase.from('class_schedules').delete().eq('class_id', cls.id)
+      if (schedErr) throw schedErr
+
+      // Optional cleanups (safe if table exists + RLS allows)
+      await supabase.from('class_teams_meetings').delete().eq('class_id', cls.id)
+
+      const { error: delErr } = await supabase.from('classes').delete().eq('id', cls.id)
+      if (delErr) throw delErr
+
+      setToast(t('classes.deleteSuccess', 'Session deleted.'))
+      fetchClasses()
+    } catch (e) {
+      console.error('Delete session failed:', e)
+      setToast(`ERR::${e?.message || t('classes.deleteFailed', 'Failed to delete session.')}`)
+    } finally {
+      setDeletingId(null)
+      setTimeout(() => setToast(''), 6000)
+    }
+  }
+
   const filteredClasses = classes.filter(cls => {
     const subjectName = getLocalizedName(cls.subjects, isRTL)
     return cls.code.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -64,6 +111,18 @@ export default function Classes() {
           <span>{t('classes.create')}</span>
         </button>
       </div>
+
+      {toast && (
+        <div
+          className={`rounded-xl border px-4 py-3 text-sm ${
+            toast.startsWith('ERR::')
+              ? 'border-red-200 bg-red-50 text-red-900'
+              : 'border-emerald-200 bg-emerald-50 text-emerald-900'
+          }`}
+        >
+          {toast.startsWith('ERR::') ? toast.slice(5) : toast}
+        </div>
+      )}
 
       <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6">
         <div className="relative">
@@ -124,6 +183,21 @@ export default function Classes() {
                   <Edit className="w-4 h-4" />
                   <span>{t('common.edit')}</span>
                 </button>
+                {(userRole === 'admin' || userRole === 'user') && (
+                  <button
+                    type="button"
+                    onClick={() => deleteSession(cls)}
+                    disabled={deletingId === cls.id}
+                    className={`flex items-center justify-center px-3 py-2 rounded-lg border border-red-200 bg-red-50 text-red-700 hover:bg-red-100 transition-colors disabled:opacity-50 disabled:cursor-not-allowed`}
+                    title={t('common.delete', 'Delete')}
+                  >
+                    {deletingId === cls.id ? (
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                    ) : (
+                      <Trash2 className="w-4 h-4" />
+                    )}
+                  </button>
+                )}
               </div>
             </div>
           ))}
