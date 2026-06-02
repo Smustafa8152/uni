@@ -5,6 +5,7 @@ import { useLanguage } from '../../contexts/LanguageContext'
 import { useAuth } from '../../contexts/AuthContext'
 import { getLocalizedName } from '../../utils/localizedName'
 import { supabase } from '../../lib/supabase'
+import { getActiveInstructorByEmail } from '../../utils/getActiveInstructorByEmail'
 
 const defaultSettings = {
   default_release_mode: 'scheduled',
@@ -71,12 +72,7 @@ export default function InstructorContentRelease() {
   const loadInstructorClasses = async () => {
     setLoading(true)
     try {
-      const { data: instructor } = await supabase
-        .from('instructors')
-        .select('id')
-        .eq('email', user.email)
-        .eq('status', 'active')
-        .single()
+      const instructor = await getActiveInstructorByEmail(user.email)
 
       if (!instructor) {
         setLoading(false)

@@ -6,6 +6,7 @@ import { useAuth } from '../../contexts/AuthContext'
 import { getLocalizedName } from '../../utils/localizedName'
 import { supabase } from '../../lib/supabase'
 import { pickPreferredSemesterForDashboard } from '../../utils/instructorSemesters'
+import { getActiveInstructorByEmail } from '../../utils/getActiveInstructorByEmail'
 
 export default function InstructorDashboard() {
   const { t } = useTranslation()
@@ -25,13 +26,8 @@ export default function InstructorDashboard() {
     if (!user?.email) return
     try {
       setLoading(true)
-      const { data: instData, error: instErr } = await supabase
-        .from('instructors')
-        .select('id, name_en, name_ar, email, college_id')
-        .eq('email', user.email)
-        .eq('status', 'active')
-        .single()
-      if (instErr || !instData) {
+      const instData = await getActiveInstructorByEmail(user.email)
+      if (!instData) {
         setLoading(false)
         return
       }

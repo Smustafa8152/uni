@@ -7,6 +7,7 @@ import { getLocalizedName } from '../../utils/localizedName'
 import { supabase } from '../../lib/supabase'
 import { downloadQuestionBankTemplate, parseQuestionBankExcelFile } from '../../utils/questionBankExcel'
 import { QUESTION_TYPES_WITH_ALL, QUESTION_TYPE_OPTIONS } from '../../constants/questionTypes'
+import { getActiveInstructorByEmail } from '../../utils/getActiveInstructorByEmail'
 
 const QB_DEFAULT_OPTIONS = ['Option 1', 'Option 2', 'Option 3', 'Option 4']
 
@@ -163,7 +164,7 @@ export default function InstructorQuestionBank({ embedded = false, embedClassId 
     setLoading(true)
     try {
       const [{ data: instructor }, { data: userRow }] = await Promise.all([
-        supabase.from('instructors').select('id').eq('email', user.email).eq('status', 'active').single(),
+        getActiveInstructorByEmail(user.email),
         supabase.from('users').select('id').eq('email', user.email).maybeSingle(),
       ])
 

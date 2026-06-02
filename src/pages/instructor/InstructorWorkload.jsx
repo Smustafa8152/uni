@@ -6,6 +6,7 @@ import { useLanguage } from '../../contexts/LanguageContext'
 import { getLocalizedName } from '../../utils/localizedName'
 import { supabase } from '../../lib/supabase'
 import { fetchSemestersForInstructor } from '../../utils/instructorSemesters'
+import { getActiveInstructorByEmail } from '../../utils/getActiveInstructorByEmail'
 import {
   TIMETABLE_DAY_KEYS,
   WORKLOAD_DAY_I18N_KEYS,
@@ -65,13 +66,7 @@ export default function InstructorWorkload() {
   }, [instructor?.id, selectedSemesterId])
 
   const fetchInstructor = async () => {
-    const { data } = await supabase
-      .from('instructors')
-      .select('id, name_en, name_ar, college_id')
-      .eq('email', user.email)
-      .eq('status', 'active')
-      .single()
-
+    const data = await getActiveInstructorByEmail(user.email)
     if (data) setInstructor(data)
   }
 

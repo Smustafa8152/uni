@@ -6,6 +6,7 @@ import { useLanguage } from '../../contexts/LanguageContext'
 import '../../styles/instructor-portal.css'
 import { getLocalizedName } from '../../utils/localizedName'
 import { supabase, SUPABASE_STORAGE_BUCKET } from '../../lib/supabase'
+import { getActiveInstructorByEmail } from '../../utils/getActiveInstructorByEmail'
 
 const ELEMENT_TYPES = [
   { key: 'heading', label: 'Heading', icon: 'H' },
@@ -210,20 +211,15 @@ export default function InstructorBuildLesson({ embedded = false, embedClassId =
   const loadInstructorClasses = async () => {
     setLoading(true)
     try {
-      const { data: instructor } = await supabase
-        .from('instructors')
-        .select('id, can_add_materials')
-        .eq('email', user.email)
-        .eq('status', 'active')
-        .single()
+      const instructor = await getActiveInstructorByEmail(user.email)
 
+      const canAdd = Boolean(instructor?.can_add_materials)
       if (!instructor) {
         setCanAddLessonContent(false)
         setLoading(false)
         return
       }
-
-      setCanAddLessonContent(!!instructor.can_add_materials)
+      setCanAddLessonContent(canAdd)
 
       const { data: cls } = await supabase
         .from('classes')

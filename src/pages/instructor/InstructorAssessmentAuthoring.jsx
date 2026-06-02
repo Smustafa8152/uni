@@ -8,6 +8,7 @@ import { supabase, SUPABASE_STORAGE_BUCKET } from '../../lib/supabase'
 import { QUESTION_TYPE_OPTIONS } from '../../constants/questionTypes'
 import { RUBRIC_CATALOG_FALLBACK } from '../../constants/instructorRubricCatalog'
 import { INSTRUCTOR_SEMESTER_SELECT } from '../../utils/instructorSemesters'
+import { getActiveInstructorByEmail } from '../../utils/getActiveInstructorByEmail'
 
 const defaultExamForm = {
   title: '',
@@ -192,12 +193,7 @@ export default function InstructorAssessmentAuthoring({ embedded = false, embedC
     setLoading(true)
     try {
       const [{ data: instructor }, { data: userRow }] = await Promise.all([
-        supabase
-          .from('instructors')
-          .select('id')
-          .eq('email', user.email)
-          .eq('status', 'active')
-          .single(),
+        getActiveInstructorByEmail(user.email),
         supabase.from('users').select('id').eq('email', user.email).maybeSingle(),
       ])
 

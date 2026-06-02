@@ -15,6 +15,7 @@ import {
   INSTRUCTOR_SEMESTER_SELECT,
   effectiveGradeEntryAllowed,
 } from '../../utils/instructorSemesters'
+import { getActiveInstructorByEmail } from '../../utils/getActiveInstructorByEmail'
 
 export default function InstructorGradebook({ embedded = false, embedClassId = null } = {}) {
   const { t } = useTranslation()
@@ -46,13 +47,7 @@ export default function InstructorGradebook({ embedded = false, embedClassId = n
 
   useEffect(() => {
     if (user?.email) {
-      supabase
-        .from('instructors')
-        .select('id, name_en, name_ar, college_id')
-        .eq('email', user.email)
-        .eq('status', 'active')
-        .single()
-        .then(({ data }) => data && setInstructor(data))
+      getActiveInstructorByEmail(user.email).then((data) => data && setInstructor(data))
     }
   }, [user?.email])
 
