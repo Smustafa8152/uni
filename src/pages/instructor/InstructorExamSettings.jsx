@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next'
 import { useAuth } from '../../contexts/AuthContext'
 import { supabase } from '../../lib/supabase'
 import { examRowToDatetimeLocalValues, datetimeLocalsToExamPayload } from '../../utils/subjectExamDateTime'
+import { getActiveInstructorByEmail } from '../../utils/getActiveInstructorByEmail'
 
 function defaultForm() {
   return {
@@ -80,12 +81,7 @@ export default function InstructorExamSettings() {
       setLoading(true)
       setSaveStatus(null)
       try {
-        const { data: instructor } = await supabase
-          .from('instructors')
-          .select('id')
-          .eq('email', user.email)
-          .eq('status', 'active')
-          .single()
+        const instructor = await getActiveInstructorByEmail(user.email)
 
         if (!instructor || cancelled) {
           setClassRow(null)

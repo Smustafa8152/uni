@@ -7,6 +7,7 @@ import { getLocalizedName } from '../../utils/localizedName'
 import { supabase } from '../../lib/supabase'
 import { sumTeachingMinutes, uniqueLocationsFromSchedules } from '../../utils/instructorTimetable'
 import { formatRelativeTimePast } from '../../utils/formatRelativeTimePast'
+import { getActiveInstructorByEmail } from '../../utils/getActiveInstructorByEmail'
 import {
   fetchSemestersForInstructor,
   effectiveGradeEntryAllowed,
@@ -69,13 +70,7 @@ export default function InstructorMyCourses() {
   }, [instructor?.id, selectedSemesterId])
 
   const fetchInstructor = async () => {
-    const { data } = await supabase
-      .from('instructors')
-      .select('id, name_en, name_ar, college_id')
-      .eq('email', user.email)
-      .eq('status', 'active')
-      .single()
-
+    const data = await getActiveInstructorByEmail(user.email)
     if (data) setInstructor(data)
   }
 

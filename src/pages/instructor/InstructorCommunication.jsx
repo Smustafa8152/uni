@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next'
 import { useAuth } from '../../contexts/AuthContext'
 import { useLanguage } from '../../contexts/LanguageContext'
 import { supabase } from '../../lib/supabase'
+import { getActiveInstructorByEmail } from '../../utils/getActiveInstructorByEmail'
 
 /** Instructor ↔ students communication — matches portal reference (announcements, DM, inbox). */
 export default function InstructorCommunication({ embedded = false, embedClassId = null } = {}) {
@@ -37,12 +38,7 @@ export default function InstructorCommunication({ embedded = false, embedClassId
     ;(async () => {
       setLoading(true)
       try {
-        const { data: instructor } = await supabase
-          .from('instructors')
-          .select('id')
-          .eq('email', user.email)
-          .eq('status', 'active')
-          .single()
+        const instructor = await getActiveInstructorByEmail(user.email)
 
         if (!instructor || cancelled) {
           setClassRow(null)

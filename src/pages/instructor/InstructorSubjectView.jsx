@@ -10,6 +10,7 @@ import {
 } from '../../utils/instructorSemesters'
 import { getLocalizedName } from '../../utils/localizedName'
 import { useAuth } from '../../contexts/AuthContext'
+import { getActiveInstructorByEmail } from '../../utils/getActiveInstructorByEmail'
 import { 
   ArrowLeft, BookOpen, FileText, Video, Upload, Plus, Edit, Trash2,
   CheckCircle, XCircle, Clock, AlertCircle, GraduationCap, Eye, 
@@ -84,14 +85,8 @@ export default function InstructorSubjectView() {
     setLoading(true)
     try {
       // Fetch instructor
-      const { data: instructorData, error: instructorError } = await supabase
-        .from('instructors')
-        .select('id, name_en, email, college_id, can_add_materials')
-        .eq('email', user.email)
-        .eq('status', 'active')
-        .single()
-
-      if (instructorError) throw instructorError
+      const instructorData = await getActiveInstructorByEmail(user.email)
+      if (!instructorData) throw new Error('Instructor not found')
       setInstructor(instructorData)
 
       const { data: userRow } = await supabase.from('users').select('id').eq('email', user.email).maybeSingle()

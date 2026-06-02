@@ -5,6 +5,7 @@ import { useAuth } from '../../contexts/AuthContext'
 import { useLanguage } from '../../contexts/LanguageContext'
 import { getLocalizedName } from '../../utils/localizedName'
 import { supabase } from '../../lib/supabase'
+import { getActiveInstructorByEmail } from '../../utils/getActiveInstructorByEmail'
 
 /** Course analytics dashboard — matches instructor portal reference (stats, CLOs, at-risk, assessments, activity). */
 export default function InstructorCourseAnalytics({ embedded = false, embedClassId = null } = {}) {
@@ -36,12 +37,7 @@ export default function InstructorCourseAnalytics({ embedded = false, embedClass
     ;(async () => {
       setLoading(true)
       try {
-        const { data: instructor } = await supabase
-          .from('instructors')
-          .select('id')
-          .eq('email', user.email)
-          .eq('status', 'active')
-          .single()
+        const instructor = await getActiveInstructorByEmail(user.email)
 
         if (!instructor || cancelled) {
           setForbidden(true)

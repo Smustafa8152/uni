@@ -5,6 +5,7 @@ import { useAuth } from '../../contexts/AuthContext'
 import { useLanguage } from '../../contexts/LanguageContext'
 import { getLocalizedName } from '../../utils/localizedName'
 import { supabase } from '../../lib/supabase'
+import { getActiveInstructorByEmail } from '../../utils/getActiveInstructorByEmail'
 
 /** Academic integrity cases — matches instructor portal reference. */
 export default function InstructorIntegrityCases({ embedded = false, embedClassId = null } = {}) {
@@ -38,12 +39,7 @@ export default function InstructorIntegrityCases({ embedded = false, embedClassI
     ;(async () => {
       setLoading(true)
       try {
-        const { data: instructor } = await supabase
-          .from('instructors')
-          .select('id')
-          .eq('email', user.email)
-          .eq('status', 'active')
-          .single()
+        const instructor = await getActiveInstructorByEmail(user.email)
 
         if (!instructor || cancelled) {
           setClassRow(null)
