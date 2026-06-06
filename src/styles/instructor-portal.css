@@ -1313,6 +1313,31 @@
   background: var(--err-bg);
   color: var(--err);
 }
+.instructor-portal .sched-teams-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-top: 4px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 700;
+  text-decoration: none;
+  background: var(--teal);
+  color: #fff;
+  transition: opacity 0.15s ease;
+}
+.instructor-portal .sched-teams-link:hover {
+  opacity: 0.9;
+  color: #fff;
+}
+.instructor-portal .sched-teams-missing {
+  display: inline-block;
+  margin-top: 4px;
+  font-size: 10px;
+  color: var(--muted);
+  font-style: italic;
+}
 .instructor-portal .sched-legend {
   display: flex;
   flex-wrap: wrap;

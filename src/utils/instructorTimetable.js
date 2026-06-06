@@ -100,6 +100,7 @@ export function buildInstructorWeekMatrix(schedules) {
       loc,
       classType: cls?.type || 'on_campus',
       gradClass: gradClassForClassId(s.class_id),
+      joinUrl: s.teams_meeting_url || s.teamsJoinUrl || null,
     })
   }
 

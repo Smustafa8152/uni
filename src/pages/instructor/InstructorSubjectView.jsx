@@ -20,6 +20,7 @@ import {
 } from 'lucide-react'
 import InstructorSubjectHome, { COURSE_PANEL } from './InstructorSubjectHome'
 import InstructorSubjectSessionsPanel from './InstructorSubjectSessionsPanel'
+import InstructorSubjectStudentsPanel from './InstructorSubjectStudentsPanel'
 import InstructorCurriculumMap from './InstructorCurriculumMap'
 import InstructorBuildLesson from './InstructorBuildLesson'
 import InstructorQuestionBank from './InstructorQuestionBank'
@@ -723,6 +724,9 @@ export default function InstructorSubjectView() {
                     navigate(`/instructor/subjects/${id}?tab=attendance`)
                   }}
                 />
+              )}
+              {coursePanel === COURSE_PANEL.students && (
+                <InstructorSubjectStudentsPanel classes={classes} />
               )}
               {coursePanel === COURSE_PANEL.curriculum && (
                 <div style={{ maxHeight: '72vh', overflow: 'auto' }}>

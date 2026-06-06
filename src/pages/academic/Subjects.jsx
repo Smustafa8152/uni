@@ -3,9 +3,10 @@ import { useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { useLanguage } from '../../contexts/LanguageContext'
 import { getLocalizedName } from '../../utils/localizedName'
+import { exportSubjectStudentsList, exportAllSubjectsStudentsWorkbook } from '../../utils/exportStudents'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
-import { Plus, BookOpen, Search, Eye, Edit } from 'lucide-react'
+import { Plus, BookOpen, Search, Eye, Edit, Download, Loader2 } from 'lucide-react'
 
 export default function Subjects() {
   const { t, i18n } = useTranslation()
@@ -20,6 +21,9 @@ export default function Subjects() {
   const [searchQuery, setSearchQuery] = useState('')
   const [majorFilter, setMajorFilter] = useState('')
   const [collegeFilter, setCollegeFilter] = useState('')
+  const [exportingSubjectId, setExportingSubjectId] = useState(null)
+  const [exportingAll, setExportingAll] = useState(false)
+  const [toast, setToast] = useState('')
 
   useEffect(() => {
     fetchSubjects()
@@ -94,6 +98,74 @@ export default function Subjects() {
       .map(s => [s.colleges.id, s.colleges])
   ).values()]
 
+  const handleExportAllSubjects = async () => {
+    if (!filteredSubjects.length) {
+      setToast(t('academic.subjects.exportAllNone', 'No subjects to export.'))
+      setTimeout(() => setToast(''), 4000)
+      return
+    }
+    try {
+      setExportingAll(true)
+      setToast('')
+      const result = await exportAllSubjectsStudentsWorkbook({
+        subjects: filteredSubjects,
+        isArabic: isArabicLayout,
+        status: 'enrolled',
+        semesterId: 'all',
+      })
+      if (result.studentCount === 0) {
+        setToast(
+          t('academic.subjects.exportAllEmpty', {
+            sheets: result.sheetCount,
+            defaultValue: 'Downloaded workbook with {{sheets}} sheets (no enrolled students found).',
+          }),
+        )
+      } else {
+        setToast(
+          t('academic.subjects.exportAllSuccess', {
+            sheets: result.sheetCount,
+            students: result.studentCount,
+            defaultValue: 'Downloaded workbook with {{sheets}} sheets and {{students}} students.',
+          }),
+        )
+      }
+      setTimeout(() => setToast(''), 5000)
+    } catch (e) {
+      console.error('Export all subject students failed:', e)
+      setToast(`ERR::${e?.message || t('students.exportFailed', 'Export failed.')}`)
+      setTimeout(() => setToast(''), 6000)
+    } finally {
+      setExportingAll(false)
+    }
+  }
+
+  const handleExportSubjectStudents = async (subject, format) => {
+    try {
+      setExportingSubjectId(subject.id)
+      setToast('')
+      const count = await exportSubjectStudentsList({
+        subjectId: subject.id,
+        subjectCode: subject.code,
+        isArabic: isArabicLayout,
+        format,
+        status: 'enrolled',
+        semesterId: 'all',
+      })
+      if (count === 0) {
+        setToast(t('students.exportNone', 'No students to export.'))
+      } else {
+        setToast(t('students.exportSuccess', { count, defaultValue: 'Exported {{count}} students.' }))
+      }
+      setTimeout(() => setToast(''), 4000)
+    } catch (e) {
+      console.error('Export subject students failed:', e)
+      setToast(`ERR::${e?.message || t('students.exportFailed', 'Export failed.')}`)
+      setTimeout(() => setToast(''), 6000)
+    } finally {
+      setExportingSubjectId(null)
+    }
+  }
+
   return (
     <div className="space-y-6">
       <div
@@ -104,13 +176,24 @@ export default function Subjects() {
           <h1 className="text-3xl font-bold text-gray-900">{t('academic.subjects.title')}</h1>
           <p className="text-gray-600 mt-1">{t('academic.subjects.subtitle')}</p>
         </div>
-        <button
-          onClick={() => navigate('/academic/subjects/create')}
-          className={`flex items-center ${isArabicLayout ? 'flex-row-reverse space-x-reverse' : 'space-x-2'} bg-primary-gradient text-white px-6 py-3 rounded-xl font-semibold shadow-lg hover:shadow-xl transform hover:-translate-y-0.5 transition-all`}
-        >
-          <Plus className="w-5 h-5" />
-          <span>{t('academic.subjects.create')}</span>
-        </button>
+        <div className={`flex flex-wrap items-center gap-2 ${isArabicLayout ? 'flex-row-reverse' : ''}`}>
+          <button
+            type="button"
+            disabled={exportingAll || loading || filteredSubjects.length === 0}
+            onClick={handleExportAllSubjects}
+            className={`flex items-center ${isArabicLayout ? 'flex-row-reverse space-x-reverse' : 'space-x-2'} px-5 py-3 rounded-xl font-semibold border border-gray-300 bg-white text-gray-800 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-all`}
+          >
+            {exportingAll ? <Loader2 className="w-5 h-5 animate-spin" /> : <Download className="w-5 h-5" />}
+            <span>{t('academic.subjects.exportAllExcel', 'Export all subjects (Excel)')}</span>
+          </button>
+          <button
+            onClick={() => navigate('/academic/subjects/create')}
+            className={`flex items-center ${isArabicLayout ? 'flex-row-reverse space-x-reverse' : 'space-x-2'} bg-primary-gradient text-white px-6 py-3 rounded-xl font-semibold shadow-lg hover:shadow-xl transform hover:-translate-y-0.5 transition-all`}
+          >
+            <Plus className="w-5 h-5" />
+            <span>{t('academic.subjects.create')}</span>
+          </button>
+        </div>
       </div>
 
       <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6">
@@ -198,6 +281,16 @@ export default function Subjects() {
         </div>
       </div>
 
+      {toast && (
+        <div
+          className={`rounded-lg px-4 py-3 text-sm ${
+            toast.startsWith('ERR::') ? 'bg-red-50 text-red-700 border border-red-200' : 'bg-green-50 text-green-800 border border-green-200'
+          }`}
+        >
+          {toast.startsWith('ERR::') ? toast.slice(5) : toast}
+        </div>
+      )}
+
       {loading ? (
         <div className="text-center py-12">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-600 mx-auto"></div>
@@ -229,20 +322,34 @@ export default function Subjects() {
                   </span>
                 )}
               </div>
-              <div className={`mt-4 flex items-center ${isRTL ? 'space-x-reverse space-x-2' : 'space-x-2'}`}>
+              <div className={`mt-4 flex flex-wrap items-center gap-2 ${isRTL ? 'flex-row-reverse' : ''}`}>
                 <button
                   onClick={() => navigate(`/academic/subjects/${subject.id}`)}
-                  className={`flex-1 flex items-center justify-center ${isRTL ? 'flex-row-reverse space-x-reverse' : 'space-x-2'} px-3 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors`}
+                  className={`flex-1 min-w-[7rem] flex items-center justify-center ${isRTL ? 'flex-row-reverse space-x-reverse' : 'space-x-2'} px-3 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors`}
                 >
                   <Eye className="w-4 h-4" />
                   <span>{t('academic.subjects.view')}</span>
                 </button>
                 <button
                   onClick={() => navigate(`/academic/subjects/${subject.id}/edit`)}
-                  className={`flex-1 flex items-center justify-center ${isRTL ? 'flex-row-reverse space-x-reverse' : 'space-x-2'} px-3 py-2 bg-primary-gradient text-white rounded-lg hover:shadow-lg transition-all`}
+                  className={`flex-1 min-w-[7rem] flex items-center justify-center ${isRTL ? 'flex-row-reverse space-x-reverse' : 'space-x-2'} px-3 py-2 bg-primary-gradient text-white rounded-lg hover:shadow-lg transition-all`}
                 >
                   <Edit className="w-4 h-4" />
                   <span>{t('academic.subjects.edit')}</span>
+                </button>
+                <button
+                  type="button"
+                  disabled={exportingSubjectId === subject.id}
+                  title={t('academic.subjects.exportStudents', 'Export enrolled students')}
+                  onClick={() => handleExportSubjectStudents(subject, 'xlsx')}
+                  className={`flex items-center justify-center ${isRTL ? 'flex-row-reverse space-x-reverse' : 'space-x-2'} px-3 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 disabled:opacity-50 transition-colors`}
+                >
+                  {exportingSubjectId === subject.id ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <Download className="w-4 h-4" />
+                  )}
+                  <span>{t('academic.subjects.exportStudents', 'Export students')}</span>
                 </button>
               </div>
             </div>

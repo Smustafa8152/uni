@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next'
 /** Tab ids for in-page course panels (no route navigation). */
 export const COURSE_PANEL = {
   sessions: 'sessions',
+  students: 'students',
   curriculum: 'curriculum',
   lessons: 'lessons',
   questionBank: 'questionBank',
@@ -92,6 +93,9 @@ export default function InstructorSubjectHome({
         </TabButton>
         <TabButton active={is(COURSE_PANEL.sessions)} onClick={() => onCoursePanelChange(COURSE_PANEL.sessions)}>
           👥 {t('instructorPortal.subjectHome.tabSessions')}
+        </TabButton>
+        <TabButton active={is(COURSE_PANEL.students)} onClick={() => onCoursePanelChange(COURSE_PANEL.students)}>
+          🎓 {t('instructorPortal.subjectHome.tabStudents', 'Students')}
         </TabButton>
         <TabButton active={is(COURSE_PANEL.lessons)} onClick={() => onCoursePanelChange(COURSE_PANEL.lessons)}>
           📖 {t('instructorPortal.subjectHome.tabLessons')}

@@ -11,7 +11,7 @@ function EmptyCell() {
   )
 }
 
-function CourseCellStack({ entries, typeLabel }) {
+function CourseCellStack({ entries, typeLabel, joinLabel, noLinkLabel }) {
   return (
     <td>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
@@ -20,6 +20,19 @@ function CourseCellStack({ entries, typeLabel }) {
             <div className="sched-code">{e.code}</div>
             {e.title ? <div className="sched-name">{e.title}</div> : null}
             {e.loc ? <div className="sched-loc">{e.loc}</div> : null}
+            {e.joinUrl ? (
+              <a
+                href={e.joinUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="sched-teams-link"
+                onClick={(ev) => ev.stopPropagation()}
+              >
+                {joinLabel}
+              </a>
+            ) : e.classType === 'online' || e.classType === 'hybrid' ? (
+              <span className="sched-teams-missing">{noLinkLabel}</span>
+            ) : null}
             <span className={`sched-type ${e.typeClass || 'onsite'}`}>{typeLabel(e.classType)}</span>
           </div>
         ))}
@@ -151,7 +164,13 @@ export default function InstructorMyCoursesSchedule({
                     }))
                     if (!entries.length) return <EmptyCell key={dayIdx} />
                     return (
-                      <CourseCellStack key={dayIdx} entries={entries} typeLabel={typeLabel} />
+                      <CourseCellStack
+                        key={dayIdx}
+                        entries={entries}
+                        typeLabel={typeLabel}
+                        joinLabel={t('instructorPortal.teamsJoinMeeting')}
+                        noLinkLabel={t('instructorPortal.teamsLinkMissing', 'No Teams link yet')}
+                      />
                     )
                   })}
                 </tr>

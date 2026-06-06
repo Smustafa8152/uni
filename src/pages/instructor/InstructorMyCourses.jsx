@@ -8,6 +8,7 @@ import { supabase } from '../../lib/supabase'
 import { sumTeachingMinutes, uniqueLocationsFromSchedules } from '../../utils/instructorTimetable'
 import { formatRelativeTimePast } from '../../utils/formatRelativeTimePast'
 import { getActiveInstructorByEmail } from '../../utils/getActiveInstructorByEmail'
+import { exportClassStudentsList } from '../../utils/exportStudents'
 import {
   fetchSemestersForInstructor,
   effectiveGradeEntryAllowed,
@@ -45,6 +46,8 @@ export default function InstructorMyCourses() {
   const [upcomingAssessmentsWeek, setUpcomingAssessmentsWeek] = useState(0)
   const [scheduleRows, setScheduleRows] = useState([])
   const [lessonLastModified, setLessonLastModified] = useState({})
+  const [exportingClassId, setExportingClassId] = useState(null)
+  const [exportToast, setExportToast] = useState('')
 
   useEffect(() => {
     if (user?.email) fetchInstructor()
@@ -119,7 +122,7 @@ export default function InstructorMyCourses() {
         .from('class_schedules')
         .select(
           `
-          id, day_of_week, start_time, end_time, location, class_id,
+          id, day_of_week, start_time, end_time, location, class_id, teams_meeting_url,
           classes!inner (
             id, code, section, type, location,
             subjects (code, name_en, name_ar)
@@ -128,11 +131,29 @@ export default function InstructorMyCourses() {
         )
         .in('class_id', classIds)
 
+      let enrichedSchedules = []
       if (schedErr) {
         console.error(schedErr)
         setScheduleRows([])
       } else {
-        setScheduleRows(schedData || [])
+        const { data: teamsMeetings } = await supabase
+          .from('class_teams_meetings')
+          .select('class_id, teams_join_url')
+          .in('class_id', classIds)
+          .eq('is_active', true)
+
+        const teamsByClass = {}
+        for (const meeting of teamsMeetings || []) {
+          if (meeting.class_id && meeting.teams_join_url && !teamsByClass[meeting.class_id]) {
+            teamsByClass[meeting.class_id] = meeting.teams_join_url
+          }
+        }
+
+        enrichedSchedules = (schedData || []).map((row) => ({
+          ...row,
+          teamsJoinUrl: row.teams_meeting_url || teamsByClass[row.class_id] || null,
+        }))
+        setScheduleRows(enrichedSchedules)
       }
 
       const today = new Date().toISOString().slice(0, 10)
@@ -292,6 +313,37 @@ export default function InstructorMyCourses() {
 
   const distinctRooms = useMemo(() => uniqueLocationsFromSchedules(scheduleRows), [scheduleRows])
 
+  const handleExportClassStudents = async (cls) => {
+    try {
+      setExportingClassId(cls.id)
+      setExportToast('')
+      const count = await exportClassStudentsList({
+        classId: cls.id,
+        classCode: cls.subjects?.code || cls.code,
+        section: cls.section,
+        isArabic: language === 'ar',
+        format: 'xlsx',
+      })
+      if (count === 0) {
+        setExportToast(t('instructorPortal.exportStudentsNone', 'No students to export.'))
+      } else {
+        setExportToast(
+          t('instructorPortal.exportStudentsSuccess', {
+            count,
+            defaultValue: 'Exported {{count}} students.',
+          }),
+        )
+      }
+      setTimeout(() => setExportToast(''), 4000)
+    } catch (e) {
+      console.error('Export class students failed:', e)
+      setExportToast(`ERR::${e?.message || t('instructorPortal.exportStudentsFailed', 'Export failed.')}`)
+      setTimeout(() => setExportToast(''), 6000)
+    } finally {
+      setExportingClassId(null)
+    }
+  }
+
   if (loading && !instructor) {
     return (
       <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: 200 }}>
@@ -392,6 +444,16 @@ export default function InstructorMyCourses() {
           <div className="sc-sub">{t('instructorPortal.statUpcomingAssessmentsSub')}</div>
         </div>
       </div>
+
+      {exportToast && (
+        <div
+          className={`alert ${exportToast.startsWith('ERR::') ? 'alert-warn' : 'alert-ok'}`}
+          role="status"
+          style={{ marginBottom: 16 }}
+        >
+          {exportToast.startsWith('ERR::') ? exportToast.slice(5) : exportToast}
+        </div>
+      )}
 
       <div className="course-grid course-grid-mb">
         {courses.map((cls, index) => {
@@ -496,6 +558,16 @@ export default function InstructorMyCourses() {
                   <Link to={`/instructor/analytics?classId=${cls.id}`} className="btn btn-gh btn-sm">
                     {t('instructorPortal.analytics')}
                   </Link>
+                  <button
+                    type="button"
+                    className="btn btn-gh btn-sm"
+                    disabled={exportingClassId === cls.id}
+                    onClick={() => handleExportClassStudents(cls)}
+                  >
+                    {exportingClassId === cls.id
+                      ? t('instructorPortal.exportStudentsLoading', 'Exporting…')
+                      : t('instructorPortal.exportStudents', 'Export students')}
+                  </button>
                 </div>
               </div>
             </div>
