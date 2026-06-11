@@ -1,6 +1,13 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
+import { useAuth } from '../../contexts/AuthContext'
+import { useLanguage } from '../../contexts/LanguageContext'
+import { getLocalizedName } from '../../utils/localizedName'
+import { supabase } from '../../lib/supabase'
+import { getActiveInstructorByEmail } from '../../utils/getActiveInstructorByEmail'
+import { fetchClassCloAlignment } from '../../utils/cloAlignment'
+import { exportCloAlignmentReport } from '../../utils/exportCloReport'
 
 const reportRowBase = {
   display: 'flex',
@@ -25,15 +32,73 @@ const reportRowBase = {
  */
 export default function InstructorReports() {
   const { t } = useTranslation()
-  const [course, setCourse] = useState('eng101')
+  const { user } = useAuth()
+  const { language } = useLanguage()
+  const isArabic = language === 'ar'
+  const [course, setCourse] = useState('all')
   const [fromDate, setFromDate] = useState('')
   const [toDate, setToDate] = useState('')
   const [reportType, setReportType] = useState('student_perf')
   const [exportFmt, setExportFmt] = useState('pdf')
+  const [classes, setClasses] = useState([])
+  const [exporting, setExporting] = useState(false)
 
   useEffect(() => {
     document.title = `${t('instructorPortal.reportsBreadcrumbLast')} — ${t('instructorPortal.instructorPortalAr')} | IBU`
   }, [t])
+
+  useEffect(() => {
+    if (!user?.email) return
+    ;(async () => {
+      const instructor = await getActiveInstructorByEmail(user.email)
+      if (!instructor) return
+      const { data } = await supabase
+        .from('classes')
+        .select('id, section, subject_id, subjects(id, code, name_en, name_ar)')
+        .eq('instructor_id', instructor.id)
+        .eq('status', 'active')
+        .order('id', { ascending: false })
+      setClasses(data || [])
+      if (data?.length === 1) setCourse(String(data[0].id))
+    })()
+  }, [user?.email])
+
+  const exportOutcomesReport = async () => {
+    setExporting(true)
+    try {
+      const targets =
+        course === 'all' ? classes : classes.filter((c) => String(c.id) === course)
+
+      if (!targets.length) {
+        alert(t('instructorPortal.reportsOutcomesNoClass'))
+        return
+      }
+
+      for (const cls of targets) {
+        const alignment = await fetchClassCloAlignment(supabase, {
+          classId: cls.id,
+          subjectId: cls.subject_id,
+        })
+        exportCloAlignmentReport({
+          subjectCode: cls.subjects?.code || 'course',
+          classSection: cls.section,
+          rows: alignment.rows,
+          isArabic,
+        })
+      }
+    } catch (err) {
+      console.error(err)
+      alert(t('common.error', 'Error'))
+    } finally {
+      setExporting(false)
+    }
+  }
+
+  const handleOutcomesCustomExport = async () => {
+    if (reportType === 'outcomes' && exportFmt === 'excel') {
+      await exportOutcomesReport()
+    }
+  }
 
   return (
     <>
@@ -63,23 +128,29 @@ export default function InstructorReports() {
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
               {[
-                { emoji: '📈', title: 'reportsAcademic1Title', desc: 'reportsAcademic1Desc', action: 'reportsAcademic1Export' },
-                { emoji: '🎯', title: 'reportsAcademic2Title', desc: 'reportsAcademic2Desc', action: 'reportsAcademic2Export' },
-                { emoji: '⚠️', title: 'reportsAcademic3Title', desc: 'reportsAcademic3Desc', action: 'reportsAcademic3Export' },
-                { emoji: '📊', title: 'reportsAcademic4Title', desc: 'reportsAcademic4Desc', action: 'reportsAcademic4Export' },
+                { emoji: '📈', title: 'reportsAcademic1Title', desc: 'reportsAcademic1Desc', action: 'reportsAcademic1Export', onClick: null },
+                { emoji: '🎯', title: 'reportsAcademic2Title', desc: 'reportsAcademic2Desc', action: 'reportsAcademic2Export', onClick: exportOutcomesReport },
+                { emoji: '⚠️', title: 'reportsAcademic3Title', desc: 'reportsAcademic3Desc', action: 'reportsAcademic3Export', onClick: null },
+                { emoji: '📊', title: 'reportsAcademic4Title', desc: 'reportsAcademic4Desc', action: 'reportsAcademic4Export', onClick: null },
               ].map((row) => (
                 <button
                   key={row.title}
                   type="button"
                   style={reportRowBase}
-                  onClick={(e) => e.preventDefault()}
+                  disabled={exporting && row.onClick}
+                  onClick={(e) => {
+                    e.preventDefault()
+                    row.onClick?.()
+                  }}
                 >
                   <div style={{ fontSize: 28 }}>{row.emoji}</div>
                   <div style={{ flex: 1, textAlign: 'start' }}>
                     <div style={{ fontWeight: 700, fontSize: 14 }}>{t(`instructorPortal.${row.title}`)}</div>
                     <div style={{ fontSize: 12, color: 'var(--muted)' }}>{t(`instructorPortal.${row.desc}`)}</div>
                   </div>
-                  <div style={{ fontSize: 12, color: 'var(--p)', fontWeight: 600 }}>{t(`instructorPortal.${row.action}`)}</div>
+                  <div style={{ fontSize: 12, color: 'var(--p)', fontWeight: 600 }}>
+                    {exporting && row.onClick ? t('common.loading') : t(`instructorPortal.${row.action}`)}
+                  </div>
                 </button>
               ))}
             </div>
@@ -131,9 +202,11 @@ export default function InstructorReports() {
                 onChange={(e) => setCourse(e.target.value)}
               >
                 <option value="all">{t('instructorPortal.reportsOptCourseAll')}</option>
-                <option value="eng101">{t('instructorPortal.reportsOptCourseEng101')}</option>
-                <option value="eng201">{t('instructorPortal.reportsOptCourseEng201')}</option>
-                <option value="eng301">{t('instructorPortal.reportsOptCourseEng301')}</option>
+                {classes.map((cls) => (
+                  <option key={cls.id} value={String(cls.id)}>
+                    {cls.subjects?.code} — {getLocalizedName(cls.subjects, isArabic)} ({t('instructorPortal.section')} {cls.section})
+                  </option>
+                ))}
               </select>
             </div>
             <div className="fr">
@@ -198,8 +271,14 @@ export default function InstructorReports() {
                 <option value="csv">{t('instructorPortal.reportsOptFmtCsv')}</option>
               </select>
             </div>
-            <button type="button" className="btn btn-p btn-bl" style={{ marginTop: 14 }} onClick={() => {}}>
-              📊 {t('instructorPortal.reportsBtnGenerate')}
+            <button
+              type="button"
+              className="btn btn-p btn-bl"
+              style={{ marginTop: 14 }}
+              disabled={exporting}
+              onClick={handleOutcomesCustomExport}
+            >
+              📊 {exporting ? t('common.loading') : t('instructorPortal.reportsBtnGenerate')}
             </button>
           </div>
         </div>

@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next'
 import { useLanguage } from '../contexts/LanguageContext'
 import { supabase } from '../lib/supabase'
 import { getLocalizedName } from '../utils/localizedName'
+import { formatInstructorDisplayName, getAcademicTitleDisplayPrefix } from '../utils/academicTitle'
 import { useAuth } from '../contexts/AuthContext'
 import { invokeAdminPasswordReset } from '../utils/invokeAdminPasswordReset'
 import PasswordResetModal from '../components/admin/PasswordResetModal'
@@ -147,9 +148,7 @@ export default function ViewInstructor() {
     return map[value] || valueOrDash(value)
   }
 
-  const primaryName = isArabicLayout
-    ? (instructor?.name_ar || instructor?.name_en || '').trim() || '-'
-    : (instructor?.name_en || instructor?.name_ar || '').trim() || '-'
+  const primaryName = formatInstructorDisplayName(instructor, isArabicLayout) || '-'
 
   const secondaryName = isArabicLayout
     ? ((instructor?.name_ar || '').trim() && (instructor?.name_en || '').trim()
@@ -195,7 +194,8 @@ export default function ViewInstructor() {
     { label: txt('القسم', 'Department'), value: valueOrDash(getLocalizedName(instructor?.departments, isArabicLayout)) },
     { label: txt('الكلية', 'College'), value: valueOrDash(getLocalizedName(instructor?.colleges, isArabicLayout)) },
     { label: txt('العام الأكاديمي', 'Academic Year'), value: valueOrDash(getLocalizedName(instructor?.academic_years, isArabicLayout)) },
-    { label: txt('اللقب الأكاديمي', 'Title'), value: titleLabel(instructor?.title) },
+    { label: txt('اللقب (د.، أ.د.)', 'Academic title prefix'), value: valueOrDash(getAcademicTitleDisplayPrefix(instructor?.academic_title, isArabicLayout)) },
+    { label: txt('المنصب الوظيفي', 'Job title'), value: titleLabel(instructor?.title) },
     { label: txt('تاريخ التعيين', 'Hire Date'), value: formatDate(instructor?.hire_date) },
     { label: txt('التخصص', 'Specialization'), value: valueOrDash(instructor?.specialization) }
   ]

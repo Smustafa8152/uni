@@ -4,7 +4,7 @@ import { useTranslation } from 'react-i18next'
 import { useLanguage } from '../../contexts/LanguageContext'
 import { getLocalizedName } from '../../utils/localizedName'
 import { supabase } from '../../lib/supabase'
-import { createTeamsMeeting, formatMeetingDateTime } from '../../utils/microsoftGraph'
+import { formatInstructorDisplayName } from '../../utils/academicTitle'
 import { ArrowLeft, Edit, Library, Video, ExternalLink, RefreshCw } from 'lucide-react'
 
 function getFirstOccurrenceDate(startDate, dayOfWeek) {
@@ -37,7 +37,7 @@ export default function ViewClass() {
     try {
       const { data, error } = await supabase
         .from('classes')
-        .select('*, subjects(id, name_en, name_ar, code), semesters(id, name_en, name_ar, code, start_date, end_date), instructors(id, name_en, name_ar, email), class_schedules(id, day_of_week, start_time, end_time, location, teams_meeting_url, teams_meeting_id, teams_event_id), colleges(id, name_en, name_ar, code)')
+        .select('*, subjects(id, name_en, name_ar, code), semesters(id, name_en, name_ar, code, start_date, end_date), instructors(id, name_en, name_ar, email, academic_title), class_schedules(id, day_of_week, start_time, end_time, location, teams_meeting_url, teams_meeting_id, teams_event_id), colleges(id, name_en, name_ar, code)')
         .eq('id', id)
         .single()
 
@@ -213,7 +213,7 @@ export default function ViewClass() {
             </div>
             <div>
               <h3 className="text-sm font-medium text-gray-500 mb-2">Instructor</h3>
-              <p className="text-gray-900">{getLocalizedName(classData?.instructors, isRTL) || 'Not assigned'}</p>
+              <p className="text-gray-900">{formatInstructorDisplayName(classData?.instructors, isRTL) || 'Not assigned'}</p>
               {classData?.instructors?.email && (
                 <p className="text-sm text-gray-600">{classData.instructors.email}</p>
               )}

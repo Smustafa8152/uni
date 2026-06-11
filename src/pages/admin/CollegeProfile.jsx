@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next'
 import { useLanguage } from '../../contexts/LanguageContext'
 import { supabase } from '../../lib/supabase'
 import { getLocalizedName } from '../../utils/localizedName'
+import { formatInstructorDisplayName } from '../../utils/academicTitle'
 import { 
   ArrowLeft, 
   Building2, 
@@ -144,7 +145,7 @@ export default function CollegeProfile() {
         case 'instructors':
           const { data: instructorsData } = await supabase
             .from('instructors')
-            .select('id, employee_id, name_en, name_ar, email, title, status, department_id, departments(name_en, name_ar)')
+            .select('id, employee_id, name_en, name_ar, email, title, academic_title, status, department_id, departments(name_en, name_ar)')
             .eq('college_id', id)
             .order('name_en')
             .limit(50)
@@ -552,7 +553,7 @@ export default function CollegeProfile() {
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                 {instructors.map((instructor) => (
                   <div key={instructor.id} className="bg-gray-50 rounded-lg p-4 hover:shadow-md transition-shadow cursor-pointer" onClick={() => navigate(`/instructors/${instructor.id}`)}>
-                    <p className="font-semibold text-gray-900">{getLocalizedName(instructor, isRTL) || instructor.name_en || instructor.name_ar}</p>
+                    <p className="font-semibold text-gray-900">{formatInstructorDisplayName(instructor, isRTL) || instructor.name_en || instructor.name_ar}</p>
                     <p className="text-sm text-gray-600">{instructor.employee_id}</p>
                     <p className="text-sm text-gray-600 capitalize">{instructor.title}</p>
                     <p className="text-sm text-gray-600">{getLocalizedName(instructor.departments, isRTL) || instructor.departments?.name_en}</p>

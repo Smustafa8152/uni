@@ -6,6 +6,13 @@ import { supabase } from '../lib/supabase'
 import { useAuth } from '../contexts/AuthContext'
 import { createAuthUser } from '../lib/createAuthUser'
 import { generateInstructorEmployeeId } from '../utils/collegeIdFormat'
+import {
+  ACADEMIC_TITLE_CUSTOM,
+  getAcademicTitlePresetOptions,
+  parseAcademicTitleFromStorage,
+  resolveAcademicTitleForSave,
+  formatNameWithAcademicTitle,
+} from '../utils/academicTitle'
 import { ArrowLeft, ArrowRight, Save, User, GraduationCap, Briefcase, Award, Globe, Plus, X, Lock } from 'lucide-react'
 
 const ISO_COUNTRY_CODES = [
@@ -99,6 +106,8 @@ export default function CreateInstructor() {
   const [formData, setFormData] = useState({
     // Personal Information
     employee_id: '',
+    academic_title_preset: '',
+    academic_title_custom: '',
     first_name: '',
     middle_name: '',
     last_name: '',
@@ -200,10 +209,13 @@ export default function CreateInstructor() {
 
         const en = splitFullName(data.name_en)
         const ar = splitFullName(data.name_ar || '')
+        const academicTitleFields = parseAcademicTitleFromStorage(data.academic_title)
         setCollegeId(data.college_id)
         setFormData((prev) => ({
           ...prev,
           employee_id: data.employee_id || '',
+          academic_title_preset: academicTitleFields.preset,
+          academic_title_custom: academicTitleFields.custom,
           first_name: en.first,
           middle_name: en.middle,
           last_name: en.last,
@@ -468,6 +480,7 @@ export default function CreateInstructor() {
 
       const submitData = {
         employee_id: employeeId,
+        academic_title: resolveAcademicTitleForSave(formData.academic_title_preset, formData.academic_title_custom),
         name_en,
         name_ar: name_ar || name_en,
         email: formData.email,
@@ -631,6 +644,42 @@ export default function CreateInstructor() {
                   className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
                 />
               </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  {t('createInstructor.academicTitlePrefix', 'Academic title prefix')}
+                </label>
+                <select
+                  value={formData.academic_title_preset}
+                  onChange={(e) => handleChange('academic_title_preset', e.target.value)}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                >
+                  {getAcademicTitlePresetOptions(isArabicLayout).map((opt) => (
+                    <option key={opt.value || 'none'} value={opt.value}>
+                      {opt.label}
+                    </option>
+                  ))}
+                </select>
+                <p className="text-xs text-gray-500 mt-1">
+                  {t('createInstructor.academicTitleHint', 'Shown before the name (e.g. Dr. John Smith).')}
+                </p>
+              </div>
+              {formData.academic_title_preset === ACADEMIC_TITLE_CUSTOM && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    {t('createInstructor.academicTitleCustom', 'Custom title')}
+                  </label>
+                  <input
+                    type="text"
+                    value={formData.academic_title_custom}
+                    onChange={(e) => handleChange('academic_title_custom', e.target.value)}
+                    placeholder={t('createInstructor.academicTitleCustomPlaceholder', 'e.g. Assoc. Prof.')}
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                  />
+                </div>
+              )}
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -1370,7 +1419,11 @@ export default function CreateInstructor() {
               <div>
                 <h3 className="font-semibold text-gray-900 mb-2">{t('createInstructor.personalInformation')}</h3>
                 <p className="text-sm text-gray-600">
-                  {formData.first_name} {formData.middle_name} {formData.last_name}
+                  {formatNameWithAcademicTitle(
+                    `${formData.first_name} ${formData.middle_name} ${formData.last_name}`.trim(),
+                    resolveAcademicTitleForSave(formData.academic_title_preset, formData.academic_title_custom),
+                    isArabicLayout,
+                  )}
                 </p>
                 <p className="text-sm text-gray-600">
                   {t('createInstructor.employeeId')}: {formData.employee_id?.trim() || t('createInstructor.employeeIdReviewPending')}

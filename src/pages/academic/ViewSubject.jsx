@@ -6,7 +6,7 @@ import { getLocalizedName } from '../../utils/localizedName'
 import { getGradeTypesFromUniversitySettings, mergeGradeConfigWithTypes } from '../../utils/getCollegeSettings'
 import { exportSubjectStudentsList } from '../../utils/exportStudents'
 import { supabase } from '../../lib/supabase'
-import SubjectCurriculumMapPanel from '../../components/academic/SubjectCurriculumMapPanel'
+import { formatInstructorDisplayName } from '../../utils/academicTitle'
 import { ArrowLeft, Edit, BookOpen, Download, Loader2, Users } from 'lucide-react'
 
 function getStudentDisplayName(student, isRTL) {
@@ -138,7 +138,7 @@ export default function ViewSubject() {
     try {
       const { data, error } = await supabase
         .from('subjects')
-        .select('*, majors(id, name_en, name_ar, code), instructors(id, name_en, name_ar, email), colleges(id, name_en, name_ar, code)')
+        .select('*, majors(id, name_en, name_ar, code), instructors(id, name_en, name_ar, email, academic_title), colleges(id, name_en, name_ar, code)')
         .eq('id', id)
         .single()
 
@@ -309,7 +309,7 @@ export default function ViewSubject() {
             <div>
               <h3 className="text-sm font-medium text-gray-500 mb-2">{t('subjectsForm.instructor')}</h3>
               <p className="text-gray-900">
-                {getLocalizedName(subject?.instructors, isRTL) || subject?.instructor_name || 'Not assigned'}
+                {formatInstructorDisplayName(subject?.instructors, isRTL) || subject?.instructor_name || 'Not assigned'}
               </p>
               {(subject?.instructors?.email || subject?.instructor_email) && (
                 <p className="text-sm text-gray-600 mt-1">

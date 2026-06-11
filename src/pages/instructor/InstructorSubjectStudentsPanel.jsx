@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import { Link } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { Search } from 'lucide-react'
 import { useLanguage } from '../../contexts/LanguageContext'
@@ -309,7 +310,11 @@ export default function InstructorSubjectStudentsPanel({ classes = [] }) {
               {filteredStudents.map((s) => (
                 <tr key={s.id}>
                   <td>{s.student_id || '—'}</td>
-                  <td>{getStudentDisplayName(s, isArabic)}</td>
+                  <td>
+                    <Link to={`/students/${s.id}`} className="student-name-link">
+                      {getStudentDisplayName(s, isArabic)}
+                    </Link>
+                  </td>
                   <td>{s.email || '—'}</td>
                   <td>{s.mobile_phone || s.phone || '—'}</td>
                   <td>{getNationalityLabel(s.nationality, isArabic)}</td>

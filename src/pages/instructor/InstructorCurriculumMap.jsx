@@ -6,6 +6,12 @@ import { useLanguage } from '../../contexts/LanguageContext'
 import { getLocalizedName } from '../../utils/localizedName'
 import { supabase } from '../../lib/supabase'
 import { getActiveInstructorByEmail } from '../../utils/getActiveInstructorByEmail'
+import {
+  buildAssessmentCloMap,
+  buildLessonCloMatrix,
+  fetchClassCloAlignment,
+} from '../../utils/cloAlignment'
+import CurriculumReferencesPanel from '../../components/academic/CurriculumReferencesPanel'
 
 export default function InstructorCurriculumMap({ embedded = false, embedClassId = null } = {}) {
   const { t } = useTranslation()
@@ -14,16 +20,16 @@ export default function InstructorCurriculumMap({ embedded = false, embedClassId
   const [searchParams, setSearchParams] = useSearchParams()
 
   const [loading, setLoading] = useState(true)
-  const [instructorId, setInstructorId] = useState(null)
   const [classes, setClasses] = useState([])
   const [selectedClassId, setSelectedClassId] = useState(null)
-  const [clos, setClos] = useState([])
-  const [lessons, setLessons] = useState([])
+  const [alignment, setAlignment] = useState({ clos: [], lessons: [], exams: [], rows: [] })
 
   const selectedClass = useMemo(
     () => classes.find((c) => c.id === selectedClassId) || null,
-    [classes, selectedClassId]
+    [classes, selectedClassId],
   )
+
+  const { clos, lessons, exams, rows: coverageRows } = alignment
 
   useEffect(() => {
     if (!user?.email) return
@@ -40,7 +46,7 @@ export default function InstructorCurriculumMap({ embedded = false, embedClassId
       })
     }
     loadCurriculumData(selectedClassId)
-  }, [selectedClassId, embedded])
+  }, [selectedClassId, embedded, classes])
 
   const loadInstructorClasses = async () => {
     setLoading(true)
@@ -51,8 +57,6 @@ export default function InstructorCurriculumMap({ embedded = false, embedClassId
         setLoading(false)
         return
       }
-
-      setInstructorId(instructor.id)
 
       const { data: cls } = await supabase
         .from('classes')
@@ -90,75 +94,27 @@ export default function InstructorCurriculumMap({ embedded = false, embedClassId
       const subjectId = currentClass?.subject_id
 
       if (!subjectId) {
-        setClos([])
-        setLessons([])
+        setAlignment({ clos: [], lessons: [], exams: [], rows: [] })
         setLoading(false)
         return
       }
 
-      const [{ data: closData }, { data: lessonsData }] = await Promise.all([
-        supabase
-          .from('subject_learning_outcomes')
-          .select('id, code, description, bloom_level, difficulty_level, display_order')
-          .eq('subject_id', subjectId)
-          .eq('is_active', true)
-          .order('display_order', { ascending: true })
-          .order('id', { ascending: true }),
-        supabase
-          .from('class_lessons')
-          .select('id, title, unit_number, lesson_number, class_lesson_clos(clo_id)')
-          .eq('class_id', classId)
-          .order('unit_number', { ascending: true })
-          .order('lesson_number', { ascending: true }),
-      ])
-
-      setClos(closData || [])
-      setLessons(lessonsData || [])
+      const data = await fetchClassCloAlignment(supabase, { classId, subjectId })
+      setAlignment(data)
     } catch (err) {
       console.error(err)
+      setAlignment({ clos: [], lessons: [], exams: [], rows: [] })
     } finally {
       setLoading(false)
     }
   }
 
-  const coverageRows = useMemo(() => {
-    const totalLessons = lessons.length || 0
+  const matrixRows = useMemo(() => buildLessonCloMatrix(lessons, clos), [lessons, clos])
+  const assessmentCloMap = useMemo(() => buildAssessmentCloMap(exams, clos), [exams, clos])
 
-    return clos.map((clo) => {
-      let linked = 0
-      for (const lesson of lessons) {
-        const isMapped = (lesson.class_lesson_clos || []).some((x) => x.clo_id === clo.id)
-        if (isMapped) linked += 1
-      }
-      const pct = totalLessons ? Math.round((linked / totalLessons) * 100) : 0
-      return { ...clo, linked, pct }
-    })
-  }, [clos, lessons])
-
-  const matrixRows = useMemo(() => {
-    const grouped = {}
-    for (const lesson of lessons) {
-      if (!grouped[lesson.unit_number]) grouped[lesson.unit_number] = []
-      grouped[lesson.unit_number].push(lesson)
-    }
-
-    return Object.keys(grouped)
-      .map((unitKey) => {
-        const unit = Number(unitKey)
-        const unitLessons = grouped[unit]
-        const cloMap = {}
-        for (const clo of clos) {
-          cloMap[clo.id] = unitLessons.some((lesson) =>
-            (lesson.class_lesson_clos || []).some((m) => m.clo_id === clo.id)
-          )
-        }
-        return { unit, cloMap }
-      })
-      .sort((a, b) => a.unit - b.unit)
-  }, [lessons, clos])
-
-  const uncovered = coverageRows.filter((r) => r.linked === 0)
+  const gapRows = coverageRows.filter((r) => r.gap && r.gap !== 'not_graded')
   const subjectCode = selectedClass?.subjects?.code || '-'
+  const subjectId = selectedClass?.subject_id || null
 
   if (loading) {
     return (
@@ -261,23 +217,49 @@ export default function InstructorCurriculumMap({ embedded = false, embedClassId
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
               {coverageRows.map((row) => {
-                const fillClass = row.pct >= 70 ? 'ok' : row.pct >= 40 ? 'warn' : 'err'
+                const fillClass =
+                  row.isAligned && row.isAssessed
+                    ? row.achievementPct >= 70
+                      ? 'ok'
+                      : row.achievementPct >= 50
+                        ? 'warn'
+                        : 'err'
+                    : row.hasLectures || row.hasAssessments
+                      ? 'warn'
+                      : 'err'
+                const barWidth = row.isAssessed
+                  ? row.achievementPct
+                  : row.hasLectures && row.hasAssessments
+                    ? 50
+                    : row.lessonCoveragePct
                 return (
                   <div key={row.id}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, marginBottom: 4 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, marginBottom: 4, gap: 8, flexWrap: 'wrap' }}>
                       <span>{row.code}</span>
-                      <span style={{ fontWeight: 700 }}>{row.linked} {t('instructorPortal.assessmentsCount')}</span>
+                      <span style={{ fontWeight: 700, fontSize: 12 }}>
+                        {t('instructorPortal.cloLinkedLectures', { count: row.lessonsLinked })}
+                        {' · '}
+                        {t('instructorPortal.cloLinkedAssessments', { count: row.assessmentsLinked })}
+                        {row.isAssessed && (
+                          <>
+                            {' · '}
+                            {t('instructorPortal.analyticsCloAchieved', { pct: row.achievementPct })}
+                          </>
+                        )}
+                      </span>
                     </div>
                     <div className="prog-bar">
-                      <div className={`prog-fill ${fillClass}`} style={{ width: `${row.pct}%` }} />
+                      <div className={`prog-fill ${fillClass}`} style={{ width: `${Math.max(5, barWidth || 0)}%` }} />
                     </div>
                   </div>
                 )
               })}
             </div>
-            {uncovered.length > 0 && (
+            {gapRows.length > 0 && (
               <div className="alert alert-warn" style={{ marginTop: 16 }}>
-                ? {uncovered.map((r) => r.code).join(', ')} {t('instructorPortal.clo4NoAssessment')}
+                {t('instructorPortal.cloAlignmentGap', {
+                  codes: gapRows.map((r) => r.code).join(', '),
+                })}
               </div>
             )}
           </div>
@@ -307,7 +289,17 @@ export default function InstructorCurriculumMap({ embedded = false, embedClassId
                       ))}
                     </tr>
                   ))}
-                  {matrixRows.length === 0 && (
+                  {exams.length > 0 && (
+                    <tr>
+                      <td>{t('instructorPortal.mappingMatrixAssessments')}</td>
+                      {clos.map((clo) => (
+                        <td key={clo.id} style={{ textAlign: 'center' }}>
+                          {assessmentCloMap[clo.id] ? '✓' : '—'}
+                        </td>
+                      ))}
+                    </tr>
+                  )}
+                  {matrixRows.length === 0 && exams.length === 0 && (
                     <tr>
                       <td colSpan={Math.max(2, clos.length + 1)} style={{ textAlign: 'center', color: 'var(--muted)' }}>
                         {t('instructorPortal.noData', 'No data available')}
@@ -320,7 +312,15 @@ export default function InstructorCurriculumMap({ embedded = false, embedClassId
           </div>
         </div>
       </div>
+
+      {subjectId && selectedClassId && (
+        <CurriculumReferencesPanel
+          subjectId={subjectId}
+          classId={selectedClassId}
+          clos={clos}
+          variant="instructor"
+        />
+      )}
     </>
   )
 }
-

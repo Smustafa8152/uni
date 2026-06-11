@@ -6,6 +6,7 @@ import { useLanguage } from '../../contexts/LanguageContext'
 import { getLocalizedName } from '../../utils/localizedName'
 import { supabase } from '../../lib/supabase'
 import { getActiveInstructorByEmail } from '../../utils/getActiveInstructorByEmail'
+import { fetchClassCloAlignment } from '../../utils/cloAlignment'
 
 /** Course analytics dashboard — matches instructor portal reference (stats, CLOs, at-risk, assessments, activity). */
 export default function InstructorCourseAnalytics({ embedded = false, embedClassId = null } = {}) {
@@ -25,6 +26,7 @@ export default function InstructorCourseAnalytics({ embedded = false, embedClass
   const [loading, setLoading] = useState(true)
   const [classRow, setClassRow] = useState(null)
   const [forbidden, setForbidden] = useState(false)
+  const [cloRows, setCloRows] = useState([])
 
   useEffect(() => {
     if (!user?.email || !classId || Number.isNaN(classId)) {
@@ -68,6 +70,19 @@ export default function InstructorCourseAnalytics({ embedded = false, embedClass
         if (!cancelled) {
           setClassRow(cls)
           setForbidden(false)
+          if (cls?.id && cls?.subject_id) {
+            try {
+              const alignment = await fetchClassCloAlignment(supabase, {
+                classId: cls.id,
+                subjectId: cls.subject_id,
+              })
+              if (!cancelled) setCloRows(alignment.rows || [])
+            } catch {
+              if (!cancelled) setCloRows([])
+            }
+          } else if (!cancelled) {
+            setCloRows([])
+          }
         }
       } catch {
         if (!cancelled) {
@@ -257,30 +272,51 @@ export default function InstructorCourseAnalytics({ embedded = false, embedClass
               <div className="card-title">🎯 {t('instructorPortal.analyticsClosTitle')}</div>
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-              {[
-                { code: 'CLO-1', label: t('instructorPortal.analyticsClo1'), w: 82, fill: 'ok', done: true },
-                { code: 'CLO-2', label: t('instructorPortal.analyticsClo2'), w: 75, fill: 'ok', done: true },
-                { code: 'CLO-3', label: t('instructorPortal.analyticsClo3'), w: 58, fill: 'warn', done: true },
-                { code: 'CLO-4', label: t('instructorPortal.analyticsClo4'), w: 5, fill: 'err', done: false },
-              ].map((row) => (
-                <div key={row.code}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, marginBottom: 4 }}>
-                    <span>
-                      {row.code}: {row.label}
-                    </span>
-                    <span style={{ fontWeight: 700, color: row.done ? `var(--${row.fill})` : 'var(--muted)' }}>
-                      {row.done ? t('instructorPortal.analyticsCloAchieved', { pct: row.w }) : t('instructorPortal.analyticsCloNotAssessed')}
-                    </span>
-                  </div>
-                  <div className="prog-bar">
-                    <div className={`prog-fill ${row.fill}`} style={{ width: `${row.done ? row.w : 5}%` }} />
-                  </div>
-                </div>
-              ))}
+              {cloRows.length === 0 ? (
+                <p className="ts" style={{ color: 'var(--muted)', margin: 0 }}>
+                  {t('instructorPortal.analyticsCloEmpty')}
+                </p>
+              ) : (
+                cloRows.map((row) => {
+                  const done = row.isAssessed
+                  const w = done ? row.achievementPct : 5
+                  const fill =
+                    !row.hasAssessments
+                      ? 'err'
+                      : !done
+                        ? 'warn'
+                        : row.achievementPct >= 70
+                          ? 'ok'
+                          : row.achievementPct >= 50
+                            ? 'warn'
+                            : 'err'
+                  return (
+                    <div key={row.id}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, marginBottom: 4, gap: 8 }}>
+                        <span>
+                          {row.code}: {row.description}
+                        </span>
+                        <span style={{ fontWeight: 700, color: done ? `var(--${fill})` : 'var(--muted)', flexShrink: 0 }}>
+                          {done
+                            ? t('instructorPortal.analyticsCloAchieved', { pct: row.achievementPct })
+                            : row.hasAssessments
+                              ? t('instructorPortal.analyticsCloNotAssessed')
+                              : t('instructorPortal.cloNoAssessmentsShort')}
+                        </span>
+                      </div>
+                      <div className="prog-bar">
+                        <div className={`prog-fill ${fill}`} style={{ width: `${w}%` }} />
+                      </div>
+                    </div>
+                  )
+                })
+              )}
             </div>
-            <div className="alert alert-warn" style={{ marginTop: 14 }}>
-              ⚠️ {t('instructorPortal.analyticsCloWarn')}
-            </div>
+            {cloRows.some((r) => r.gap === 'no_assessments' || r.gap === 'none') && (
+              <div className="alert alert-warn" style={{ marginTop: 14 }}>
+                ⚠️ {t('instructorPortal.analyticsCloWarn')}
+              </div>
+            )}
           </div>
         </div>
 

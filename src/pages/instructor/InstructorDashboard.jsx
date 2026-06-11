@@ -6,7 +6,7 @@ import { useAuth } from '../../contexts/AuthContext'
 import { getLocalizedName } from '../../utils/localizedName'
 import { supabase } from '../../lib/supabase'
 import { pickPreferredSemesterForDashboard } from '../../utils/instructorSemesters'
-import { getActiveInstructorByEmail } from '../../utils/getActiveInstructorByEmail'
+import { formatInstructorDisplayName } from '../../utils/academicTitle'
 
 export default function InstructorDashboard() {
   const { t } = useTranslation()
@@ -99,7 +99,7 @@ export default function InstructorDashboard() {
         t('instructorPortal.instructor')
       )
     }
-    const n = getLocalizedName(instructor, language === 'ar')
+    const n = formatInstructorDisplayName(instructor, language === 'ar')
     if (n) return n
     return (
       instructor.email ||

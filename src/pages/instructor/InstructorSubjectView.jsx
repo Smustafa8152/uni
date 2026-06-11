@@ -749,7 +749,7 @@ export default function InstructorSubjectView() {
                 </div>
               )}
               {coursePanel === COURSE_PANEL.grades && (
-                <div style={{ maxHeight: '72vh', overflow: 'auto' }}>
+                <div className="instructor-grade-embed-host">
                   <InstructorGradebook embedded embedClassId={classIdForLinks} />
                 </div>
               )}
@@ -1418,100 +1418,8 @@ export default function InstructorSubjectView() {
 
         {/* Grades Tab */}
         {activeTab === 'grades' && (
-          <div className="space-y-4">
-            <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-              <div className="flex items-center justify-between mb-4">
-                <h2 className="text-xl font-bold text-gray-900">{t('instructorPortal.subjectDetail.grades.title')}</h2>
-                <button
-                  onClick={() => {
-                    navigate(`/instructor/subjects/${id}/grades/upload`)
-                  }}
-                  className="px-4 py-2 bg-primary-gradient text-white rounded-lg hover:shadow-lg transition-all flex items-center space-x-2"
-                >
-                  <Upload className="w-4 h-4" />
-                  <span>Upload Grades</span>
-                </button>
-              </div>
-              <div className="space-y-4">
-                <div>
-                  <h3 className="text-lg font-semibold text-gray-900 mb-3">Grade Configuration</h3>
-                  {subject.grade_configuration && Array.isArray(subject.grade_configuration) && subject.grade_configuration.length > 0 ? (
-                    <div className="space-y-3">
-                      {mergeGradeConfigWithTypes(subject.grade_configuration, gradeTypes).map((config, idx) => (
-                        <div key={idx} className="p-4 bg-gray-50 rounded-lg">
-                          <h4 className="font-medium text-gray-900 mb-2">
-                            {config.grade_type_name_en} ({config.grade_type_code})
-                          </h4>
-                          <div className="grid grid-cols-2 md:grid-cols-5 gap-4 text-sm">
-                            <div>
-                              <span className="text-gray-600">Max:</span> {config.maximum ?? 'N/A'}
-                            </div>
-                            <div>
-                              <span className="text-gray-600">Min:</span> {config.minimum ?? 'N/A'}
-                            </div>
-                            <div>
-                              <span className="text-gray-600">Pass:</span> {config.pass_score ?? 'N/A'}
-                            </div>
-                            <div>
-                              <span className="text-gray-600">Fail:</span> {config.fail_score ?? 'N/A'}
-                            </div>
-                            <div>
-                              <span className="text-gray-600">Weight:</span> {config.weight ? `${config.weight}%` : 'N/A'}
-                            </div>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  ) : (
-                    <p className="text-gray-500">No grade configuration set. Edit subject to configure grades.</p>
-                  )}
-                </div>
-
-                <div>
-                  <h3 className="text-lg font-semibold text-gray-900 mb-3">Pending Grading</h3>
-                  <div className="space-y-2">
-                    {homework.filter(hw => hw.submissionCount > hw.gradedCount).length > 0 && (
-                      <div className="p-4 border border-yellow-200 bg-yellow-50 rounded-lg">
-                        <p className="font-medium text-gray-900 mb-1">Homework</p>
-                        {homework
-                          .filter(hw => hw.submissionCount > hw.gradedCount)
-                          .map(hw => (
-                            <button
-                              key={hw.id}
-                              onClick={() => navigate(`/instructor/subjects/${id}/homework/${hw.id}/submissions`)}
-                              className="block w-full text-left px-3 py-2 mt-2 bg-white border border-gray-200 rounded-lg hover:bg-gray-50"
-                            >
-                              <span className="font-medium">{hw.title}</span>
-                              <span className="text-sm text-gray-600 ml-2">
-                                ({hw.submissionCount - hw.gradedCount} pending)
-                              </span>
-                            </button>
-                          ))}
-                      </div>
-                    )}
-                    {exams.filter(exam => exam.submissionCount > exam.gradedCount).length > 0 && (
-                      <div className="p-4 border border-yellow-200 bg-yellow-50 rounded-lg">
-                        <p className="font-medium text-gray-900 mb-1">Exams</p>
-                        {exams
-                          .filter(exam => exam.submissionCount > exam.gradedCount)
-                          .map(exam => (
-                            <button
-                              key={exam.id}
-                              onClick={() => navigate(`/instructor/subjects/${id}/exams/${exam.id}/submissions`)}
-                              className="block w-full text-left px-3 py-2 mt-2 bg-white border border-gray-200 rounded-lg hover:bg-gray-50"
-                            >
-                              <span className="font-medium">{exam.title}</span>
-                              <span className="text-sm text-gray-600 ml-2">
-                                ({exam.submissionCount - exam.gradedCount} pending)
-                              </span>
-                            </button>
-                          ))}
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </div>
-            </div>
+          <div className="instructor-portal instructor-grade-embed-host">
+            <InstructorGradebook embedded embedClassId={classIdForLinks} />
           </div>
         )}
 

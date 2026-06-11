@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { supabase } from '../../lib/supabase'
+import CurriculumReferencesPanel from './CurriculumReferencesPanel'
 
 const emptyForm = { code: '', description: '', bloom_level: 'apply', difficulty_level: 'medium' }
 
@@ -249,6 +250,15 @@ export default function SubjectCurriculumMapPanel({
           {subjectLabel && <p className="text-sm text-gray-600 mt-4">{subjectLabel}</p>}
         </div>
       )}
+
+      <div className={embedAboutColumn ? 'lg:col-span-2' : ''}>
+        <CurriculumReferencesPanel
+          subjectId={subjectId}
+          clos={clos}
+          variant="admin"
+          canManageSubjectWide
+        />
+      </div>
     </div>
   )
 }

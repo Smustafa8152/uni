@@ -1,4 +1,4 @@
-import { BrowserRouter, Routes, Route, Navigate, useParams } from 'react-router-dom'
+import { BrowserRouter, Routes, Route, Navigate, useParams, useSearchParams } from 'react-router-dom'
 import { AuthProvider } from './contexts/AuthContext'
 import { CollegeProvider } from './contexts/CollegeContext'
 import { LanguageProvider } from './contexts/LanguageContext'
@@ -125,7 +125,6 @@ import InstructorContentRelease from './pages/instructor/InstructorContentReleas
 import InstructorAssessmentAuthoring from './pages/instructor/InstructorAssessmentAuthoring'
 import InstructorQuestionBank from './pages/instructor/InstructorQuestionBank'
 import InstructorGradebook from './pages/instructor/InstructorGradebook'
-import InstructorGradeSubmission from './pages/instructor/InstructorGradeSubmission'
 import InstructorComingSoon from './pages/instructor/InstructorComingSoon'
 import InstructorTemplates from './pages/instructor/InstructorTemplates'
 import CreateMaterial from './pages/instructor/CreateMaterial'
@@ -164,6 +163,15 @@ import AdminRequestDetail from './pages/admin/RequestDetail'
 function LegacyTrackIdRedirect() {
   const { id } = useParams()
   return <Navigate to={`/application-status/${id}`} replace />
+}
+
+function GradeSubmissionRedirect() {
+  const [searchParams] = useSearchParams()
+  const classId = searchParams.get('classId')
+  const to = classId
+    ? `/instructor/gradebook?classId=${classId}&panel=submit`
+    : '/instructor/gradebook?panel=submit'
+  return <Navigate to={to} replace />
 }
 
 function App() {
@@ -1424,9 +1432,7 @@ function App() {
             path="/instructor/grade-submission"
             element={
               <ProtectedRoute allowedRoles={['instructor']}>
-                <RoleBasedLayout>
-                  <InstructorGradeSubmission />
-                </RoleBasedLayout>
+                <GradeSubmissionRedirect />
               </ProtectedRoute>
             }
           />

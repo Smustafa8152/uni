@@ -5,6 +5,7 @@ import { useAuth } from '../../contexts/AuthContext'
 import { getLocalizedName } from '../../utils/localizedName'
 import { getEmailLookupCandidates } from '../../utils/emailLookup'
 import { formatTime12h, formatTimeRange12h, normalizeTime } from '../../utils/timeFormat'
+import { formatInstructorDisplayName } from '../../utils/academicTitle'
 import { supabase } from '../../lib/supabase'
 import { Calendar, Printer, Video, ExternalLink, X } from 'lucide-react'
 
@@ -80,7 +81,7 @@ export default function StudentSchedule() {
             class_schedules(id, day_of_week, start_time, end_time, location, teams_meeting_url),
             room,
             building,
-            instructors(name_en, name_ar)
+            instructors(name_en, name_ar, academic_title)
           )
         `)
         .eq('student_id', student.id)
@@ -132,7 +133,7 @@ export default function StudentSchedule() {
             day,
             dayLabel: isArabic ? DAY_NAMES_AR[day] : DAY_NAMES_EN[day],
             location: s.location || [cls.building, cls.room].filter(Boolean).join(' ') || '—',
-            instructor: getLocalizedName(cls.instructors, language === 'ar') || '—',
+            instructor: formatInstructorDisplayName(cls.instructors, language === 'ar') || '—',
             startTime: startNorm,
             endTime: endNorm,
             joinUrl,

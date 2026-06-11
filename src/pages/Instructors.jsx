@@ -24,6 +24,7 @@ import {
   UserPlus,
 } from 'lucide-react'
 import { getLocalizedName } from '../utils/localizedName'
+import { formatInstructorDisplayName } from '../utils/academicTitle'
 
 export default function Instructors() {
   const { t, i18n } = useTranslation()
@@ -138,10 +139,8 @@ export default function Instructors() {
   }
 
   const getInstructorDisplayName = (instructor) => {
-    if (isArabicLayout) {
-      return (instructor?.name_ar || '').trim() || '-'
-    }
-    return (instructor?.name_en || instructor?.name_ar || '').trim() || '-'
+    const formatted = formatInstructorDisplayName(instructor, isArabicLayout)
+    return formatted || '-'
   }
 
   const filteredInstructors = instructors.filter(instructor =>

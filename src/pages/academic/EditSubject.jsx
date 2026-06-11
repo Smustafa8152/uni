@@ -3,6 +3,7 @@ import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { useLanguage } from '../../contexts/LanguageContext'
 import { getLocalizedName } from '../../utils/localizedName'
+import { formatInstructorDisplayName } from '../../utils/academicTitle'
 import { formatSubjectOptionLabel, SUBJECT_OPTION_SELECT } from '../../utils/subjectOptionLabel'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
@@ -160,7 +161,7 @@ export default function EditSubject() {
     try {
       let query = supabase
         .from('instructors')
-        .select('id, name_en, name_ar, email, phone, title')
+        .select('id, name_en, name_ar, email, phone, title, academic_title')
         .order('name_en', { ascending: true })
 
       if (userRole === 'user' && authCollegeId) {
@@ -931,7 +932,7 @@ export default function EditSubject() {
                       <option value="">{t('subjectsForm.selectInstructor')}</option>
                       {instructors.map(instructor => (
                         <option key={instructor.id} value={instructor.id}>
-                          {instructor.name_en} {instructor.title ? `(${instructor.title})` : ''}
+                          {formatInstructorDisplayName(instructor, isRTL)} {instructor.title ? `(${instructor.title})` : ''}
                         </option>
                       ))}
                     </select>

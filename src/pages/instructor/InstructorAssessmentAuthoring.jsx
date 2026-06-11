@@ -9,6 +9,7 @@ import { QUESTION_TYPE_OPTIONS } from '../../constants/questionTypes'
 import { RUBRIC_CATALOG_FALLBACK } from '../../constants/instructorRubricCatalog'
 import { INSTRUCTOR_SEMESTER_SELECT } from '../../utils/instructorSemesters'
 import { getActiveInstructorByEmail } from '../../utils/getActiveInstructorByEmail'
+import { computeAssessmentWeightTotal } from '../../utils/assessmentWeights'
 
 const defaultExamForm = {
   title: '',
@@ -116,6 +117,8 @@ export default function InstructorAssessmentAuthoring({ embedded = false, embedC
   const [assessmentFileUploading, setAssessmentFileUploading] = useState(false)
   const [rubricRows, setRubricRows] = useState([])
   const [rubricsLoaded, setRubricsLoaded] = useState(false)
+  const [clos, setClos] = useState([])
+  const [selectedCloIds, setSelectedCloIds] = useState([])
 
   const selectedClass = useMemo(
     () => classes.find((c) => c.id === selectedClassId) || null,
@@ -126,6 +129,15 @@ export default function InstructorAssessmentAuthoring({ embedded = false, embedC
   const semesterLabel = selectedClass?.semesters
     ? getLocalizedName(selectedClass.semesters, language === 'ar')
     : ''
+
+  const weightValidation = useMemo(
+    () =>
+      computeAssessmentWeightTotal(exams, {
+        editingId: selectedExamId,
+        draftWeight: examForm.weight_percentage,
+      }),
+    [exams, selectedExamId, examForm.weight_percentage],
+  )
 
   const questionStats = useMemo(() => {
     const totalQuestions = examQuestions.length
@@ -165,6 +177,22 @@ export default function InstructorAssessmentAuthoring({ embedded = false, embedC
   }, [selectedClassId])
 
   useEffect(() => {
+    const subjectId = selectedClass?.subject_id
+    if (!subjectId) {
+      setClos([])
+      return
+    }
+    supabase
+      .from('subject_learning_outcomes')
+      .select('id, code, description')
+      .eq('subject_id', subjectId)
+      .eq('is_active', true)
+      .order('display_order', { ascending: true })
+      .order('id', { ascending: true })
+      .then(({ data }) => setClos(data || []))
+  }, [selectedClass?.subject_id])
+
+  useEffect(() => {
     if (selectedClassId && classes.length) {
       const classObj = classes.find((c) => c.id === selectedClassId)
       if (classObj?.subject_id) {
@@ -184,6 +212,7 @@ export default function InstructorAssessmentAuthoring({ embedded = false, embedC
     if (!selectedExamId) {
       setExamForm(defaultExamForm)
       setExamQuestions([])
+      setSelectedCloIds([])
       return
     }
     loadExamWithQuestions(selectedExamId)
@@ -232,7 +261,7 @@ export default function InstructorAssessmentAuthoring({ embedded = false, embedC
     try {
       const { data } = await supabase
         .from('subject_exams')
-        .select('id, title, status, created_at')
+        .select('id, title, status, created_at, weight_percentage')
         .eq('class_id', classId)
         .order('created_at', { ascending: false })
 
@@ -249,7 +278,7 @@ export default function InstructorAssessmentAuthoring({ embedded = false, embedC
   const loadExamWithQuestions = async (examId) => {
     setLoading(true)
     try {
-      const [{ data: exam }, { data: questions }] = await Promise.all([
+      const [{ data: exam }, { data: questions }, { data: cloMap }] = await Promise.all([
         supabase
           .from('subject_exams')
           .select('id, title, exam_type, total_points, weight_percentage, scheduled_date, start_time, end_time, duration_minutes, instructions, assessment_settings')
@@ -260,6 +289,7 @@ export default function InstructorAssessmentAuthoring({ embedded = false, embedC
           .select('id, question_bank_id, question_order, question_type, question_text, options, correct_answers, marks, source')
           .eq('subject_exam_id', examId)
           .order('question_order', { ascending: true }),
+        supabase.from('subject_exam_clos').select('clo_id').eq('subject_exam_id', examId),
       ])
 
       if (!exam) {
@@ -300,6 +330,7 @@ export default function InstructorAssessmentAuthoring({ embedded = false, embedC
           marks: Number(q.marks || 0),
         }))
       )
+      setSelectedCloIds((cloMap || []).map((m) => m.clo_id))
     } catch (err) {
       console.error(err)
     } finally {
@@ -311,10 +342,20 @@ export default function InstructorAssessmentAuthoring({ embedded = false, embedC
     setSelectedExamId(null)
     setExamForm(defaultExamForm)
     setExamQuestions([])
+    setSelectedCloIds([])
   }
 
   const saveAssessment = async () => {
     if (!selectedClass || !platformUserId || !examForm.title.trim()) return
+    if (weightValidation.exceeds) {
+      alert(
+        t('instructorPortal.assessmentWeightExceeded', {
+          total: weightValidation.total,
+          defaultValue: `Total assessment weight is ${weightValidation.total}% — it cannot exceed 100%.`,
+        }),
+      )
+      return
+    }
 
     setSaving(true)
     try {
@@ -376,6 +417,13 @@ export default function InstructorAssessmentAuthoring({ embedded = false, embedC
           }))
           await supabase.from('subject_exam_questions').insert(rows)
         }
+
+        await supabase.from('subject_exam_clos').delete().eq('subject_exam_id', examId)
+        if (selectedCloIds.length) {
+          await supabase.from('subject_exam_clos').insert(
+            selectedCloIds.map((cloId) => ({ subject_exam_id: examId, clo_id: cloId })),
+          )
+        }
       }
 
       await loadExams(selectedClass.id)
@@ -390,6 +438,15 @@ export default function InstructorAssessmentAuthoring({ embedded = false, embedC
 
   const publishAssessment = async () => {
     if (!selectedClass || !platformUserId || !examForm.title.trim()) return
+    if (weightValidation.exceeds) {
+      alert(
+        t('instructorPortal.assessmentWeightExceeded', {
+          total: weightValidation.total,
+          defaultValue: `Total assessment weight is ${weightValidation.total}% — it cannot exceed 100%.`,
+        }),
+      )
+      return
+    }
     setSaving(true)
     try {
       // First save (ensures questions exist)
@@ -569,6 +626,7 @@ export default function InstructorAssessmentAuthoring({ embedded = false, embedC
                     setSelectedExamId(null)
                     setExamForm(defaultExamForm)
                     setExamQuestions([])
+                    setSelectedCloIds([])
                   }}
                 >
                   {classes.map((cls) => (
@@ -595,10 +653,10 @@ export default function InstructorAssessmentAuthoring({ embedded = false, embedC
                   ))}
                 </select>
               )}
-              <button type="button" className="btn btn-gh" onClick={saveAssessment} disabled={saving}>
+              <button type="button" className="btn btn-gh" onClick={saveAssessment} disabled={saving || weightValidation.exceeds}>
                 💾 {t('instructorPortal.saveDraft')}
               </button>
-              <button type="button" className="btn btn-ok" onClick={publishAssessment} disabled={saving || !examForm.title.trim()}>
+              <button type="button" className="btn btn-ok" onClick={publishAssessment} disabled={saving || !examForm.title.trim() || weightValidation.exceeds}>
                 🚀 {t('instructorPortal.publishLesson', 'Publish')}
               </button>
               <Link
@@ -636,6 +694,7 @@ export default function InstructorAssessmentAuthoring({ embedded = false, embedC
                     setSelectedExamId(null)
                     setExamForm(defaultExamForm)
                     setExamQuestions([])
+                    setSelectedCloIds([])
                   }}
                 >
                   {classes.map((cls) => (
@@ -708,6 +767,32 @@ export default function InstructorAssessmentAuthoring({ embedded = false, embedC
                 ))}
               </select>
             </div>
+            {clos.length > 0 && (
+              <div className="fg">
+                <label className="fl">{t('instructorPortal.linkToLearningOutcomes')}</label>
+                <p style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 8 }}>
+                  {t('instructorPortal.assessmentCloLinkHint')}
+                </p>
+                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                  {clos.map((clo) => (
+                    <label key={clo.id} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, cursor: 'pointer' }}>
+                      <input
+                        type="checkbox"
+                        style={{ accentColor: 'var(--p)' }}
+                        checked={selectedCloIds.includes(clo.id)}
+                        onChange={(e) => {
+                          const checked = e.target.checked
+                          setSelectedCloIds((prev) =>
+                            checked ? [...prev, clo.id] : prev.filter((id) => id !== clo.id),
+                          )
+                        }}
+                      />
+                      {clo.code}
+                    </label>
+                  ))}
+                </div>
+              </div>
+            )}
             {examForm.exam_type === 'assignment' && (
               <div className="fg">
                 <label className="fl">{t('instructorPortal.assignmentUploadFile')}</label>
@@ -756,11 +841,33 @@ export default function InstructorAssessmentAuthoring({ embedded = false, embedC
                 <input
                   type="number"
                   className="fc"
+                  min={0}
+                  max={100}
                   value={examForm.weight_percentage}
-                  onChange={(e) => setExamForm((p) => ({ ...p, weight_percentage: Number(e.target.value) || 0 }))}
+                  onChange={(e) => {
+                    const raw = Number(e.target.value)
+                    const next = Number.isFinite(raw) ? Math.min(100, Math.max(0, raw)) : 0
+                    setExamForm((p) => ({ ...p, weight_percentage: next }))
+                  }}
                 />
               </div>
             </div>
+            <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: -8, marginBottom: 8 }}>
+              {t('instructorPortal.assessmentWeightTotal', {
+                total: weightValidation.total,
+                remaining: weightValidation.remaining,
+                defaultValue: `Total configured: ${weightValidation.total}% (${weightValidation.remaining}% remaining)`,
+              })}
+            </div>
+            {weightValidation.exceeds && (
+              <div className="alert alert-warn" role="alert" style={{ marginBottom: 12 }}>
+                ⚠️{' '}
+                {t('instructorPortal.assessmentWeightExceeded', {
+                  total: weightValidation.total,
+                  defaultValue: `Total assessment weight is ${weightValidation.total}% — it cannot exceed 100%. Reduce weights before saving.`,
+                })}
+              </div>
+            )}
             <div className="fr">
               <div className="fg">
                 <label className="fl">{t('instructorPortal.startDate')}</label>
@@ -1224,11 +1331,26 @@ export default function InstructorAssessmentAuthoring({ embedded = false, embedC
                 <span style={{ color: 'var(--muted)' }}>{t('instructorPortal.autoGrading')}</span>
                 <strong>{questionStats.autoMarks} {t('instructorPortal.fullMarks').toLowerCase()}</strong>
               </div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0', borderBottom: '1px solid var(--bdr)' }}>
                 <span style={{ color: 'var(--muted)' }}>{t('instructorPortal.manualGrading')}</span>
                 <strong>{questionStats.manualMarks} {t('instructorPortal.fullMarks').toLowerCase()}</strong>
               </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0' }}>
+                <span style={{ color: 'var(--muted)' }}>{t('instructorPortal.assessmentWeightCourseTotal')}</span>
+                <strong style={{ color: weightValidation.exceeds ? 'var(--err)' : undefined }}>
+                  {weightValidation.total}%
+                </strong>
+              </div>
             </div>
+            {weightValidation.exceeds && (
+              <div className="alert alert-warn" style={{ marginTop: 14 }}>
+                ⚠️{' '}
+                {t('instructorPortal.assessmentWeightExceeded', {
+                  total: weightValidation.total,
+                  defaultValue: `Total assessment weight is ${weightValidation.total}% — it cannot exceed 100%.`,
+                })}
+              </div>
+            )}
             {questionStats.gap > 0 && (
               <div className="alert alert-warn" style={{ marginTop: 14 }}>
                 ⚠️ {t('instructorPortal.marksIncompleteWarning', { current: questionStats.totalMarks, total: examForm.total_points })}

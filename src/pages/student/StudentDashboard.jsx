@@ -6,6 +6,7 @@ import { useAuth } from '../../contexts/AuthContext'
 import { getLocalizedName } from '../../utils/localizedName'
 import { getEmailLookupCandidates } from '../../utils/emailLookup'
 import { formatTimeRange12h } from '../../utils/timeFormat'
+import { formatInstructorDisplayName } from '../../utils/academicTitle'
 import { supabase } from '../../lib/supabase'
 import { AlertTriangle, CreditCard, Calendar, GraduationCap, PenLine, Bell, Search, Receipt, GitBranch, HelpCircle, ClipboardList, Video, ExternalLink } from 'lucide-react'
 
@@ -89,7 +90,7 @@ export default function StudentDashboard() {
             code,
             subjects(credit_hours, code, name_en, name_ar),
             class_schedules(id, day_of_week, start_time, end_time, location, teams_meeting_url),
-            instructors(name_en, name_ar)
+            instructors(name_en, name_ar, academic_title)
           )
         `)
         .eq('student_id', studentData.id)
@@ -542,7 +543,7 @@ export default function StudentDashboard() {
                   className="text-sm font-bold text-slate-600 hover:text-slate-900"
                   onClick={() => navigate('/student/elearning/sessions')}
                 >
-                  {tx('جميع الجلسات', 'All sessions')}
+                  {tx('جميع المحاضرات', 'All sessions')}
                 </button>
               </div>
               <div className="divide-y divide-slate-100">

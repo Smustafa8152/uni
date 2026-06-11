@@ -627,6 +627,15 @@ export default function InstructorBuildLesson({ embedded = false, embedClassId =
     }
   }
 
+  const saveLessonCloMapping = async (lessonId) => {
+    await supabase.from('class_lesson_clos').delete().eq('lesson_id', lessonId)
+    if (selectedCloIds.length) {
+      const rows = selectedCloIds.map((cloId) => ({ lesson_id: lessonId, clo_id: cloId }))
+      const { error } = await supabase.from('class_lesson_clos').insert(rows)
+      if (error) throw error
+    }
+  }
+
   const saveLessonElementsOnly = async () => {
     if (lessonEditBlocked) return
     if (!selectedClass || !selectedLessonId) return
@@ -645,6 +654,7 @@ export default function InstructorBuildLesson({ embedded = false, embedClassId =
         const { error } = await supabase.from('class_lesson_elements').insert(rows)
         if (error) throw error
       }
+      await saveLessonCloMapping(selectedLessonId)
       await supabase
         .from('class_lessons')
         .update({ updated_at: new Date().toISOString() })
@@ -706,11 +716,7 @@ export default function InstructorBuildLesson({ embedded = false, embedClassId =
         }
       }
 
-      await supabase.from('class_lesson_clos').delete().eq('lesson_id', lessonId)
-      if (selectedCloIds.length) {
-        const rows = selectedCloIds.map((cloId) => ({ lesson_id: lessonId, clo_id: cloId }))
-        await supabase.from('class_lesson_clos').insert(rows)
-      }
+      await saveLessonCloMapping(lessonId)
 
       await supabase.from('class_lesson_elements').delete().eq('lesson_id', lessonId)
       if (elements.length) {
@@ -901,45 +907,43 @@ export default function InstructorBuildLesson({ embedded = false, embedClassId =
         </div>
       )}
 
-      <div className="card" style={{ marginBottom: 16 }}>
-        <div className="fr">
-          <div className="fg">
-            {isAdmin && (
-              <>
-                <label className="fl">{t('navigation.colleges', 'Colleges')}</label>
-                <select
-                  className="fc"
-                  value={selectedCollegeId || ''}
-                  onChange={(e) => {
-                    const nextCollegeId = e.target.value ? Number(e.target.value) : null
-                    setSelectedCollegeId(nextCollegeId)
-                    setSelectedMajorId(null)
-                    setSelectedClassId(null)
-                    setSelectedLessonId(null)
-                    if (!embedded) {
-                      setSearchParams((prev) => {
-                        const next = new URLSearchParams(prev)
-                        next.delete('classId')
-                        next.delete('lessonId')
-                        return next
-                      }, { replace: true })
-                    }
-                  }}
-                >
-                  <option value="">{t('common.select', 'Select')}</option>
-                  {colleges.map((college) => (
-                    <option key={college.id} value={college.id}>
-                      {college.code ? `${college.code} - ` : ''}{getLocalizedName(college, language === 'ar')}
-                    </option>
-                  ))}
-                </select>
-              </>
-            )}
-          </div>
-          {isAdmin && (
+      <div className="card lb-selector-card" style={{ marginBottom: 16 }}>
+        {isAdmin && (
+          <div className="lb-selector-row">
             <div className="fg">
-              <label className="fl">{t('navigation.majors', 'Majors')}</label>
+              <label className="fl" htmlFor="lb-college">{t('navigation.colleges', 'Colleges')}</label>
               <select
+                id="lb-college"
+                className="fc"
+                value={selectedCollegeId || ''}
+                onChange={(e) => {
+                  const nextCollegeId = e.target.value ? Number(e.target.value) : null
+                  setSelectedCollegeId(nextCollegeId)
+                  setSelectedMajorId(null)
+                  setSelectedClassId(null)
+                  setSelectedLessonId(null)
+                  if (!embedded) {
+                    setSearchParams((prev) => {
+                      const next = new URLSearchParams(prev)
+                      next.delete('classId')
+                      next.delete('lessonId')
+                      return next
+                    }, { replace: true })
+                  }
+                }}
+              >
+                <option value="">{t('common.select', 'Select')}</option>
+                {colleges.map((college) => (
+                  <option key={college.id} value={college.id}>
+                    {college.code ? `${college.code} - ` : ''}{getLocalizedName(college, language === 'ar')}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="fg">
+              <label className="fl" htmlFor="lb-major">{t('navigation.majors', 'Majors')}</label>
+              <select
+                id="lb-major"
                 className="fc"
                 value={selectedMajorId || ''}
                 onChange={(e) => {
@@ -965,10 +969,13 @@ export default function InstructorBuildLesson({ embedded = false, embedClassId =
                 ))}
               </select>
             </div>
-          )}
+          </div>
+        )}
+        <div className="lb-selector-row">
           <div className="fg">
-            <label className="fl">{t('instructorPortal.courseName')}</label>
+            <label className="fl" htmlFor="lb-course">{t('instructorPortal.courseName')}</label>
             <select
+              id="lb-course"
               className="fc"
               disabled={lessonEditBlocked || (isAdmin && (!selectedCollegeId || !selectedMajorId))}
               value={selectedClassId || ''}
@@ -996,10 +1003,11 @@ export default function InstructorBuildLesson({ embedded = false, embedClassId =
             </select>
           </div>
           <div className="fg">
-            <label className="fl">{t('instructorPortal.lesson', 'Lesson')}</label>
+            <label className="fl" htmlFor="lb-lesson">{t('instructorPortal.lesson', 'Lesson')}</label>
             <select
+              id="lb-lesson"
               className="fc"
-              disabled={lessonEditBlocked}
+              disabled={lessonEditBlocked || !selectedClassId}
               value={selectedLessonId || ''}
               onChange={(e) => {
                 const v = e.target.value ? Number(e.target.value) : null
@@ -1039,6 +1047,49 @@ export default function InstructorBuildLesson({ embedded = false, embedClassId =
       {elementsOnly && !selectedLessonId && lessons.length > 0 && (
         <div className="card" style={{ marginBottom: 16, color: 'var(--muted)' }}>
           {t('instructorPortal.selectLessonToEditElements')}
+        </div>
+      )}
+
+      {elementsOnly && selectedLessonId && clos.length > 0 && (
+        <div className="card" style={{ marginBottom: 16 }}>
+          <div className="card-hd">
+            <div className="card-title">{t('instructorPortal.linkToLearningOutcomes')}</div>
+          </div>
+          <p style={{ fontSize: 12, color: 'var(--muted)', margin: '0 0 12px' }}>
+            {t('instructorPortal.lessonCloLinkHint')}
+          </p>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            {clos.map((clo) => (
+              <label
+                key={clo.id}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 6,
+                  fontSize: 13,
+                  cursor: lessonEditBlocked ? 'not-allowed' : 'pointer',
+                  opacity: lessonEditBlocked ? 0.6 : 1,
+                }}
+              >
+                <input
+                  type="checkbox"
+                  style={{ accentColor: 'var(--p)' }}
+                  disabled={lessonEditBlocked}
+                  checked={selectedCloIds.includes(clo.id)}
+                  onChange={(e) => {
+                    const checked = e.target.checked
+                    setSelectedCloIds((prev) =>
+                      checked ? [...prev, clo.id] : prev.filter((id) => id !== clo.id),
+                    )
+                  }}
+                />
+                <span style={{ fontWeight: 600 }}>{clo.code}</span>
+                {clo.description ? (
+                  <span style={{ color: 'var(--muted)', fontSize: 12 }}>— {clo.description}</span>
+                ) : null}
+              </label>
+            ))}
+          </div>
         </div>
       )}
 
