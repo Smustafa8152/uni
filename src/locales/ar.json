@@ -5078,6 +5078,7 @@
     "messages": "الرسائل",
     "instructor": "المحاضر",
     "welcomeInstructor": "مرحباً، {{name}}",
+    "welcomeGreetingAr": "مرحباً،",
     "semesterLastLogin": "الفصل الدراسي {semester}. آخر دخول: {time}",
     "createNewLesson": "إنشاء درس جديد",
     "createAssessment": "إنشاء اختبار",

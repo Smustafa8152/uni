@@ -7,6 +7,7 @@ import { getLocalizedName } from '../../utils/localizedName'
 import { supabase } from '../../lib/supabase'
 import { pickPreferredSemesterForDashboard } from '../../utils/instructorSemesters'
 import { formatInstructorDisplayName } from '../../utils/academicTitle'
+import { getActiveInstructorByEmail } from '../../utils/getActiveInstructorByEmail'
 
 export default function InstructorDashboard() {
   const { t } = useTranslation()
@@ -87,6 +88,8 @@ export default function InstructorDashboard() {
     }
   }
 
+  const isArabic = language === 'ar'
+
   const displayName = useMemo(() => {
     const fromProfile =
       user?.user_metadata?.full_name ||
@@ -99,7 +102,7 @@ export default function InstructorDashboard() {
         t('instructorPortal.instructor')
       )
     }
-    const n = formatInstructorDisplayName(instructor, language === 'ar')
+    const n = formatInstructorDisplayName(instructor, isArabic)
     if (n) return n
     return (
       instructor.email ||
@@ -107,7 +110,7 @@ export default function InstructorDashboard() {
       user?.email?.split('@')[0] ||
       t('instructorPortal.instructor')
     )
-  }, [instructor, language, t, user])
+  }, [instructor, isArabic, t, user])
   const semesterLabel = currentSemester ? getLocalizedName(currentSemester, language === 'ar') : ''
   const courseCount = myClasses.length || 4
 
@@ -156,7 +159,18 @@ export default function InstructorDashboard() {
 
         <div className="ph">
           <div>
-            <h1>{t('instructorPortal.welcomeInstructor', { name: displayName })} 👋</h1>
+            <h1 className="welcome-instructor-heading" lang={isArabic ? 'ar' : 'en'}>
+              <span className="welcome-instructor-greeting">
+                {isArabic
+                  ? t('instructorPortal.welcomeGreetingAr', 'مرحباً،')
+                  : t('instructorPortal.welcomeGreetingEn', 'Welcome,')}
+              </span>{' '}
+              <bdi className="welcome-instructor-name">{displayName}</bdi>
+              <span className="welcome-instructor-wave" aria-hidden="true">
+                {' '}
+                👋
+              </span>
+            </h1>
             <p className="ph-sub">{semesterLabel ? `${semesterLabel} — ` : ''}{t('instructorPortal.lastLoginToday')}</p>
           </div>
           <div className="ph-acts">

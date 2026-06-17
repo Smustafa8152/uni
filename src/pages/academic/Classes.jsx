@@ -153,8 +153,8 @@ export default function Classes() {
                   <Library className="w-6 h-6 text-white" />
                 </div>
                 <div>
-                  <h3 className="text-lg font-bold text-gray-900">{cls.code}</h3>
-                  <p className="text-sm text-gray-500">{getLocalizedName(cls.subjects, isRTL)}</p>
+                  <h3 className="text-lg font-bold text-gray-900">{getLocalizedName(cls.subjects, isRTL)}</h3>
+                  <p className="text-sm text-gray-500">{cls.code}</p>
                 </div>
               </div>
               <div className="space-y-2 text-sm text-gray-600">

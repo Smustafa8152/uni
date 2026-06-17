@@ -5,6 +5,7 @@ import { useLanguage } from '../../contexts/LanguageContext'
 import { getLocalizedName } from '../../utils/localizedName'
 import { supabase } from '../../lib/supabase'
 import { formatInstructorDisplayName } from '../../utils/academicTitle'
+import { createTeamsMeeting, formatMeetingDateTime } from '../../utils/microsoftGraph'
 import { ArrowLeft, Edit, Library, Video, ExternalLink, RefreshCw } from 'lucide-react'
 
 function getFirstOccurrenceDate(startDate, dayOfWeek) {

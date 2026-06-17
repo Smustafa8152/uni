@@ -5256,6 +5256,7 @@
     "messages": "Messages",
     "instructor": "Instructor",
     "welcomeInstructor": "Welcome, {{name}}",
+    "welcomeGreetingEn": "Welcome,",
     "semesterLastLogin": "Semester {semester}. Last login: {time}",
     "createNewLesson": "Create New Lesson",
     "createAssessment": "Create Assessment",

@@ -473,10 +473,10 @@ export default function InstructorMyCourses() {
           return (
             <div key={cls.id} className="course-card">
               <div className="course-top" style={{ background: gradient }}>
+                <h3>{courseName}</h3>
                 <div className="course-code">
                   {cls.subjects?.code} — {t('instructorPortal.section')} {cls.section}
                 </div>
-                <h3>{courseName}</h3>
                 <div className="course-term">{t(`instructorPortal.${deliveryKey}`)}</div>
               </div>
               <div className="course-body">

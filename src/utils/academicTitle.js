@@ -63,9 +63,25 @@ export function formatNameWithAcademicTitle(name, academicTitle, isArabic = fals
   return `${prefix} ${n}`
 }
 
+/** Instructor display name for the active UI language (no cross-language fallback on primary field). */
+export function getInstructorLocalizedName(instructor, isArabic = false) {
+  if (!instructor) return ''
+  if (isArabic) {
+    return (
+      String(instructor.name_ar ?? '').trim() ||
+      String(instructor.name_en ?? '').trim()
+    )
+  }
+  return String(instructor.name_en ?? '').trim()
+}
+
 /** Localized instructor/faculty display name with optional academic title prefix. */
 export function formatInstructorDisplayName(instructor, isArabic = false) {
   if (!instructor) return ''
-  const name = getLocalizedName(instructor, isArabic)
-  return formatNameWithAcademicTitle(name, instructor.academic_title, isArabic) || name
+  let name = getInstructorLocalizedName(instructor, isArabic)
+  if (!name && isArabic) {
+    name = getInstructorLocalizedName(instructor, false)
+  }
+  const titled = formatNameWithAcademicTitle(name, instructor.academic_title, isArabic)
+  return titled || name
 }
