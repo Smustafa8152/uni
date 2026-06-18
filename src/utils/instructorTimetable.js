@@ -44,6 +44,19 @@ export function sumTeachingMinutes(schedules) {
   return schedules.reduce((sum, s) => sum + durationMinutes(s.start_time, s.end_time), 0)
 }
 
+/** Weekly teaching hours for one class (from recurring schedule slots). */
+export function weeklyTeachingHoursForClass(scheduleRows, classId) {
+  const mins = sumTeachingMinutes(schedulesForClass(scheduleRows, classId))
+  if (mins <= 0) return null
+  return Math.round((mins / 60) * 10) / 10
+}
+
+/** Format hours for display (drops trailing .0). */
+export function formatTeachingHours(n) {
+  if (n === 0 || n === null || n === undefined || Number.isNaN(n)) return '0'
+  return Number(n).toFixed(1).replace(/\.0$/, '')
+}
+
 export function uniqueLocationsFromSchedules(schedules) {
   const set = new Set()
   for (const s of schedules || []) {
