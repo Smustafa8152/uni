@@ -11,11 +11,14 @@ import {
   TIMETABLE_DAY_KEYS,
   WORKLOAD_DAY_I18N_KEYS,
   formatClassScheduleSummary,
+  formatTeachingHours,
   formatTimeRangeLabel,
   schedulesForClass,
   sumTeachingMinutes,
   uniqueLocationsFromSchedules,
+  weeklyTeachingHoursForClass,
 } from '../../utils/instructorTimetable'
+import { downloadInstructorWorkloadSchedule } from '../../utils/exportInstructorWorkload'
 
 const ACCENT_BORDERS = ['var(--p)', 'var(--info)', 'var(--ok)']
 const WEEK_ROW_STYLES = [
@@ -149,6 +152,14 @@ export default function InstructorWorkload() {
 
   const semesterLabel = currentSemester ? getLocalizedName(currentSemester, isAr) : ''
 
+  const academicYearLabel = currentSemester?.academic_years
+    ? getLocalizedName(currentSemester.academic_years, isAr)
+    : ''
+
+  const semesterStatusLabel = currentSemester
+    ? t(`instructorPortal.semesterStatus.${currentSemester.status}`, currentSemester.status)
+    : ''
+
   const instructorDisplayName = instructor
     ? getLocalizedName(
         { name_en: instructor.name_en, name_ar: instructor.name_ar },
@@ -164,9 +175,8 @@ export default function InstructorWorkload() {
   const teachingHoursWeek = useMemo(() => {
     const mins = sumTeachingMinutes(scheduleRows)
     if (mins > 0) return Math.round((mins / 60) * 10) / 10
-    const creditSum = courses.reduce((acc, c) => acc + (Number(c.subjects?.credit_hours) || 0), 0)
-    return creditSum > 0 ? creditSum : 0
-  }, [courses, scheduleRows])
+    return 0
+  }, [scheduleRows])
 
   /** No dedicated office-hours column in DB yet — show 0 / em dash in UI. */
   const officeHoursWeek = 0
@@ -203,9 +213,41 @@ export default function InstructorWorkload() {
     color: 'var(--txt)',
   })
 
-  const fmtHours = (n) => {
-    if (n === 0 || n === null || Number.isNaN(n)) return '0'
-    return Number(n).toFixed(1).replace(/\.0$/, '')
+  const fmtHours = formatTeachingHours
+
+  const handleExportSchedule = async () => {
+    const safeName = (instructor?.name_ar || instructor?.name_en || 'instructor')
+      .replace(/[^\p{L}\p{N}\s-]/gu, '')
+      .trim()
+      .replace(/\s+/g, '-')
+    const safeSemester = (currentSemester?.code || semesterLabel || 'semester')
+      .replace(/[^\p{L}\p{N}\s-]/gu, '')
+      .trim()
+      .replace(/\s+/g, '-')
+    const instructorNameAr =
+      instructor?.name_ar || instructor?.name_en || instructorDisplayName || '—'
+    const collegeNameAr = instructor?.colleges
+      ? getLocalizedName(instructor.colleges, true)
+      : '—'
+    const departmentNameAr = instructor?.departments
+      ? getLocalizedName(instructor.departments, true)
+      : '—'
+
+    try {
+      await downloadInstructorWorkloadSchedule({
+        instructorNameAr,
+        employeeId: instructor?.employee_id || '—',
+        collegeNameAr,
+        departmentNameAr,
+        semesterLabel,
+        academicYear: currentSemester?.academic_years || null,
+        courses,
+        scheduleRows,
+        filename: `instructor-schedule-${safeName}-${safeSemester}.pdf`,
+      })
+    } catch (err) {
+      console.error('Export schedule failed:', err)
+    }
   }
 
   if (loading && !instructor) {
@@ -239,6 +281,7 @@ export default function InstructorWorkload() {
           <p className="ph-sub">
             {t('instructorPortal.workloadPhSubDynamic', {
               semester: semesterLabel || '—',
+              academicYear: academicYearLabel || '—',
               name: instructorDisplayName || '—',
             })}
           </p>
@@ -251,18 +294,45 @@ export default function InstructorWorkload() {
             onChange={(e) => setSelectedSemesterId(e.target.value ? Number(e.target.value) : null)}
             aria-label={t('instructorPortal.filterSemester')}
           >
-            {semesters.map((s) => (
-              <option key={s.id} value={s.id}>
-                {getLocalizedName(s, isAr)} — {t(`instructorPortal.semesterStatus.${s.status}`, s.status)}
-              </option>
-            ))}
+            {semesters.map((s) => {
+              const yearName = s.academic_years ? getLocalizedName(s.academic_years, isAr) : ''
+              const semName = getLocalizedName(s, isAr)
+              return (
+                <option key={s.id} value={s.id}>
+                  {yearName ? `${semName} · ${yearName}` : semName}
+                  {' — '}
+                  {t(`instructorPortal.semesterStatus.${s.status}`, s.status)}
+                </option>
+              )
+            })}
             {semesters.length === 0 && <option value="">{semesterLabel || ''}</option>}
           </select>
-          <button type="button" className="btn btn-gh" onClick={() => window.print()}>
+          <button type="button" className="btn btn-gh" onClick={handleExportSchedule}>
             📥 {t('instructorPortal.workloadExportSchedule')}
           </button>
         </div>
       </div>
+
+      {currentSemester && (
+        <div className="workload-semester-banner" role="status">
+          <div className="workload-semester-banner-main">
+            <span className="workload-semester-banner-label">{t('instructorPortal.workloadSemesterLabel')}</span>
+            <strong>{semesterLabel || '—'}</strong>
+            {academicYearLabel && (
+              <>
+                <span className="workload-semester-banner-sep">·</span>
+                <span className="workload-semester-banner-label">{t('instructorPortal.workloadAcademicYearLabel')}</span>
+                <strong>{academicYearLabel}</strong>
+              </>
+            )}
+          </div>
+          {semesterStatusLabel && (
+            <span className="badge" data-status={currentSemester.status}>
+              {semesterStatusLabel}
+            </span>
+          )}
+        </div>
+      )}
 
       <div className="sg">
         <div className="sc acc">
@@ -319,33 +389,56 @@ export default function InstructorWorkload() {
                   const schedText = formatClassScheduleSummary(scheduleRows, cls.id, t)
                   const rows = schedulesForClass(scheduleRows, cls.id)
                   const locRaw = (rows.find((r) => (r.location || '').trim())?.location || cls.location || '').trim()
+                  const weeklyHours = weeklyTeachingHoursForClass(scheduleRows, cls.id)
                   const creditRaw = Number(subj?.credit_hours)
-                  const creditDisplay = Number.isFinite(creditRaw) ? String(creditRaw) : '—'
+                  const showCreditNote =
+                    Number.isFinite(creditRaw) &&
+                    weeklyHours != null &&
+                    Math.abs(creditRaw - weeklyHours) > 0.05
                   const border = ACCENT_BORDERS[index % ACCENT_BORDERS.length]
                   return (
-                    <div key={cls.id} style={accentCard(border)}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                        <div>
-                          <div style={{ fontWeight: 700, fontSize: 14 }} data-field="course_code">
+                    <div key={cls.id} className="workload-course-card" style={accentCard(border)}>
+                      <div className="workload-course-card-head">
+                        <div className="workload-course-card-main">
+                          <div className="workload-course-code" data-field="course_code">
                             {code}
+                            {cls.section ? ` · ${cls.section}` : ''}
                           </div>
-                          <div style={{ fontSize: 12, color: 'var(--muted)' }}>
-                            {t('instructorPortal.workloadCourseLine1', {
-                              name: courseName || '—',
-                              count: students,
-                            })}
+                          <div className="workload-course-name">{courseName || '—'}</div>
+                          <div className="workload-course-meta">
+                            <span className="workload-course-students">
+                              {t('instructorPortal.workloadCourseStudents', { count: students })}
+                            </span>
                           </div>
-                          <div style={{ fontSize: 12, color: 'var(--muted)' }}>
-                            {schedText
-                              ? `${schedText}${locRaw ? ` | ${locRaw}` : ''}`
-                              : t('instructorPortal.workloadNoScheduleYet')}
+                          <div className="workload-course-schedule-block">
+                            <span className="workload-course-schedule-label">
+                              {t('instructorPortal.workloadCourseScheduleLabel')}
+                            </span>
+                            <span className="workload-course-schedule-value">
+                              {schedText || t('instructorPortal.workloadNoScheduleYet')}
+                            </span>
                           </div>
+                          {locRaw && (
+                            <div className="workload-course-schedule-block">
+                              <span className="workload-course-schedule-label">
+                                {t('instructorPortal.workloadCourseRoomLabel')}
+                              </span>
+                              <span className="workload-course-schedule-value">{locRaw}</span>
+                            </div>
+                          )}
+                          {showCreditNote && (
+                            <div className="workload-course-credit-note">
+                              {t('instructorPortal.workloadCreditHoursNote', { hours: creditRaw })}
+                            </div>
+                          )}
                         </div>
-                        <div style={{ textAlign: 'center' }}>
-                          <div style={{ fontSize: 22, fontWeight: 800, color: 'var(--p)' }} data-field="credit_hours">
-                            {creditDisplay}
+                        <div className="workload-course-hours">
+                          <div className="workload-course-hours-val" data-field="weekly_hours">
+                            {weeklyHours != null ? fmtHours(weeklyHours) : '—'}
                           </div>
-                          <div style={{ fontSize: 11, color: 'var(--muted)' }}>{t('instructorPortal.workloadHoursUnit')}</div>
+                          <div className="workload-course-hours-unit">
+                            {t('instructorPortal.workloadWeeklyHoursUnit')}
+                          </div>
                         </div>
                       </div>
                     </div>
@@ -415,6 +508,14 @@ export default function InstructorWorkload() {
               <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0', borderBottom: '1px solid var(--bdr)' }}>
                 <span style={{ color: 'var(--muted)' }}>{t('instructorPortal.workloadSumTeachingLabel')}</span>
                 <strong>{t('instructorPortal.workloadSumTeachingValDynamic', { hours: fmtHours(teachingHoursWeek) })}</strong>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0', borderBottom: '1px solid var(--bdr)' }}>
+                <span style={{ color: 'var(--muted)' }}>{t('instructorPortal.workloadSumCoursesLabel')}</span>
+                <strong>{t('instructorPortal.workloadSumCoursesValDynamic', { count: courses.length })}</strong>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0', borderBottom: '1px solid var(--bdr)' }}>
+                <span style={{ color: 'var(--muted)' }}>{t('instructorPortal.workloadSumStudentsLabel')}</span>
+                <strong>{t('instructorPortal.workloadSumStudentsValDynamic', { count: totalStudents })}</strong>
               </div>
               <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0', borderBottom: '1px solid var(--bdr)' }}>
                 <span style={{ color: 'var(--muted)' }}>{t('instructorPortal.workloadSumOfficeLabel')}</span>

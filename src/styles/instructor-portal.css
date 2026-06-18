@@ -1705,6 +1705,109 @@
   }
 }
 
+/* Teaching workload page */
+.instructor-portal .workload-semester-banner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 16px;
+  padding: 14px 16px;
+  background: var(--sur);
+  border: 1px solid var(--bdr);
+  border-radius: var(--r);
+}
+.instructor-portal .workload-semester-banner-main {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px;
+  font-size: 14px;
+}
+.instructor-portal .workload-semester-banner-label {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+.instructor-portal .workload-semester-banner-sep {
+  color: var(--muted);
+}
+.instructor-portal .workload-course-card-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+}
+.instructor-portal .workload-course-card-main {
+  flex: 1;
+  min-width: 0;
+}
+.instructor-portal .workload-course-code {
+  font-weight: 700;
+  font-size: 15px;
+  color: var(--txt);
+}
+.instructor-portal .workload-course-name {
+  margin-top: 4px;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--txt);
+}
+.instructor-portal .workload-course-meta {
+  margin-top: 8px;
+}
+.instructor-portal .workload-course-students {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: var(--info-bg);
+  color: var(--info);
+  font-size: 13px;
+  font-weight: 600;
+}
+.instructor-portal .workload-course-schedule-block {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 8px;
+  margin-top: 10px;
+}
+.instructor-portal .workload-course-schedule-label {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+.instructor-portal .workload-course-schedule-value {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--txt);
+}
+.instructor-portal .workload-course-credit-note {
+  margin-top: 6px;
+  font-size: 12px;
+  color: var(--muted);
+}
+.instructor-portal .workload-course-hours {
+  text-align: center;
+  flex-shrink: 0;
+}
+.instructor-portal .workload-course-hours-val {
+  font-size: 24px;
+  font-weight: 800;
+  color: var(--p);
+  line-height: 1.1;
+}
+.instructor-portal .workload-course-hours-unit {
+  margin-top: 4px;
+  font-size: 11px;
+  color: var(--muted);
+  font-weight: 600;
+}
+
 /* Lesson builder (AdminBuildLesson / instructor build-lessons): styles are scoped under .instructor-portal */
 .instructor-portal.lesson-builder-root {
   min-height: auto;

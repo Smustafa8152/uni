@@ -2,7 +2,7 @@
  * Academic-year flags embedded on semester (same names as on semesters — combined with AND for instructor UI).
  */
 export const INSTRUCTOR_ACADEMIC_YEAR_FLAG_SELECT =
-  'grade_entry_allowed, attendance_editing_allowed, registration_open, financial_posting_allowed'
+  'name_en, name_ar, code, start_date, end_date, grade_entry_allowed, attendance_editing_allowed, registration_open, financial_posting_allowed'
 
 /**
  * Semester fields needed for instructor portal (lifecycle + admin master flags + parent year flags).

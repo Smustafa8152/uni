@@ -10,7 +10,9 @@ export async function getActiveInstructorByEmail(email) {
   for (const candidate of candidates) {
     const { data } = await supabase
       .from('instructors')
-      .select('id, name_en, name_ar, email, college_id, department_id, can_add_materials, academic_title')
+      .select(
+        'id, name_en, name_ar, email, employee_id, college_id, department_id, can_add_materials, academic_title, colleges(id, name_en, name_ar), departments(id, name_en, name_ar)',
+      )
       .eq('status', 'active')
       .ilike('email', candidate)
       .maybeSingle()
