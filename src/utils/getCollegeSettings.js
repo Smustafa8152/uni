@@ -154,6 +154,27 @@ export function numericGradeToGpaPoints(numericGrade, gradingScale) {
 }
 
 /**
+ * University display names from university_settings.academic_settings (general tab).
+ */
+export async function getUniversityBranding() {
+  try {
+    const { data } = await supabase
+      .from('university_settings')
+      .select('academic_settings')
+      .order('updated_at', { ascending: false })
+      .limit(1)
+      .maybeSingle()
+    const ac = data?.academic_settings || {}
+    return {
+      nameAr: ac.name_ar || '',
+      nameEn: ac.name_en || '',
+    }
+  } catch {
+    return { nameAr: '', nameEn: '' }
+  }
+}
+
+/**
  * Gets effective GPA points for an enrollment using grading scale.
  * Uses numeric_grade + scale if available; otherwise falls back to stored gpa_points.
  * @param {Object} enrollment - Has grade_components, classes.subjects.credit_hours
@@ -302,6 +323,10 @@ export function mergeGradeConfigWithTypes(gradeConfiguration, gradeTypes) {
       dbColumn = GRADE_COMPONENT_DB_COLUMNS.find((c) => !usedColumns.has(c)) || 'other'
     }
     if (dbColumn) usedColumns.add(dbColumn)
+    const assessmentGroup =
+      config.assessment_group ||
+      gt?.assessment_group ||
+      (dbColumn === 'midterm' ? 'midterm' : dbColumn === 'final' ? 'final' : 'activities')
     return {
       ...config,
       maximum: gt?.maximum ?? 100,
@@ -309,6 +334,7 @@ export function mergeGradeConfigWithTypes(gradeConfiguration, gradeTypes) {
       pass_score: gt?.pass_score ?? 60,
       fail_score: gt?.fail_score ?? 50,
       dbColumn: dbColumn || 'other',
+      assessmentGroup,
     }
   })
 }

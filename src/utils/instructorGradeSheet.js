@@ -5,10 +5,11 @@ import {
 } from './getCollegeSettings'
 
 export const LEGACY_GRADE_COLUMNS = [
-  { field: 'assignments', weight: 30, maximum: 100, minimum: 0 },
-  { field: 'quizzes', weight: 20, maximum: 100, minimum: 0 },
-  { field: 'midterm', weight: 30, maximum: 100, minimum: 0 },
-  { field: 'final', weight: 50, maximum: 100, minimum: 0 },
+  { field: 'assignments', weight: 15, maximum: 100, minimum: 0, assessmentGroup: 'activities' },
+  { field: 'quizzes', weight: 10, maximum: 100, minimum: 0, assessmentGroup: 'activities' },
+  { field: 'class_participation', weight: 15, maximum: 100, minimum: 0, assessmentGroup: 'activities' },
+  { field: 'midterm', weight: 30, maximum: 100, minimum: 0, assessmentGroup: 'midterm' },
+  { field: 'final', weight: 30, maximum: 100, minimum: 0, assessmentGroup: 'final' },
 ]
 
 export function getConfigFieldName(config) {
@@ -132,7 +133,7 @@ export function buildGradeUpsertPayload(gradeRow, enrollment, classData, instruc
   const allowedKeys = new Set([
     'enrollment_id', 'class_id', 'student_id', 'semester_id', 'college_id',
     ...GRADE_COMPONENT_DB_COLUMNS,
-    'numeric_grade', 'letter_grade', 'gpa_points', 'status', 'notes',
+    'numeric_grade', 'letter_grade', 'gpa_points', 'status', 'notes', 'record_status',
     'graded_by', 'graded_at', 'updated_at',
   ])
 

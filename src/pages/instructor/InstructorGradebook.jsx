@@ -8,6 +8,7 @@ import {
   getGradeTypesFromUniversitySettings,
   getGradingScaleFromUniversitySettings,
   mergeGradeConfigWithTypes,
+  numericGradeToGpaPoints,
 } from '../../utils/getCollegeSettings'
 import { supabase } from '../../lib/supabase'
 import {
@@ -27,6 +28,30 @@ import {
   parseGradeUploadWorkbook,
   validateGradeValue,
 } from '../../utils/instructorGradeSheet'
+import {
+  ASSESSMENT_GROUPS,
+  deriveRecordStatus,
+  groupConfigByAssessment,
+  isFieldLockedByApproval,
+  RECORD_STATUS_OPTIONS,
+  totalConfigWeight,
+  getGradeRowClassFromPercent,
+  getGradeBadgeClassFromPercent,
+  getScoreClassFromPercent,
+} from '../../utils/gradeAssessmentGroups'
+import {
+  approveAssessmentGroup,
+  fetchClassAssessmentApprovals,
+  fetchGradeAuditLog,
+  notifyGradeApproval,
+  writeGradeAuditLog,
+} from '../../utils/gradeAudit'
+import {
+  computeGradeDistribution,
+  exportGradeSheetExcel,
+  exportGradeSheetPdf,
+} from '../../utils/exportInstructorGradeSheet'
+import { useGradeAutoSave } from '../../hooks/useGradeAutoSave'
 
 export default function InstructorGradebook({ embedded = false, embedClassId = null } = {}) {
   const { t } = useTranslation()
@@ -38,6 +63,7 @@ export default function InstructorGradebook({ embedded = false, embedClassId = n
 
   const [loading, setLoading] = useState(true)
   const [instructor, setInstructor] = useState(null)
+  const [appUserId, setAppUserId] = useState(null)
   const [classes, setClasses] = useState([])
   const [selectedClassId, setSelectedClassId] = useState(classIdParam ? Number(classIdParam) : null)
   const [classData, setClassData] = useState(null)
@@ -47,24 +73,31 @@ export default function InstructorGradebook({ embedded = false, embedClassId = n
   const [dirtyIds, setDirtyIds] = useState(() => new Set())
   const [gradeConfig, setGradeConfig] = useState([])
   const [gradingScale, setGradingScale] = useState([])
+  const [approvalsMap, setApprovalsMap] = useState({})
   const [filterStatus, setFilterStatus] = useState('all')
+  const [searchQuery, setSearchQuery] = useState('')
 
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState('')
   const [saveSuccess, setSaveSuccess] = useState(false)
   const [fieldError, setFieldError] = useState('')
+  const [autoSaveStatus, setAutoSaveStatus] = useState(null)
 
   const [showUploadPanel, setShowUploadPanel] = useState(panelParam === 'upload')
-  const [showSubmitPanel, setShowSubmitPanel] = useState(panelParam === 'submit')
   const [uploadErrors, setUploadErrors] = useState([])
   const [uploadMessage, setUploadMessage] = useState('')
   const uploadInputRef = useRef(null)
 
-  const [submitNotes, setSubmitNotes] = useState('')
-  const [declarationChecked, setDeclarationChecked] = useState(false)
-  const [submitting, setSubmitting] = useState(false)
-  const [submitError, setSubmitError] = useState('')
-  const [submitSuccess, setSubmitSuccess] = useState('')
+  const [showStatusModal, setShowStatusModal] = useState(false)
+  const [showApproveMenu, setShowApproveMenu] = useState(false)
+  const [approving, setApproving] = useState(false)
+  const [approveError, setApproveError] = useState('')
+
+  const [showAnalyticsModal, setShowAnalyticsModal] = useState(false)
+  const [showHistoryModal, setShowHistoryModal] = useState(false)
+  const [historyEnrollmentId, setHistoryEnrollmentId] = useState(null)
+  const [auditLog, setAuditLog] = useState([])
+  const [auditLoading, setAuditLoading] = useState(false)
 
   const selectedClass = useMemo(
     () => classes.find((c) => c.id === selectedClassId) || null,
@@ -90,9 +123,23 @@ export default function InstructorGradebook({ embedded = false, embedClassId = n
     }))
   }, [gradeConfig])
 
+  const groupedColumns = useMemo(() => {
+    const g = groupConfigByAssessment(editableColumns)
+    return [...g.activities, ...g.midterm, ...g.final]
+  }, [editableColumns])
+
+  const weightsTotal = useMemo(() => totalConfigWeight(editableColumns), [editableColumns])
+  const weightsOk = Math.abs(weightsTotal - 100) < 0.01
+
   useEffect(() => {
     if (user?.email) {
       getActiveInstructorByEmail(user.email).then((data) => data && setInstructor(data))
+      supabase
+        .from('users')
+        .select('id')
+        .ilike('email', user.email)
+        .maybeSingle()
+        .then(({ data }) => data?.id && setAppUserId(data.id))
     }
   }, [user?.email])
 
@@ -127,6 +174,7 @@ export default function InstructorGradebook({ embedded = false, embedClassId = n
       setGradesMap({})
       setDraftGrades({})
       setGradeConfig([])
+      setApprovalsMap({})
       setDirtyIds(new Set())
       setLoading(false)
       return
@@ -147,9 +195,11 @@ export default function InstructorGradebook({ embedded = false, embedClassId = n
         .eq('status', 'enrolled')
         .order('students(name_en)'),
       getGradeTypesFromUniversitySettings(),
-    ]).then(([{ data: enrollData }, gradeTypes]) => {
+      fetchClassAssessmentApprovals(selectedClassId),
+    ]).then(([{ data: enrollData }, gradeTypes, approvals]) => {
       const enrolls = enrollData || []
       setEnrollments(enrolls)
+      setApprovalsMap(approvals || {})
 
       const subjectConfig =
         cls?.subjects?.grade_configuration && Array.isArray(cls.subjects.grade_configuration)
@@ -176,29 +226,28 @@ export default function InstructorGradebook({ embedded = false, embedClassId = n
             map[g.enrollment_id] = g
           })
           setGradesMap(map)
+          const merged = mergeGradeConfigWithTypes(subjectConfig, gradeTypes)
+          const base = {}
+          enrolls.forEach((e) => {
+            const existing = map[e.id] || {}
+            base[e.id] = {
+              enrollment_id: e.id,
+              class_id: selectedClassId,
+              student_id: e.student_id,
+              ...existing,
+              record_status:
+                existing.record_status || deriveRecordStatus(existing, merged.length ? merged : LEGACY_GRADE_COLUMNS),
+            }
+          })
+          setDraftGrades(base)
+          setDirtyIds(new Set())
         })
         .finally(() => setLoading(false))
     })
   }, [selectedClassId, instructor?.id, classes])
 
   useEffect(() => {
-    if (loading) return
-    const base = {}
-    enrollments.forEach((e) => {
-      base[e.id] = {
-        enrollment_id: e.id,
-        class_id: selectedClassId,
-        student_id: e.student_id,
-        ...(gradesMap[e.id] || {}),
-      }
-    })
-    setDraftGrades(base)
-    setDirtyIds(new Set())
-  }, [loading, selectedClassId, enrollments, gradesMap])
-
-  useEffect(() => {
     if (panelParam === 'upload') setShowUploadPanel(true)
-    if (panelParam === 'submit') setShowSubmitPanel(true)
   }, [panelParam])
 
   const displayStudentName = useCallback(
@@ -215,61 +264,182 @@ export default function InstructorGradebook({ embedded = false, embedClassId = n
     [isArabic]
   )
 
+  const getRecordStatus = useCallback(
+    (enrollmentId) => {
+      const g = draftGrades[enrollmentId]
+      if (g?.record_status === 'debarred' || g?.record_status === 'withdrawn') return g.record_status
+      return deriveRecordStatus(g, gradeConfig.length ? gradeConfig : editableColumns)
+    },
+    [draftGrades, gradeConfig, editableColumns]
+  )
+
   const stats = useMemo(() => {
     const rows = enrollments.map((e) => ({
       enrollment: e,
       grade: draftGrades[e.id],
-      percent: getTotalPercent(draftGrades[e.id], gradeConfig),
+      percent: getTotalPercent(draftGrades[e.id], gradeConfig.length ? gradeConfig : editableColumns),
+      recordStatus: getRecordStatus(e.id),
     }))
     const withPercent = rows.filter((r) => r.percent != null)
     const courseAvg =
       withPercent.length > 0 ? withPercent.reduce((a, r) => a + r.percent, 0) / withPercent.length : null
     const failing = rows.filter((r) => r.percent != null && r.percent < 60).length
-    const pending = rows.filter((r) => getTotalPercent(r.grade, gradeConfig) == null).length
+    const passCount = rows.filter((r) => r.percent != null && r.percent >= 60).length
+    const graded = withPercent.length
+    const passRate = graded > 0 ? Math.round((passCount / graded) * 100) : null
     const highest = withPercent.length
       ? withPercent.reduce((best, r) => (r.percent > (best?.percent ?? 0) ? r : best), withPercent[0])
       : null
+    const lowest = withPercent.length
+      ? withPercent.reduce((worst, r) => (r.percent < (worst?.percent ?? 100) ? r : worst), withPercent[0])
+      : null
+    const completeCount = rows.filter((r) => r.recordStatus === 'complete').length
+    const incompleteCount = rows.filter(
+      (r) => r.recordStatus === 'incomplete' || r.recordStatus === 'not_recorded'
+    ).length
+    const debarredCount = rows.filter((r) => r.recordStatus === 'debarred').length
+    const completionRate =
+      enrollments.length > 0 ? Math.round((completeCount / enrollments.length) * 100) : 0
+
     return {
-      courseAvg: courseAvg != null ? courseAvg.toFixed(1) : '—',
+      courseAvg: courseAvg != null ? courseAvg.toFixed(2) : '—',
       highest: highest?.percent != null ? Math.round(highest.percent) : '—',
       highestName: highest?.enrollment?.students ? displayStudentName(highest.enrollment.students) : '—',
+      lowest: lowest?.percent != null ? Math.round(lowest.percent) : '—',
       failingCount: failing,
-      pendingGrading: pending,
+      passRate: passRate != null ? `${passRate}%` : '—',
+      passCount,
+      failCount: failing,
+      completeCount,
+      incompleteCount,
+      debarredCount,
+      completionRate,
+      totalStudents: enrollments.length,
     }
-  }, [enrollments, draftGrades, gradeConfig, displayStudentName])
+  }, [enrollments, draftGrades, gradeConfig, editableColumns, displayStudentName, getRecordStatus])
+
+  const gradeAnalytics = useMemo(
+    () => computeGradeDistribution(enrollments, draftGrades, gradeConfig.length ? gradeConfig : editableColumns, gradingScale),
+    [enrollments, draftGrades, gradeConfig, editableColumns, gradingScale]
+  )
 
   const filteredEnrollments = useMemo(() => {
-    if (filterStatus === 'all') return enrollments
-    return enrollments.filter((e) => {
+    let list = enrollments
+    const q = searchQuery.trim().toLowerCase()
+    if (q) {
+      list = list.filter((e) => {
+        const s = e.students
+        if (!s) return false
+        const sid = String(s.student_id || '').toLowerCase()
+        const names = [s.name_en, s.name_ar, s.first_name, s.last_name, s.first_name_ar, s.last_name_ar]
+          .filter(Boolean)
+          .join(' ')
+          .toLowerCase()
+        return sid.includes(q) || names.includes(q)
+      })
+    }
+    if (filterStatus === 'all') return list
+    return list.filter((e) => {
       const g = draftGrades[e.id]
-      const pct = getTotalPercent(g, gradeConfig)
-      if (filterStatus === 'pending') return pct == null
+      const pct = getTotalPercent(g, gradeConfig.length ? gradeConfig : editableColumns)
+      const rs = getRecordStatus(e.id)
       if (filterStatus === 'below60') return pct != null && pct < 60
-      if (filterStatus === 'complete') return pct != null
+      if (filterStatus === 'complete') return rs === 'complete'
+      if (filterStatus === 'incomplete') return rs === 'incomplete'
+      if (filterStatus === 'not_recorded') return rs === 'not_recorded'
+      if (filterStatus === 'debarred') return rs === 'debarred'
+      if (filterStatus === 'withdrawn') return rs === 'withdrawn'
       return true
     })
-  }, [enrollments, draftGrades, filterStatus, gradeConfig])
+  }, [enrollments, draftGrades, filterStatus, gradeConfig, editableColumns, searchQuery, getRecordStatus])
 
-  const checklist = useMemo(() => {
-    const rows = enrollments.map((e) => ({
-      enrollment: e,
-      percent: getTotalPercent(draftGrades[e.id], gradeConfig),
-    }))
-    const withPercent = rows.filter((r) => r.percent != null)
-    const failingCount = rows.filter((r) => r.percent != null && r.percent < 60).length
-    const totalWeights = gradeConfig.reduce((s, c) => s + (c.weight ?? 0), 0)
-    const weightsOk = Math.abs(totalWeights - 100) < 0.01 || gradeConfig.length === 0
-    return {
-      failingCount,
-      weightsEqual100: weightsOk,
-      weightsBreakdown: gradeConfig.length
-        ? gradeConfig.map((c) => `${c.weight ?? 0}%`).join(' + ')
-        : '—',
-      allStudentsHaveGrades: withPercent.length === enrollments.length && enrollments.length > 0,
-      studentsTotal: enrollments.length,
-      gradesComplete: withPercent.length,
-    }
-  }, [enrollments, draftGrades, gradeConfig])
+  const saveRows = useCallback(
+    async (enrollmentIds, changeSource = 'manual') => {
+      if (!gradeEntryAllowed || !enrollmentIds?.length) return
+      setSaving(true)
+      setSaveError('')
+      if (changeSource === 'manual') setSaveSuccess(false)
+      try {
+        const configForCalc = gradeConfig.length ? gradeConfig : editableColumns
+        for (const enrollmentId of enrollmentIds) {
+          const row = draftGrades[enrollmentId]
+          if (!row) continue
+          const enrollment = enrollments.find((e) => e.id === enrollmentId)
+          const oldRow = gradesMap[enrollmentId]
+          const withStatus = {
+            ...row,
+            status: row.status === 'final' || row.status === 'submitted' ? row.status : 'draft',
+            record_status: row.record_status || deriveRecordStatus(row, configForCalc),
+          }
+          const payload = buildGradeUpsertPayload(withStatus, enrollment, selectedClass, instructor?.id)
+          const { data, error } = await supabase
+            .from('grade_components')
+            .upsert(payload, { onConflict: 'enrollment_id' })
+            .select()
+            .single()
+          if (error) throw error
+          await writeGradeAuditLog({
+            oldRow,
+            newRow: data,
+            enrollmentId,
+            classId: selectedClassId,
+            gradeComponentId: data?.id,
+            userId: appUserId,
+            changeSource,
+          })
+        }
+        const { data: gradesData, error: fetchErr } = await supabase
+          .from('grade_components')
+          .select('*')
+          .in(
+            'enrollment_id',
+            enrollments.map((e) => e.id)
+          )
+        if (fetchErr) throw fetchErr
+        const map = {}
+        ;(gradesData || []).forEach((g) => {
+          map[g.enrollment_id] = g
+        })
+        setGradesMap(map)
+        setDirtyIds((prev) => {
+          const next = new Set(prev)
+          enrollmentIds.forEach((id) => next.delete(id))
+          return next
+        })
+        if (changeSource === 'manual') {
+          setSaveSuccess(true)
+          setTimeout(() => setSaveSuccess(false), 3000)
+        } else {
+          setAutoSaveStatus({ type: 'ok', at: new Date() })
+        }
+      } catch (err) {
+        const msg = err.message || t('grading.classGrades.failedToSave', 'Failed to save grades')
+        if (changeSource === 'manual') setSaveError(msg)
+        else setAutoSaveStatus({ type: 'err', message: msg })
+      } finally {
+        setSaving(false)
+      }
+    },
+    [
+      gradeEntryAllowed,
+      draftGrades,
+      enrollments,
+      gradesMap,
+      selectedClass,
+      instructor?.id,
+      selectedClassId,
+      appUserId,
+      gradeConfig,
+      editableColumns,
+      t,
+    ]
+  )
+
+  const { scheduleRowSave } = useGradeAutoSave({
+    dirtyIds,
+    saveRows,
+    enabled: gradeEntryAllowed && !saving,
+  })
 
   const handleFieldChange = (enrollmentId, field, value, config) => {
     setFieldError('')
@@ -277,64 +447,48 @@ export default function InstructorGradebook({ embedded = false, embedClassId = n
       const err = validateGradeValue(value, config, t)
       if (err) setFieldError(err)
     }
+    const configForCalc = gradeConfig.length ? gradeConfig : editableColumns
     setDraftGrades((prev) => {
       const current = prev[enrollmentId] || {
         enrollment_id: enrollmentId,
         class_id: selectedClassId,
         student_id: enrollments.find((e) => e.id === enrollmentId)?.student_id,
       }
-      const updated = applyGradeFieldChange(current, { field, value, gradeConfig, gradingScale })
+      const updated = applyGradeFieldChange(current, {
+        field,
+        value,
+        gradeConfig: configForCalc,
+        gradingScale,
+      })
+      updated.record_status = deriveRecordStatus(updated, configForCalc)
       return { ...prev, [enrollmentId]: updated }
     })
     setDirtyIds((prev) => new Set(prev).add(enrollmentId))
     setSaveSuccess(false)
   }
 
-  const handleSave = async () => {
-    if (!gradeEntryAllowed || dirtyIds.size === 0) return
-    setSaving(true)
-    setSaveError('')
-    setSaveSuccess(false)
-    try {
-      for (const enrollmentId of dirtyIds) {
-        const row = draftGrades[enrollmentId]
-        if (!row) continue
-        const enrollment = enrollments.find((e) => e.id === enrollmentId)
-        const payload = buildGradeUpsertPayload(row, enrollment, selectedClass, instructor?.id)
-        const { error } = await supabase
-          .from('grade_components')
-          .upsert(payload, { onConflict: 'enrollment_id' })
-        if (error) throw error
-      }
-      const { data: gradesData, error: fetchErr } = await supabase
-        .from('grade_components')
-        .select('*')
-        .in(
-          'enrollment_id',
-          enrollments.map((e) => e.id)
-        )
-      if (fetchErr) throw fetchErr
-      const map = {}
-      ;(gradesData || []).forEach((g) => {
-        map[g.enrollment_id] = g
-      })
-      setGradesMap(map)
-      setSaveSuccess(true)
-      setTimeout(() => setSaveSuccess(false), 3000)
-    } catch (err) {
-      setSaveError(err.message || t('grading.classGrades.failedToSave', 'Failed to save grades'))
-    } finally {
-      setSaving(false)
-    }
+  const handleRecordStatusChange = (enrollmentId, status) => {
+    setDraftGrades((prev) => ({
+      ...prev,
+      [enrollmentId]: { ...prev[enrollmentId], record_status: status },
+    }))
+    setDirtyIds((prev) => new Set(prev).add(enrollmentId))
+    scheduleRowSave(enrollmentId)
   }
+
+  const handleSave = () => saveRows([...dirtyIds], 'manual')
 
   const handleUploadFile = async (file) => {
     if (!file || !gradeEntryAllowed) return
     setUploadErrors([])
     setUploadMessage('')
+    const configForCalc = gradeConfig.length ? gradeConfig : editableColumns
     try {
       const buf = await file.arrayBuffer()
-      const { updates, errors, matched } = parseGradeUploadWorkbook(buf, { enrollments, gradeConfig })
+      const { updates, errors, matched } = parseGradeUploadWorkbook(buf, {
+        enrollments,
+        gradeConfig: configForCalc,
+      })
       if (errors.length) setUploadErrors(errors.slice(0, 8))
       if (matched === 0) {
         setUploadMessage(t('instructorPortal.gradeSheetUploadNoRows', 'No grade rows were imported.'))
@@ -349,16 +503,20 @@ export default function InstructorGradebook({ embedded = false, embedClassId = n
             class_id: selectedClassId,
             student_id: enrollments.find((e) => e.id === id)?.student_id,
           }
-          next[id] = finalizeGradeRow({ ...current, ...patch }, gradeConfig, gradingScale)
+          const finalized = finalizeGradeRow({ ...current, ...patch }, configForCalc, gradingScale)
+          finalized.record_status = deriveRecordStatus(finalized, configForCalc)
+          next[id] = finalized
         })
         return next
       })
-      setDirtyIds((prev) => new Set([...prev, ...Object.keys(updates).map(Number)]))
+      const ids = Object.keys(updates).map(Number)
+      setDirtyIds((prev) => new Set([...prev, ...ids]))
       setUploadMessage(
         t('instructorPortal.gradeSheetUploadSuccess', '{{count}} student row(s) imported. Save to apply.', {
           count: matched,
         })
       )
+      await saveRows(ids, 'upload')
     } catch (err) {
       setUploadErrors([err.message || t('common.error', 'Error')])
     } finally {
@@ -366,109 +524,94 @@ export default function InstructorGradebook({ embedded = false, embedClassId = n
     }
   }
 
-  const handleSubmitFinal = async () => {
-    if (!declarationChecked || !selectedClassId || !gradeEntryAllowed) return
-    if (hasUnsaved) {
-      setSubmitError(t('instructorPortal.saveBeforeSubmit', 'Save your grade changes before final submission.'))
+  const handleApproveGroup = async (group) => {
+    if (!selectedClassId || !instructor?.id || !gradeEntryAllowed) return
+    if (!weightsOk) {
+      setApproveError(t('instructorPortal.submitBlockedWeights', 'Grade weights must total 100% before approval.'))
       return
     }
-    setSubmitting(true)
-    setSubmitError('')
-    setSubmitSuccess('')
+    if (hasUnsaved) {
+      setApproveError(t('instructorPortal.saveBeforeSubmit', 'Save your grade changes before approval.'))
+      return
+    }
+    setApproving(true)
+    setApproveError('')
     try {
-      if (!selectedClass) throw new Error('Class not found')
-      if (enrollments.length === 0) {
-        throw new Error(t('instructorPortal.noStudentsToSubmit', 'No enrolled students to submit.'))
+      const semester = selectedClass?.semesters
+      const groupsToApprove = group === 'all' ? ASSESSMENT_GROUPS : [group]
+      for (const g of groupsToApprove) {
+        if (approvalsMap[g]?.status === 'approved') continue
+        await approveAssessmentGroup({
+          classId: selectedClassId,
+          assessmentGroup: g,
+          instructorId: instructor.id,
+          entryStartedAt: semester?.start_date ?? null,
+          entryEndedAt: semester?.end_date ?? null,
+        })
       }
-
-      const missing = enrollments.filter((e) => {
-        const pct = getTotalPercent(draftGrades[e.id], gradeConfig)
-        return pct == null
-      })
-      if (missing.length > 0) {
-        throw new Error(
-          t(
-            'instructorPortal.submitBlockedMissingGrades',
-            'Some students are missing grades. Please complete grading before submitting final grades.'
-          )
-        )
-      }
-      if (!checklist.weightsEqual100) {
-        throw new Error(
-          t('instructorPortal.submitBlockedWeights', 'Grade weights must total 100% before final submission.')
-        )
-      }
-
-      const nowIso = new Date().toISOString()
-      const payloads = enrollments.map((e) => {
-        const g = draftGrades[e.id] || {}
-        return {
-          enrollment_id: e.id,
-          class_id: selectedClass.id,
-          student_id: e.student_id,
-          semester_id: selectedClass.semester_id ?? null,
-          college_id: selectedClass.college_id ?? instructor?.college_id ?? null,
-          numeric_grade: g.numeric_grade ?? null,
-          letter_grade: g.letter_grade ?? null,
-          gpa_points: g.gpa_points ?? null,
-          midterm: g.midterm ?? null,
-          final: g.final ?? null,
-          assignments: g.assignments ?? null,
-          quizzes: g.quizzes ?? null,
-          class_participation: g.class_participation ?? null,
-          project: g.project ?? null,
-          lab: g.lab ?? null,
-          other: g.other ?? null,
-          status: 'final',
-          graded_by: instructor?.id ?? null,
-          graded_at: nowIso,
-          notes: submitNotes?.trim() ? submitNotes.trim() : null,
-          updated_at: nowIso,
+      const updated = await fetchClassAssessmentApprovals(selectedClassId)
+      setApprovalsMap(updated)
+      try {
+        for (const g of groupsToApprove) {
+          await notifyGradeApproval({
+            classId: selectedClassId,
+            assessmentGroup: g,
+            collegeId: selectedClass?.college_id,
+          })
         }
-      })
-
-      const chunkSize = 50
-      for (let i = 0; i < payloads.length; i += chunkSize) {
-        const chunk = payloads.slice(i, i + chunkSize)
-        const { error } = await supabase.from('grade_components').upsert(chunk, { onConflict: 'enrollment_id' })
-        if (error) throw error
+      } catch (notifyErr) {
+        console.warn('grade approval notification failed:', notifyErr)
       }
-
-      const { data: gradesData, error: gErr } = await supabase
-        .from('grade_components')
-        .select('*')
-        .in(
-          'enrollment_id',
-          enrollments.map((e) => e.id)
-        )
-      if (gErr) throw gErr
-      const map = {}
-      ;(gradesData || []).forEach((g) => {
-        map[g.enrollment_id] = g
-      })
-      setGradesMap(map)
-      setSubmitSuccess(t('instructorPortal.gradesSubmittedSuccess', 'Final grades submitted successfully.'))
-      setDeclarationChecked(false)
+      setShowApproveMenu(false)
     } catch (err) {
-      setSubmitError(err?.message || t('common.error', 'Error'))
+      setApproveError(err?.message || t('common.error', 'Error'))
     } finally {
-      setSubmitting(false)
+      setApproving(false)
     }
   }
 
-  const canSubmitFinally =
-    gradeEntryAllowed &&
-    declarationChecked &&
-    checklist.allStudentsHaveGrades &&
-    checklist.weightsEqual100 &&
-    enrollments.length > 0 &&
-    !hasUnsaved
+  const openHistory = async (enrollmentId) => {
+    setHistoryEnrollmentId(enrollmentId)
+    setShowHistoryModal(true)
+    setAuditLoading(true)
+    try {
+      const log = await fetchGradeAuditLog(enrollmentId)
+      setAuditLog(log)
+    } catch {
+      setAuditLog([])
+    } finally {
+      setAuditLoading(false)
+    }
+  }
 
-  const configLabel = (c) =>
-    getLocalizedName(
-      { name_en: c.grade_type_name_en, name_ar: c.grade_type_name_ar },
-      isArabic
-    ) || c.grade_type_name_en || c.field || c.grade_type_code
+  const configLabel = (c) => {
+    const fieldLabels = {
+      assignments: isArabic ? 'الواجبات' : 'Assignments',
+      quizzes: isArabic ? 'الاختبارات القصيرة' : 'Quizzes',
+      class_participation: isArabic ? 'المشاركة' : 'Participation',
+      midterm: isArabic ? 'النصفي' : 'Midterm',
+      final: isArabic ? 'النهائي' : 'Final',
+    }
+    const field = c.field || c.dbColumn
+    if (fieldLabels[field]) return fieldLabels[field]
+    return (
+      getLocalizedName(
+        { name_en: c.grade_type_name_en, name_ar: c.grade_type_name_ar },
+        isArabic
+      ) || c.grade_type_name_en || c.field || c.grade_type_code
+    )
+  }
+
+  const groupLabel = (group) => t(`instructorPortal.assessmentGroup.${group}`, group)
+
+  const formatApprovalDate = (iso) => {
+    if (!iso) return '—'
+    try {
+      return new Date(iso).toLocaleDateString(isArabic ? 'ar' : 'en')
+    } catch {
+      return iso
+    }
+  }
 
   if (loading && !selectedClass) {
     return (
@@ -487,6 +630,19 @@ export default function InstructorGradebook({ embedded = false, embedClassId = n
     )
   }
 
+  const submissionLink = `/instructor/grade-submission${selectedClassId ? `?classId=${selectedClassId}` : ''}`
+
+  const allGroupsApproved = ASSESSMENT_GROUPS.every((g) => approvalsMap[g]?.status === 'approved')
+  const universityName = instructor?.colleges ? getLocalizedName(instructor.colleges, isArabic) : ''
+  const universityNameEn = instructor?.colleges?.name_en || ''
+  const instructorName = instructor ? getLocalizedName(instructor, isArabic) : '—'
+  const printDate = (() => {
+    const d = new Date()
+    const pad = (n) => String(n).padStart(2, '0')
+    return `${pad(d.getDate())}-${pad(d.getMonth() + 1)}-${d.getFullYear()}`
+  })()
+  const printUser = user?.email?.split('@')[0] || '—'
+
   const toolbar = (
     <div className="grade-sheet-toolbar">
       <button
@@ -504,16 +660,56 @@ export default function InstructorGradebook({ embedded = false, embedClassId = n
       >
         📥 {t('instructorPortal.uploadGrades', 'Upload grades')}
       </button>
-      <button
-        type="button"
-        className={`btn btn-gh${showSubmitPanel ? ' active' : ''}`}
-        disabled={!gradeEntryAllowed}
-        onClick={() => setShowSubmitPanel((v) => !v)}
-      >
-        📤 {t('instructorPortal.submitFinalGrades', 'Submit final grades')}
+      <div className="grade-sheet-approve-wrap" style={{ position: 'relative' }}>
+        <button
+          type="button"
+          className="btn btn-gh"
+          disabled={!gradeEntryAllowed || approving}
+          onClick={() => setShowApproveMenu((v) => !v)}
+        >
+          ✓ {t('instructorPortal.approveGrades', 'Approve…')}
+        </button>
+        {showApproveMenu && (
+          <div className="grade-sheet-approve-menu" style={{ position: 'absolute', top: '100%', left: 0, zIndex: 20, background: 'var(--card)', border: '1px solid var(--bdr)', borderRadius: 'var(--rs)', padding: 8, minWidth: 200 }}>
+            {ASSESSMENT_GROUPS.map((g) => (
+              <button
+                key={g}
+                type="button"
+                className="btn btn-gh btn-bl"
+                style={{ width: '100%', marginBottom: 4 }}
+                disabled={approvalsMap[g]?.status === 'approved'}
+                onClick={() => handleApproveGroup(g)}
+              >
+                {groupLabel(g)}
+                {approvalsMap[g]?.status === 'approved' ? ' ✓' : ''}
+              </button>
+            ))}
+            <button
+              type="button"
+              className="btn btn-p btn-bl"
+              style={{ width: '100%' }}
+              onClick={() => handleApproveGroup('all')}
+            >
+              {t('instructorPortal.approveAllAssessments', 'Approve all')}
+            </button>
+          </div>
+        )}
+      </div>
+      <button type="button" className="btn btn-gh" onClick={() => setShowStatusModal(true)}>
+        📋 {t('instructorPortal.assessmentStatus', 'Assessment status')}
       </button>
+      <Link to={submissionLink} className="btn btn-gh">
+        📤 {t('instructorPortal.submitFinalGrades', 'Submit final grades')}
+      </Link>
       {hasUnsaved && (
         <span className="grade-sheet-unsaved">{t('instructorPortal.unsavedGradeChanges', 'Unsaved changes')}</span>
+      )}
+      {autoSaveStatus?.type === 'ok' && (
+        <span className="grade-sheet-autosave-ok" style={{ fontSize: 12, color: 'var(--muted)' }}>
+          {t('instructorPortal.autoSavedAt', 'Auto-saved {{time}}', {
+            time: autoSaveStatus.at?.toLocaleTimeString?.() ?? '',
+          })}
+        </span>
       )}
     </div>
   )
@@ -537,6 +733,13 @@ export default function InstructorGradebook({ embedded = false, embedClassId = n
               {!gradeEntryAllowed && selectedClass && (
                 <div className="alert alert-warn" role="status" style={{ marginTop: 12 }}>
                   {t('instructorPortal.semesterLifecycle.flagGradeEntryOff')}
+                </div>
+              )}
+              {!weightsOk && (
+                <div className="alert alert-warn" role="status" style={{ marginTop: 12 }}>
+                  {t('instructorPortal.weightsNot100', 'Grade weights total {{total}}% — must equal 100%.', {
+                    total: weightsTotal.toFixed(0),
+                  })}
                 </div>
               )}
             </div>
@@ -565,52 +768,18 @@ export default function InstructorGradebook({ embedded = false, embedClassId = n
         <div className="card" style={{ marginBottom: 16 }}>
           <div className="card-hd">
             <div className="card-title">{t('instructorPortal.gradebook')}</div>
-            <div className="grade-sheet-toolbar grade-sheet-toolbar--embedded">
-              {classes.length > 1 ? (
-                <select
-                  className="fc"
-                  style={{ width: 'auto' }}
-                  value={selectedClassId || ''}
-                  onChange={(e) => setSelectedClassId(e.target.value ? Number(e.target.value) : null)}
-                >
-                  {classes.map((cls) => (
-                    <option key={cls.id} value={cls.id}>
-                      {cls.subjects?.code} — {getLocalizedName(cls.subjects, isArabic)}
-                    </option>
-                  ))}
-                </select>
-              ) : (
-                <span className="ts">{subjectCode}</span>
-              )}
-              {toolbar}
-            </div>
+            <div className="grade-sheet-toolbar grade-sheet-toolbar--embedded">{toolbar}</div>
           </div>
-          {!gradeEntryAllowed && selectedClass && (
-            <div style={{ padding: '0 16px 12px' }}>
-              <div className="alert alert-warn" role="status" style={{ margin: 0 }}>
-                {t('instructorPortal.semesterLifecycle.flagGradeEntryOff')}
-              </div>
-            </div>
-          )}
         </div>
       )}
 
-      {(saveError || saveSuccess || fieldError) && (
+      {(saveError || saveSuccess || fieldError || approveError) && (
         <div style={{ marginBottom: 12 }}>
-          {saveError && (
-            <div className="alert alert-err" role="alert">
-              {saveError}
-            </div>
-          )}
-          {fieldError && (
-            <div className="alert alert-warn" role="status">
-              {fieldError}
-            </div>
-          )}
+          {saveError && <div className="alert alert-err">{saveError}</div>}
+          {approveError && <div className="alert alert-err">{approveError}</div>}
+          {fieldError && <div className="alert alert-warn">{fieldError}</div>}
           {saveSuccess && (
-            <div className="alert alert-ok" role="status">
-              {t('grading.classGrades.savedSuccess', 'Grades saved successfully.')}
-            </div>
+            <div className="alert alert-ok">{t('grading.classGrades.savedSuccess', 'Grades saved successfully.')}</div>
           )}
         </div>
       )}
@@ -621,22 +790,13 @@ export default function InstructorGradebook({ embedded = false, embedClassId = n
             <div className="card-title">📥 {t('instructorPortal.uploadGrades', 'Upload grades')}</div>
           </div>
           <div className="grade-sheet-panel-body">
-            <p className="grade-sheet-hint">
-              {t(
-                'instructorPortal.gradeSheetUploadHint',
-                'Download the template, fill in component scores per student, then upload the file. Imported values appear in the table — click Save grades to store them.'
-              )}
-            </p>
+            <p className="grade-sheet-hint">{t('instructorPortal.gradeSheetUploadHint')}</p>
             <div className="grade-sheet-upload-actions">
               <button
                 type="button"
                 className="btn btn-gh"
                 onClick={() =>
-                  downloadGradeSheetTemplate(
-                    enrollments,
-                    gradeConfig,
-                    `${subjectCode || 'grades'}-template.xlsx`
-                  )
+                  downloadGradeSheetTemplate(enrollments, gradeConfig.length ? gradeConfig : editableColumns, `${subjectCode || 'grades'}-template.xlsx`)
                 }
               >
                 {t('instructorPortal.downloadTemplate', 'Download template')}
@@ -667,274 +827,459 @@ export default function InstructorGradebook({ embedded = false, embedClassId = n
         </div>
       )}
 
-      {showSubmitPanel && (
-        <div className="card grade-sheet-panel" style={{ marginBottom: 16 }}>
-          <div className="card-hd">
-            <div className="card-title">📤 {t('instructorPortal.submitFinalGradesToRecord')}</div>
-          </div>
-          <div className="grade-sheet-panel-body">
-            <div className="alert alert-warn" role="alert">
-              {t('instructorPortal.gradeSubmissionWarning')}
+      <div className={`grade-sheet-report${embedded ? ' grade-sheet-report--embedded' : ''}`}>
+        <div className="gs-report-header">
+          <div className="gs-header-top">
+            <div>
+              <div className="gs-univ-name-ar">{universityName || t('instructorPortal.universityName', 'University')}</div>
+              {universityNameEn && <div className="gs-univ-name-en">{universityNameEn}</div>}
+              <div className="gs-header-badges">
+                {semesterLabel && <span className="gs-semester-badge">{semesterLabel}</span>}
+                {allGroupsApproved && (
+                  <span className="gs-approved-badge">{t('instructorPortal.deanApproved', 'Approved by dean')}</span>
+                )}
+              </div>
             </div>
-            {submitError && <div className="alert alert-err">{submitError}</div>}
-            {submitSuccess && <div className="alert alert-ok">{submitSuccess}</div>}
-            {!gradeEntryAllowed && selectedClass && (
-              <div className="alert alert-err">{t('instructorPortal.semesterLifecycle.gradeSubmitBlocked')}</div>
-            )}
+            <div className="gs-logo-circle" aria-hidden="true">🎓</div>
+          </div>
+        </div>
 
-            <div className="grid2" style={{ marginTop: 12 }}>
-              <div>
-                <div className="card" style={{ marginBottom: 12 }}>
-                  <div className="card-hd">
-                    <div className="card-title">{t('instructorPortal.preSubmissionChecklist')}</div>
-                  </div>
-                  <ul className="grade-sheet-checklist">
-                    <li className={checklist.allStudentsHaveGrades ? 'ok' : 'warn'}>
-                      {checklist.allStudentsHaveGrades ? '✓' : '○'}{' '}
-                      {t('instructorPortal.checkAllStudentsHaveGrades')} ({checklist.gradesComplete}/
-                      {checklist.studentsTotal})
-                    </li>
-                    <li className={checklist.weightsEqual100 ? 'ok' : 'warn'}>
-                      {checklist.weightsEqual100 ? '✓' : '○'} {t('instructorPortal.checkWeights100')} (
-                      {checklist.weightsBreakdown})
-                    </li>
-                    {checklist.failingCount > 0 && (
-                      <li className="warn">
-                        {t('instructorPortal.checkStudentsBelow60', { count: checklist.failingCount })}
-                      </li>
-                    )}
-                  </ul>
-                </div>
-                <label className="fg">
-                  <span className="fl">{t('instructorPortal.notesForAcademicRecord')}</span>
-                  <textarea
-                    className="fc"
-                    rows={3}
-                    value={submitNotes}
-                    onChange={(e) => setSubmitNotes(e.target.value)}
-                    placeholder={t('instructorPortal.notesPlaceholder')}
-                  />
-                </label>
-              </div>
-              <div>
-                <div className="card">
-                  <div className="card-hd">
-                    <div className="card-title">{t('instructorPortal.submitAction')}</div>
-                  </div>
-                  <p className="grade-sheet-meta">
-                    <strong>{t('instructorPortal.course')}:</strong> {courseName} ({subjectCode})
-                    <br />
-                    <strong>{t('instructorPortal.academicSemester')}:</strong> {semesterLabel}
-                    <br />
-                    <strong>{t('instructorPortal.numberOfStudents')}:</strong> {enrollments.length}
-                  </p>
-                  <label className="grade-sheet-declaration">
-                    <input
-                      type="checkbox"
-                      checked={declarationChecked}
-                      onChange={(e) => setDeclarationChecked(e.target.checked)}
-                    />
-                    <span>{t('instructorPortal.declarationText')}</span>
-                  </label>
-                  <p className="grade-sheet-hint">{t('instructorPortal.submitGradesIrreversible')}</p>
-                  <button
-                    type="button"
-                    className="btn btn-p"
-                    style={{ width: '100%', marginTop: 12 }}
-                    disabled={!canSubmitFinally || submitting}
-                    onClick={handleSubmitFinal}
-                  >
-                    {submitting
-                      ? t('common.submitting', 'Submitting…')
-                      : t('instructorPortal.submitGradesFinally')}
-                  </button>
-                </div>
-              </div>
+        <div className="gs-info-section">
+          <div className="gs-info-grid">
+            <div className="gs-info-card">
+              <div className="gs-info-label">{t('instructorPortal.courseCode', 'Course code')}</div>
+              <div className="gs-info-value">{subjectCode || '—'}</div>
+            </div>
+            <div className="gs-info-card">
+              <div className="gs-info-label">{t('instructorPortal.courseName', 'Course name')}</div>
+              <div className="gs-info-value">{courseName || '—'}</div>
+            </div>
+            <div className="gs-info-card">
+              <div className="gs-info-label">{t('instructorPortal.instructor', 'Instructor')}</div>
+              <div className="gs-info-value">{instructorName}</div>
+            </div>
+            <div className="gs-info-card">
+              <div className="gs-info-label">{t('instructorPortal.studyType', 'Study type')}</div>
+              <div className="gs-info-value">{t('instructorPortal.regularStudy', 'Regular study')}</div>
+            </div>
+            <div className="gs-info-card">
+              <div className="gs-info-label">{t('instructorPortal.section', 'Section')}</div>
+              <div className="gs-info-value">{selectedClass?.section ?? '—'}</div>
+            </div>
+            <div className="gs-info-card">
+              <div className="gs-info-label">{t('instructorPortal.classCode', 'Class')}</div>
+              <div className="gs-info-value">{selectedClass?.code ?? '—'}</div>
+            </div>
+            <div className="gs-info-card">
+              <div className="gs-info-label">{t('instructorPortal.printDate', 'Print date')}</div>
+              <div className="gs-info-value">{printDate}</div>
+            </div>
+            <div className="gs-info-card">
+              <div className="gs-info-label">{t('instructorPortal.printUser', 'User')}</div>
+              <div className="gs-info-value">{printUser}</div>
             </div>
           </div>
         </div>
-      )}
 
-      <div className="sg">
-        <div className="sc ok">
-          <div className="sc-lbl">{t('instructorPortal.courseAverage')}</div>
-          <div className="sc-val">{stats.courseAvg}</div>
-          <div className="sc-sub">{t('instructorPortal.outOf100')}</div>
+        <div className="gs-stats-bar">
+          <div className="gs-stat-item">
+            <span className="gs-stat-num">{stats.totalStudents}</span>
+            <span className="gs-stat-label">{t('instructorPortal.totalStudents', 'Total students')}</span>
+          </div>
+          <div className="gs-stat-divider" />
+          <div className="gs-stat-item">
+            <span className="gs-stat-num">{stats.passCount}</span>
+            <span className="gs-stat-label">{t('instructorPortal.passedStudents', 'Passed')}</span>
+          </div>
+          <div className="gs-stat-divider" />
+          <div className="gs-stat-item">
+            <span className="gs-stat-num">{stats.failCount}</span>
+            <span className="gs-stat-label">{t('instructorPortal.failedStudents', 'Failed')}</span>
+          </div>
+          <div className="gs-stat-divider" />
+          <div className="gs-stat-item">
+            <span className="gs-stat-num">{stats.courseAvg}</span>
+            <span className="gs-stat-label">{t('instructorPortal.sectionAverage', 'Section average')}</span>
+          </div>
+          <div className="gs-stat-divider" />
+          <div className="gs-stat-item">
+            <span className="gs-stat-num">{stats.highest}</span>
+            <span className="gs-stat-label">{t('instructorPortal.highestGrade')}</span>
+          </div>
+          <div className="gs-stat-divider" />
+          <div className="gs-stat-item">
+            <span className="gs-stat-num">{stats.lowest}</span>
+            <span className="gs-stat-label">{t('instructorPortal.lowestGrade', 'Lowest grade')}</span>
+          </div>
+          <div className="gs-stat-divider" />
+          <div className="gs-stat-item">
+            <span className="gs-stat-num">{stats.debarredCount}</span>
+            <span className="gs-stat-label">{t('instructorPortal.debarredStudents', 'Debarred')}</span>
+          </div>
         </div>
-        <div className="sc info">
-          <div className="sc-lbl">{t('instructorPortal.highestGrade')}</div>
-          <div className="sc-val">{stats.highest}</div>
-          <div className="sc-sub">{stats.highestName}</div>
+
+        <div className="gs-report-panel">
+          <div className="gs-controls no-print">
+            <div className="gs-search-box">
+              <input
+                type="search"
+                id="gradeSearchInput"
+                placeholder={t('instructorPortal.searchStudent', 'Search name or ID…')}
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+              />
+            </div>
+            <div className="gs-controls-actions">
+              <select className="gs-filter-select" value={filterStatus} onChange={(e) => setFilterStatus(e.target.value)}>
+                <option value="all">{t('instructorPortal.allStudents')}</option>
+                <option value="complete">{t('instructorPortal.recordStatus.complete', 'Complete')}</option>
+                <option value="incomplete">{t('instructorPortal.recordStatus.incomplete', 'Incomplete grades')}</option>
+                <option value="not_recorded">{t('instructorPortal.recordStatus.not_recorded', 'Not recorded')}</option>
+                <option value="debarred">{t('instructorPortal.recordStatus.debarred', 'Debarred')}</option>
+                <option value="withdrawn">{t('instructorPortal.recordStatus.withdrawn', 'Withdrawn')}</option>
+                <option value="below60">{t('instructorPortal.below60Percent')}</option>
+              </select>
+              <button
+                type="button"
+                className="gs-btn-export"
+                title={t('instructorPortal.exportExcel', 'Export Excel')}
+                onClick={() =>
+                  exportGradeSheetExcel({
+                    enrollments,
+                    draftGrades,
+                    gradeConfig: gradeConfig.length ? gradeConfig : editableColumns,
+                    gradingScale,
+                    displayStudentName,
+                    subjectCode,
+                    courseName,
+                    semesterLabel,
+                    isArabic,
+                    universityNameAr: universityName,
+                    universityNameEn: universityNameEn,
+                    instructorName,
+                    section: selectedClass?.section,
+                    classCode: selectedClass?.code,
+                    printUser,
+                    allGroupsApproved,
+                    studyType: t('instructorPortal.regularStudy', 'Regular study'),
+                  })
+                }
+              >
+                📊 Excel
+              </button>
+              <button
+                type="button"
+                className="gs-btn-export"
+                title={t('instructorPortal.exportPdf', 'Export PDF')}
+                onClick={() =>
+                  exportGradeSheetPdf({
+                    enrollments,
+                    draftGrades,
+                    gradeConfig: gradeConfig.length ? gradeConfig : editableColumns,
+                    gradingScale,
+                    displayStudentName,
+                    subjectCode,
+                    courseName,
+                    semesterLabel,
+                    isArabic,
+                  })
+                }
+              >
+                📄 PDF
+              </button>
+              <button type="button" className="gs-btn-export" onClick={() => setShowAnalyticsModal(true)}>
+                📈 {t('instructorPortal.gradeCharts', 'Charts')}
+              </button>
+              <button type="button" className="gs-btn-print" onClick={() => window.print()}>
+                🖨️ {t('instructorPortal.print', 'Print')}
+              </button>
+            </div>
+          </div>
+
+          <div className="gs-table-wrapper tw grade-sheet-table-wrap">
+            <table className="gs-final-table">
+              <colgroup>
+                <col className="gs-col-num" />
+                <col className="gs-col-id" />
+                <col className="gs-col-name" />
+                <col className="gs-col-status" />
+                {groupedColumns.map((c) => (
+                  <col key={c.grade_type_id || c.field || c.grade_type_code} className="gs-col-component" />
+                ))}
+                <col className="gs-col-summary" />
+                <col className="gs-col-summary" />
+                <col className="gs-col-summary" />
+                <col className="gs-col-record" />
+                <col className="gs-col-action" />
+              </colgroup>
+              <thead>
+                <tr>
+                  <th className="gs-col-num">#</th>
+                  <th className="gs-col-id">{isArabic ? 'رقم الطالب' : 'Student ID'}</th>
+                  <th className="gs-col-name">{isArabic ? 'اسم الطالب' : 'Student name'}</th>
+                  <th className="gs-col-status">{isArabic ? 'الحالة' : 'Status'}</th>
+                  {groupedColumns.map((c) => (
+                    <th key={c.grade_type_id || c.field || c.grade_type_code} className="gs-col-component">
+                      {configLabel(c)}
+                      <br />
+                      <small>/{c.maximum ?? 100}</small>
+                    </th>
+                  ))}
+                  <th className="gs-col-summary">
+                    {isArabic ? 'المجموع' : 'Total'}
+                    <br />
+                    <small>/100</small>
+                  </th>
+                  <th className="gs-col-summary">
+                    {isArabic ? 'العلامة بالنقاط' : 'Points'}
+                    <br />
+                    <small>{isArabic ? 'بالنقاط' : 'GPA'}</small>
+                  </th>
+                  <th className="gs-col-summary">
+                    {isArabic ? 'التقدير' : 'Letter'}
+                    <br />
+                    <small>{isArabic ? 'بالأحرف' : 'grade'}</small>
+                  </th>
+                  <th className="gs-col-record">{t('instructorPortal.recordStatusLabel', 'Record')}</th>
+                  <th className="gs-col-action" aria-label={t('instructorPortal.gradeHistory')} />
+                </tr>
+              </thead>
+              <tbody>
+                {filteredEnrollments.length === 0 ? (
+                  <tr>
+                    <td colSpan={groupedColumns.length + 8} className="grade-sheet-empty">
+                      {t('instructorPortal.noStudentsInClass', 'No enrolled students in this class.')}
+                    </td>
+                  </tr>
+                ) : (
+                  filteredEnrollments.map((enrollment, rowIdx) => {
+                    const g = draftGrades[enrollment.id] || {}
+                    const configForCalc = gradeConfig.length ? gradeConfig : editableColumns
+                    const pct = getTotalPercent(g, configForCalc)
+                    const letter = g.letter_grade || getLetterFromPercent(pct, gradingScale)
+                    const gpaPts =
+                      g.gpa_points != null ? Number(g.gpa_points) : pct != null ? numericGradeToGpaPoints(pct, gradingScale) : null
+                    const student = enrollment.students
+                    const isSubmitted = g.status === 'submitted' || g.status === 'final'
+                    const isDirty = dirtyIds.has(enrollment.id)
+                    const recordStatus = getRecordStatus(enrollment.id)
+                    const rowClass = getGradeRowClassFromPercent(pct)
+
+                    return (
+                      <tr
+                        key={enrollment.id}
+                        className={[
+                          rowClass,
+                          isDirty ? 'gs-row--dirty' : '',
+                          isSubmitted ? 'gs-row--final' : '',
+                        ]
+                          .filter(Boolean)
+                          .join(' ')}
+                      >
+                        <td className="gs-row-num">{rowIdx + 1}</td>
+                        <td className="gs-student-id">{student?.student_id ?? '—'}</td>
+                        <td className="gs-name-col">{displayStudentName(student)}</td>
+                        <td>
+                          <span className="gs-status-badge">{t('instructorPortal.enrolled', 'Enrolled')}</span>
+                        </td>
+                        {groupedColumns.map((c) => {
+                          const field = getConfigFieldName(c)
+                          const max = c.maximum ?? 100
+                          const min = c.minimum ?? 0
+                          const value = g[field] ?? ''
+                          const fieldLocked =
+                            !gradeEntryAllowed ||
+                            isSubmitted ||
+                            isFieldLockedByApproval(field, approvalsMap)
+                          return (
+                            <td key={c.grade_type_id || c.field || c.grade_type_code} className="gs-input-cell">
+                              <input
+                                type="number"
+                                className="gs-grade-input"
+                                step="0.01"
+                                min={min}
+                                max={max}
+                                value={value === null || value === undefined ? '' : value}
+                                disabled={fieldLocked}
+                                placeholder="—"
+                                onChange={(e) => handleFieldChange(enrollment.id, field, e.target.value, c)}
+                                onBlur={() => scheduleRowSave(enrollment.id)}
+                              />
+                            </td>
+                          )
+                        })}
+                        <td className="gs-total-col">
+                          <span className={`gs-score-cell ${getScoreClassFromPercent(pct)}`}>
+                            {pct != null ? Math.round(pct) : '—'}
+                          </span>
+                        </td>
+                        <td className="gs-points-col">
+                          <strong className="gs-points-val">{gpaPts != null ? gpaPts.toFixed(2) : '—'}</strong>
+                        </td>
+                        <td className="gs-letter-col">
+                          {letter ? (
+                            <span className={`gs-grade-badge ${getGradeBadgeClassFromPercent(pct)}`}>{letter}</span>
+                          ) : (
+                            <span className="gs-grade-badge gs-grade-empty">—</span>
+                          )}
+                        </td>
+                        <td className="gs-record-col">
+                          <select
+                            className="gs-record-select"
+                            value={recordStatus}
+                            disabled={!gradeEntryAllowed || isSubmitted}
+                            onChange={(e) => handleRecordStatusChange(enrollment.id, e.target.value)}
+                          >
+                            {RECORD_STATUS_OPTIONS.map((s) => (
+                              <option key={s} value={s}>
+                                {t(`instructorPortal.recordStatus.${s}`, s)}
+                              </option>
+                            ))}
+                          </select>
+                        </td>
+                        <td className="gs-action-col">
+                          <button
+                            type="button"
+                            className="gs-history-btn"
+                            title={t('instructorPortal.gradeHistory', 'Grade history')}
+                            onClick={() => openHistory(enrollment.id)}
+                          >
+                            🕐
+                          </button>
+                        </td>
+                      </tr>
+                    )
+                  })
+                )}
+              </tbody>
+            </table>
+          </div>
         </div>
-        <div className="sc warn">
-          <div className="sc-lbl">{t('instructorPortal.below60Percent')}</div>
-          <div className="sc-val">{stats.failingCount}</div>
-          <div className="sc-sub">{t('instructorPortal.studentsAtRisk')}</div>
-        </div>
-        <div className="sc acc">
-          <div className="sc-lbl">{t('instructorPortal.pendingGrading')}</div>
-          <div className="sc-val">{stats.pendingGrading}</div>
-          <div className="sc-sub">{t('instructorPortal.studentsCount', { count: enrollments.length })}</div>
+
+        <div className="gs-report-footer">
+          <div>
+            {universityName || t('instructorPortal.universityName', 'University')} &nbsp;|&nbsp;{' '}
+            <span>{universityNameEn || 'University'}</span>
+          </div>
+          <div>
+            {t('instructorPortal.courseCode', 'Course code')}: <span>{subjectCode || '—'}</span> &nbsp;|&nbsp; {courseName || '—'}
+          </div>
+          <div>
+            {t('instructorPortal.printDate', 'Print date')}: <span>{printDate}</span> &nbsp;|&nbsp;{' '}
+            {t('instructorPortal.printUser', 'User')}: <span>{printUser}</span>
+          </div>
         </div>
       </div>
 
-      {gradeConfig.length > 0 && (
-        <div className="card grade-sheet-weights">
-          <div className="card-hd">
-            <div className="card-title">⚙️ {t('instructorPortal.weightSettings')}</div>
-          </div>
-          <div className="grade-sheet-weight-chips">
-            {gradeConfig.map((c) => (
-              <div key={c.grade_type_id || c.grade_type_code} className="grade-sheet-weight-chip">
-                <span className="grade-sheet-weight-name">{configLabel(c)}</span>
-                <span className="grade-sheet-weight-pct">{c.weight ?? 0}%</span>
-                <span className="grade-sheet-weight-max">
-                  {t('instructorPortal.maxScore', 'Max')} {c.maximum ?? 100}
-                </span>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      <div className="card grade-sheet-table-card">
-        <div className="card-hd">
-          <div className="card-title">📋 {t('instructorPortal.gradesTable')}</div>
-          <select
-            className="fc"
-            style={{ width: 160 }}
-            value={filterStatus}
-            onChange={(e) => setFilterStatus(e.target.value)}
-            aria-label={t('instructorPortal.filter')}
-          >
-            <option value="all">{t('instructorPortal.allStudents')}</option>
-            <option value="pending">{t('instructorPortal.pendingGrading')}</option>
-            <option value="below60">{t('instructorPortal.below60Percent')}</option>
-            <option value="complete">{t('instructorPortal.complete')}</option>
-          </select>
-        </div>
-        <div className="tw grade-sheet-table-wrap">
-          <table className="grade-sheet-table">
-            <thead>
-              <tr>
-                <th className="grade-sheet-sticky-col">{t('instructorPortal.student')}</th>
-                {editableColumns.map((c) => (
-                  <th key={c.grade_type_id || c.field || c.grade_type_code} className="grade-sheet-component-col">
-                    <span className="grade-sheet-col-title">{configLabel(c)}</span>
-                    {c.weight != null && (
-                      <span className="grade-sheet-col-weight">{c.weight}%</span>
-                    )}
-                    <span className="grade-sheet-col-max">/{c.maximum ?? 100}</span>
-                  </th>
-                ))}
-                <th className="grade-sheet-total-col">{t('instructorPortal.total')}</th>
-                <th>{t('instructorPortal.gradeLetter')}</th>
-                <th>{t('instructorPortal.status', 'Status')}</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filteredEnrollments.length === 0 ? (
+      {showStatusModal && (
+        <div className="modal-overlay" role="dialog" onClick={() => setShowStatusModal(false)}>
+          <div className="modal-card" style={{ maxWidth: 560 }} onClick={(e) => e.stopPropagation()}>
+            <div className="card-hd">
+              <div className="card-title">{t('instructorPortal.assessmentStatusTitle', 'Class assessment status')}</div>
+              <button type="button" className="btn btn-gh" onClick={() => setShowStatusModal(false)}>×</button>
+            </div>
+            <table className="grade-sheet-table" style={{ width: '100%' }}>
+              <thead>
                 <tr>
-                  <td colSpan={editableColumns.length + 4} className="grade-sheet-empty">
-                    {t('instructorPortal.noStudentsInClass', 'No enrolled students in this class.')}
-                  </td>
+                  <th>#</th>
+                  <th>{t('instructorPortal.assessmentDetails', 'Assessment')}</th>
+                  <th>{t('instructorPortal.approvedQuestion', 'Approved?')}</th>
+                  <th>{t('instructorPortal.entryPeriod', 'Entry period')}</th>
                 </tr>
-              ) : (
-                filteredEnrollments.map((enrollment) => {
-                  const g = draftGrades[enrollment.id] || {}
-                  const pct = getTotalPercent(g, gradeConfig)
-                  const letter = g.letter_grade || getLetterFromPercent(pct, gradingScale)
-                  const student = enrollment.students
-                  const isFailing = pct != null && pct < 60
-                  const isFinal = g.status === 'final'
-                  const isDirty = dirtyIds.has(enrollment.id)
-                  const rowLocked = !gradeEntryAllowed || isFinal
-
+              </thead>
+              <tbody>
+                {ASSESSMENT_GROUPS.map((group, i) => {
+                  const row = approvalsMap[group]
+                  const approved = row?.status === 'approved'
                   return (
-                    <tr
-                      key={enrollment.id}
-                      className={[
-                        isFailing ? 'grade-sheet-row--risk' : '',
-                        isDirty ? 'grade-sheet-row--dirty' : '',
-                        isFinal ? 'grade-sheet-row--final' : '',
-                      ]
-                        .filter(Boolean)
-                        .join(' ')}
-                    >
-                      <td className="grade-sheet-sticky-col">
-                        <div className="grade-sheet-student-name">{displayStudentName(student)}</div>
-                        <div className="grade-sheet-student-id">{student?.student_id ?? '—'}</div>
-                      </td>
-                      {editableColumns.map((c) => {
-                        const field = getConfigFieldName(c)
-                        const max = c.maximum ?? 100
-                        const min = c.minimum ?? 0
-                        const value = g[field] ?? ''
-                        return (
-                          <td key={c.grade_type_id || c.field || c.grade_type_code} className="grade-sheet-input-cell">
-                            <input
-                              type="number"
-                              className="fc grade-sheet-input"
-                              step="0.01"
-                              min={min}
-                              max={max}
-                              value={value === null || value === undefined ? '' : value}
-                              disabled={rowLocked}
-                              placeholder="—"
-                              aria-label={`${configLabel(c)} — ${displayStudentName(student)}`}
-                              onChange={(e) => handleFieldChange(enrollment.id, field, e.target.value, c)}
-                            />
-                          </td>
-                        )
-                      })}
-                      <td className="grade-sheet-total-col">
-                        <span
-                          className={`grade-sheet-total${isFailing ? ' grade-sheet-total--fail' : pct != null ? ' grade-sheet-total--pass' : ''}`}
-                        >
-                          {pct != null ? `${pct.toFixed(1)}%` : '—'}
+                    <tr key={group}>
+                      <td>{i + 1}</td>
+                      <td>{groupLabel(group)}</td>
+                      <td>
+                        <span className="badge" data-status={approved ? 'ok' : 'pending'}>
+                          {approved
+                            ? t('instructorPortal.approved', 'Approved')
+                            : t('instructorPortal.notApproved', 'Open')}
                         </span>
                       </td>
-                      <td className="grade-sheet-letter-col">
-                        {letter ? (
-                          <span
-                            className="badge"
-                            data-status={isFailing ? 'at-risk' : `grade-${(letter || '').toLowerCase().replace('+', '')}`}
-                          >
-                            {letter}
-                          </span>
-                        ) : (
-                          <span className="badge" data-status="pending">
-                            {t('instructorPortal.incomplete')}
-                          </span>
-                        )}
-                      </td>
                       <td>
-                        {isFinal ? (
-                          <span className="badge" data-status="ok">
-                            {t('instructorPortal.gradeStatusFinal', 'Final')}
-                          </span>
-                        ) : isDirty ? (
-                          <span className="badge" data-status="pending">
-                            {t('instructorPortal.unsaved', 'Unsaved')}
-                          </span>
-                        ) : pct != null ? (
-                          <span className="badge" data-status="info">
-                            {t('instructorPortal.gradeStatusDraft', 'Draft')}
-                          </span>
-                        ) : (
-                          <span className="badge" data-status="pending">
-                            {t('instructorPortal.incomplete')}
-                          </span>
+                        {formatApprovalDate(row?.entry_started_at)} / {formatApprovalDate(row?.entry_ended_at)}
+                        {approved && row?.approved_at && (
+                          <div style={{ fontSize: 11, color: 'var(--muted)' }}>
+                            {t('instructorPortal.approvedOn', 'Approved')}: {formatApprovalDate(row.approved_at)}
+                          </div>
                         )}
                       </td>
                     </tr>
                   )
-                })
-              )}
-            </tbody>
-          </table>
+                })}
+              </tbody>
+            </table>
+          </div>
         </div>
-      </div>
+      )}
+
+      {showAnalyticsModal && (
+        <div className="modal-overlay" role="dialog" onClick={() => setShowAnalyticsModal(false)}>
+          <div className="modal-card" style={{ maxWidth: 480 }} onClick={(e) => e.stopPropagation()}>
+            <div className="card-hd">
+              <div className="card-title">📈 {t('instructorPortal.gradeCharts', 'Grade charts')}</div>
+              <button type="button" className="btn btn-gh" onClick={() => setShowAnalyticsModal(false)}>×</button>
+            </div>
+            <p style={{ fontSize: 14, marginBottom: 12 }}>
+              {t('instructorPortal.passRate', 'Pass rate')}: {gradeAnalytics.passRate}% ({gradeAnalytics.passCount}/
+              {gradeAnalytics.graded})
+            </p>
+            {gradeAnalytics.distribution.length === 0 ? (
+              <p style={{ color: 'var(--muted)' }}>{t('instructorPortal.noData')}</p>
+            ) : (
+              gradeAnalytics.distribution.map((item) => (
+                <div key={item.letter} style={{ marginBottom: 10 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13 }}>
+                    <span>{item.letter}</span>
+                    <span>
+                      {item.count} ({item.pct}%)
+                    </span>
+                  </div>
+                  <div className="prog-bar">
+                    <div className="prog-fill" style={{ width: `${item.pct}%`, background: 'var(--p)' }} />
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+      )}
+
+      {showHistoryModal && (
+        <div className="modal-overlay" role="dialog" onClick={() => setShowHistoryModal(false)}>
+          <div className="modal-card" style={{ maxWidth: 560 }} onClick={(e) => e.stopPropagation()}>
+            <div className="card-hd">
+              <div className="card-title">🕐 {t('instructorPortal.gradeHistory', 'Grade history')}</div>
+              <button type="button" className="btn btn-gh" onClick={() => setShowHistoryModal(false)}>×</button>
+            </div>
+            {auditLoading ? (
+              <p>{t('common.loading', 'Loading…')}</p>
+            ) : auditLog.length === 0 ? (
+              <p style={{ color: 'var(--muted)' }}>{t('instructorPortal.noAuditEntries', 'No changes recorded yet.')}</p>
+            ) : (
+              <ul style={{ listStyle: 'none', padding: 0, margin: 0, maxHeight: 360, overflow: 'auto' }}>
+                {auditLog.map((entry) => (
+                  <li key={entry.id} style={{ padding: '8px 0', borderBottom: '1px solid var(--bdr)', fontSize: 13 }}>
+                    <div>
+                      <strong>{entry.field_name}</strong>: {entry.old_value || '—'} → {entry.new_value || '—'}
+                    </div>
+                    <div style={{ color: 'var(--muted)', fontSize: 11 }}>
+                      {new Date(entry.changed_at).toLocaleString(isArabic ? 'ar' : 'en')} —{' '}
+                      {getLocalizedName(entry.users, isArabic) || entry.users?.email || '—'} ({entry.change_source})
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   )
 }

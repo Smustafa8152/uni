@@ -15,6 +15,13 @@ import {
   effectiveGradeEntryAllowed,
 } from '../../utils/instructorSemesters'
 import { getActiveInstructorByEmail } from '../../utils/getActiveInstructorByEmail'
+import { ASSESSMENT_GROUPS } from '../../utils/gradeAssessmentGroups'
+import { fetchClassAssessmentApprovals } from '../../utils/gradeAudit'
+import {
+  LEGACY_GRADE_COLUMNS,
+  getTotalPercent,
+} from '../../utils/instructorGradeSheet'
+import { computeGradeDistribution } from '../../utils/exportInstructorGradeSheet'
 
 export default function InstructorGradeSubmission() {
   const { t } = useTranslation()
@@ -33,6 +40,7 @@ export default function InstructorGradeSubmission() {
   const [gradesMap, setGradesMap] = useState({})
   const [gradeConfig, setGradeConfig] = useState([])
   const [gradingScale, setGradingScale] = useState([])
+  const [approvalsMap, setApprovalsMap] = useState({})
   const [notes, setNotes] = useState('')
   const [declarationChecked, setDeclarationChecked] = useState(false)
   const [submitError, setSubmitError] = useState('')
@@ -51,6 +59,17 @@ export default function InstructorGradeSubmission() {
     : ''
   const gradeEntryAllowed = effectiveGradeEntryAllowed(selectedClass?.semesters)
 
+  const editableColumns = useMemo(() => {
+    if (gradeConfig.length > 0) return gradeConfig
+    return LEGACY_GRADE_COLUMNS.map((c) => ({
+      ...c,
+      grade_type_name_en: c.field,
+      dbColumn: c.field,
+    }))
+  }, [gradeConfig])
+
+  const configForCalc = gradeConfig.length ? gradeConfig : editableColumns
+
   useEffect(() => {
     if (user?.email) {
       getActiveInstructorByEmail(user.email).then((data) => data && setInstructor(data))
@@ -67,6 +86,7 @@ export default function InstructorGradeSubmission() {
         code,
         subject_id,
         semester_id,
+        college_id,
         subjects(id, code, name_en, name_ar, grade_configuration),
         semesters(${INSTRUCTOR_SEMESTER_SELECT})
       `)
@@ -85,6 +105,7 @@ export default function InstructorGradeSubmission() {
       setEnrollments([])
       setGradesMap({})
       setGradeConfig([])
+      setApprovalsMap({})
       setLoading(false)
       return
     }
@@ -92,130 +113,84 @@ export default function InstructorGradeSubmission() {
     const cls = classes.find((c) => c.id === selectedClassId)
     if (cls) setClassData(cls)
 
-    const subjectConfig = cls?.subjects?.grade_configuration && Array.isArray(cls.subjects.grade_configuration)
-      ? cls.subjects.grade_configuration
-      : []
-    getGradeTypesFromUniversitySettings().then((gradeTypes) => {
-      const merged = mergeGradeConfigWithTypes(subjectConfig, gradeTypes)
-      setGradeConfig(merged)
-    })
+    const subjectConfig =
+      cls?.subjects?.grade_configuration && Array.isArray(cls.subjects.grade_configuration)
+        ? cls.subjects.grade_configuration
+        : []
 
-    supabase
-      .from('enrollments')
-      .select(`
-        id,
-        student_id,
-        students(id, student_id, name_en, name_ar, first_name, last_name)
-      `)
-      .eq('class_id', selectedClassId)
-      .eq('status', 'enrolled')
-      .then(({ data: enrollData }) => {
-        const enrolls = enrollData || []
-        setEnrollments(enrolls)
-        if (enrolls.length === 0) {
-          setGradesMap({})
-          setLoading(false)
-          return
-        }
-        supabase
-          .from('grade_components')
-          .select('*')
-          .in('enrollment_id', enrolls.map((e) => e.id))
-          .then(({ data: gradesData }) => {
-            const map = {}
-            ;(gradesData || []).forEach((g) => {
-              map[g.enrollment_id] = g
-            })
-            setGradesMap(map)
+    Promise.all([
+      getGradeTypesFromUniversitySettings(),
+      fetchClassAssessmentApprovals(selectedClassId),
+      supabase
+        .from('enrollments')
+        .select(`
+          id,
+          student_id,
+          students(id, student_id, name_en, name_ar, first_name, last_name)
+        `)
+        .eq('class_id', selectedClassId)
+        .eq('status', 'enrolled'),
+    ]).then(([gradeTypes, approvals, { data: enrollData }]) => {
+      setGradeConfig(mergeGradeConfigWithTypes(subjectConfig, gradeTypes))
+      setApprovalsMap(approvals || {})
+      const enrolls = enrollData || []
+      setEnrollments(enrolls)
+      if (enrolls.length === 0) {
+        setGradesMap({})
+        setLoading(false)
+        return
+      }
+      supabase
+        .from('grade_components')
+        .select('*')
+        .in('enrollment_id', enrolls.map((e) => e.id))
+        .then(({ data: gradesData }) => {
+          const map = {}
+          ;(gradesData || []).forEach((g) => {
+            map[g.enrollment_id] = g
           })
-          .finally(() => setLoading(false))
-      })
+          setGradesMap(map)
+        })
+        .finally(() => setLoading(false))
+    })
   }, [selectedClassId, instructor?.id, classes])
 
-  const getTotalPercent = (gradeRow) => {
-    if (!gradeRow) return null
-    const num = gradeRow.numeric_grade
-    if (num != null && num !== '') return parseFloat(num)
-    if (gradeConfig.length === 0) return null
-    let totalWeighted = 0
-    let totalWeight = 0
-    gradeConfig.forEach((c) => {
-      const field = c.dbColumn || `grade_${(c.grade_type_code || '').toLowerCase().replace(/\s+/g, '_')}`
-      const score = gradeRow[field]
-      const max = c.maximum ?? 100
-      const weight = c.weight ?? 0
-      if (score != null && max > 0 && weight > 0) {
-        totalWeighted += (Number(score) / max) * weight
-        totalWeight += weight
-      }
-    })
-    if (totalWeight === 0) return null
-    return Math.min(100, (totalWeighted / totalWeight) * 100)
-  }
-
-  const getLetterGrade = (percent) => {
-    if (percent == null) return null
-    const scale = Array.isArray(gradingScale) && gradingScale.length > 0 ? gradingScale : []
-    const entry = scale.find((g) => {
-      const min = g.minPercent ?? g.min_percent ?? 0
-      const max = g.maxPercent ?? g.max_percent ?? 100
-      return percent >= min && percent <= max
-    })
-    return entry ? (entry.letter ?? null) : null
-  }
+  const allGroupsApproved = useMemo(
+    () => ASSESSMENT_GROUPS.every((g) => approvalsMap[g]?.status === 'approved'),
+    [approvalsMap]
+  )
 
   const checklist = useMemo(() => {
     const rows = enrollments.map((e) => ({
       enrollment: e,
       grade: gradesMap[e.id],
-      percent: getTotalPercent(gradesMap[e.id]),
+      percent: getTotalPercent(gradesMap[e.id], configForCalc),
     }))
     const withPercent = rows.filter((r) => r.percent != null)
     const failingCount = rows.filter((r) => r.percent != null && r.percent < 60).length
-    const totalWeights = gradeConfig.reduce((s, c) => s + (c.weight ?? 0), 0)
-    const weightsOk = Math.abs(totalWeights - 100) < 0.01 || gradeConfig.length === 0
+    const totalWeights = editableColumns.reduce((s, c) => s + (c.weight ?? 0), 0)
+    const weightsOk = Math.abs(totalWeights - 100) < 0.01
+    const approvedCount = ASSESSMENT_GROUPS.filter((g) => approvalsMap[g]?.status === 'approved').length
+
     return {
-      allAssessmentsComplete: true,
-      assessmentsCount: 5,
-      pendingGrading: 0,
-      regradeResolved: true,
-      regradeCount: 2,
+      allGroupsApproved,
+      approvedCount,
+      assessmentsTotal: ASSESSMENT_GROUPS.length,
       failingCount,
       weightsEqual100: weightsOk,
-      weightsBreakdown: gradeConfig.length
-        ? gradeConfig.map((c) => `${c.weight ?? 0}%`).join(' + ')
-        : '50% + 20% + 30%',
+      weightsBreakdown: editableColumns.map((c) => `${c.weight ?? 0}%`).join(' + '),
       allStudentsHaveGrades: withPercent.length === enrollments.length && enrollments.length > 0,
       studentsTotal: enrollments.length,
       gradesComplete: withPercent.length,
     }
-  }, [enrollments, gradesMap, gradeConfig])
+  }, [enrollments, gradesMap, configForCalc, editableColumns, approvalsMap, allGroupsApproved])
 
   const gradeDistribution = useMemo(() => {
-    const scale = Array.isArray(gradingScale) && gradingScale.length > 0 ? gradingScale : []
-    const buckets = {}
-    scale.forEach((g) => {
-      const key = g.letter ?? ''
-      buckets[key] = { letter: key, count: 0, min: g.minPercent ?? g.min_percent ?? 0, max: g.maxPercent ?? g.max_percent ?? 100 }
-    })
-    enrollments.forEach((e) => {
-      const g = gradesMap[e.id]
-      const pct = getTotalPercent(g)
-      const letter = getLetterGrade(pct)
-      if (letter && buckets[letter]) buckets[letter].count += 1
-    })
-    const total = enrollments.length
-    return Object.values(buckets)
-      .filter((b) => b.count > 0 || total === 0)
-      .map((b) => ({
-        ...b,
-        pct: total > 0 ? Math.round((b.count / total) * 100) : 0,
-      }))
-      .sort((a, b) => (b.min + b.max) / 2 - (a.min + a.max) / 2)
-  }, [enrollments, gradesMap, gradeConfig, gradingScale])
+    const { distribution } = computeGradeDistribution(enrollments, gradesMap, configForCalc, gradingScale)
+    return distribution
+  }, [enrollments, gradesMap, configForCalc, gradingScale])
 
-  const submissionDate = new Date()
-  const submissionDateStr = submissionDate.toLocaleDateString(language === 'ar' ? 'ar-SA' : 'en-GB', {
+  const submissionDateStr = new Date().toLocaleDateString(language === 'ar' ? 'ar-SA' : 'en-GB', {
     day: 'numeric',
     month: 'long',
     year: 'numeric',
@@ -228,41 +203,32 @@ export default function InstructorGradeSubmission() {
     setSubmitSuccess('')
     try {
       if (!selectedClass) throw new Error('Class not found')
-      if (enrollments.length === 0) throw new Error(t('instructorPortal.noStudentsToSubmit', 'No enrolled students to submit.'))
-
-      // Must have grades for all students before final submission
-      const missing = enrollments
-        .map((e) => {
-          const g = gradesMap[e.id]
-          const pct = getTotalPercent(g)
-          return { enrollment: e, grade: g, pct }
-        })
-        .filter((r) => r.grade == null || r.pct == null)
-
-      if (missing.length > 0) {
+      if (!allGroupsApproved) {
         throw new Error(
-          t('instructorPortal.submitBlockedMissingGrades', 'Some students are missing grades. Please complete grading before submitting final grades.')
+          t('instructorPortal.submitBlockedApprovals', 'All assessment groups must be approved before submission.')
         )
       }
+      if (enrollments.length === 0) {
+        throw new Error(t('instructorPortal.noStudentsToSubmit', 'No enrolled students to submit.'))
+      }
 
+      const missing = enrollments.filter((e) => getTotalPercent(gradesMap[e.id], configForCalc) == null)
+      if (missing.length > 0) {
+        throw new Error(t('instructorPortal.submitBlockedMissingGrades'))
+      }
       if (!checklist.weightsEqual100) {
-        throw new Error(
-          t('instructorPortal.submitBlockedWeights', 'Grade weights must total 100% before final submission.')
-        )
+        throw new Error(t('instructorPortal.submitBlockedWeights'))
       }
 
       const nowIso = new Date().toISOString()
       const payloads = enrollments.map((e) => {
         const g = gradesMap[e.id]
-        const classCollegeId = selectedClass?.college_id ?? instructor?.college_id ?? null
-        const classSemesterId = selectedClass?.semester_id ?? null
         return {
           enrollment_id: e.id,
           class_id: selectedClass.id,
           student_id: e.student_id,
-          semester_id: classSemesterId,
-          college_id: classCollegeId,
-          // Ensure these are included so DB triggers can sync enrollments
+          semester_id: selectedClass.semester_id ?? null,
+          college_id: selectedClass.college_id ?? instructor?.college_id ?? null,
           numeric_grade: g?.numeric_grade ?? null,
           letter_grade: g?.letter_grade ?? null,
           gpa_points: g?.gpa_points ?? null,
@@ -274,7 +240,8 @@ export default function InstructorGradeSubmission() {
           project: g?.project ?? null,
           lab: g?.lab ?? null,
           other: g?.other ?? null,
-          status: 'final',
+          record_status: g?.record_status ?? 'complete',
+          status: 'submitted',
           graded_by: instructor?.id ?? null,
           graded_at: nowIso,
           notes: notes?.trim() ? notes.trim() : null,
@@ -282,29 +249,26 @@ export default function InstructorGradeSubmission() {
         }
       })
 
-      // Upsert in chunks to avoid request size limits
       const chunkSize = 50
       for (let i = 0; i < payloads.length; i += chunkSize) {
-        const chunk = payloads.slice(i, i + chunkSize)
-        const { error } = await supabase.from('grade_components').upsert(chunk, { onConflict: 'enrollment_id' })
+        const { error } = await supabase
+          .from('grade_components')
+          .upsert(payloads.slice(i, i + chunkSize), { onConflict: 'enrollment_id' })
         if (error) throw error
       }
 
-      // Refresh local state
-      const enrollmentIds = enrollments.map((e) => e.id)
       const { data: gradesData, error: gErr } = await supabase
         .from('grade_components')
         .select('*')
-        .in('enrollment_id', enrollmentIds)
+        .in('enrollment_id', enrollments.map((e) => e.id))
       if (gErr) throw gErr
       const map = {}
       ;(gradesData || []).forEach((g) => {
         map[g.enrollment_id] = g
       })
       setGradesMap(map)
-      setSubmitSuccess(t('instructorPortal.gradesSubmittedSuccess', 'Final grades submitted successfully.'))
+      setSubmitSuccess(t('instructorPortal.gradesSubmittedSuccess', 'Grades submitted for academic review.'))
     } catch (err) {
-      console.error(err)
       setSubmitError(err?.message || t('common.error', 'Error'))
     } finally {
       setSubmitting(false)
@@ -316,7 +280,10 @@ export default function InstructorGradeSubmission() {
     declarationChecked &&
     checklist.allStudentsHaveGrades &&
     checklist.weightsEqual100 &&
+    checklist.allGroupsApproved &&
     enrollments.length > 0
+
+  const groupLabel = (group) => t(`instructorPortal.assessmentGroup.${group}`, group)
 
   if (loading && !selectedClass) {
     return (
@@ -376,21 +343,11 @@ export default function InstructorGradeSubmission() {
         {t('instructorPortal.gradeSubmissionWarning')}
       </div>
 
-      {!!submitError && (
-        <div className="alert alert-err" role="alert">
-          {submitError}
-        </div>
-      )}
-      {!!submitSuccess && (
-        <div className="alert alert-ok" role="status">
-          {submitSuccess}
-        </div>
-      )}
+      {!!submitError && <div className="alert alert-err">{submitError}</div>}
+      {!!submitSuccess && <div className="alert alert-ok">{submitSuccess}</div>}
 
       {!gradeEntryAllowed && selectedClass && (
-        <div className="alert alert-err" role="alert">
-          {t('instructorPortal.semesterLifecycle.gradeSubmitBlocked')}
-        </div>
+        <div className="alert alert-err">{t('instructorPortal.semesterLifecycle.gradeSubmitBlocked')}</div>
       )}
 
       <div className="grid2">
@@ -463,18 +420,19 @@ export default function InstructorGradeSubmission() {
               <div className="card-title">✅ {t('instructorPortal.preSubmissionChecklist')}</div>
             </div>
             <ul style={{ listStyle: 'none', padding: 0, margin: 0 }}>
-              <li style={{ marginBottom: 12, padding: 12, borderRadius: 'var(--rs)', background: checklist.allAssessmentsComplete ? 'var(--ok-bg)' : 'var(--warn-bg)' }}>
-                <span>{checklist.allAssessmentsComplete ? '✅' : '⚠️'}</span>{' '}
-                <strong>{t('instructorPortal.checkAllAssessmentsComplete')}</strong>
+              <li
+                style={{
+                  marginBottom: 12,
+                  padding: 12,
+                  borderRadius: 'var(--rs)',
+                  background: checklist.allGroupsApproved ? 'var(--ok-bg)' : 'var(--warn-bg)',
+                }}
+              >
+                <span>{checklist.allGroupsApproved ? '✅' : '⚠️'}</span>{' '}
+                <strong>{t('instructorPortal.checkAllAssessmentsApproved', 'All assessments approved')}</strong>
                 <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 4 }}>
-                  {checklist.assessmentsCount} {t('instructorPortal.assessments')} — {checklist.pendingGrading} {t('instructorPortal.pendingGrading')}
-                </div>
-              </li>
-              <li style={{ marginBottom: 12, padding: 12, borderRadius: 'var(--rs)', background: checklist.regradeResolved ? 'var(--ok-bg)' : 'var(--warn-bg)' }}>
-                <span>{checklist.regradeResolved ? '✅' : '⚠️'}</span>{' '}
-                <strong>{t('instructorPortal.checkRegradeResolved')}</strong>
-                <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 4 }}>
-                  {checklist.regradeCount} {t('instructorPortal.requests')} — {t('instructorPortal.processed')}
+                  {checklist.approvedCount}/{checklist.assessmentsTotal}{' '}
+                  {ASSESSMENT_GROUPS.map((g) => groupLabel(g)).join(' · ')}
                 </div>
               </li>
               <li
@@ -486,25 +444,35 @@ export default function InstructorGradeSubmission() {
                 }}
               >
                 <span>{checklist.failingCount > 0 ? '⚠️' : '✅'}</span>{' '}
-                <strong>
-                  {t('instructorPortal.checkStudentsBelow60', { count: checklist.failingCount })}
-                </strong>
-                <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 4 }}>
-                  {t('instructorPortal.reviewBeforeSubmit')}
-                </div>
+                <strong>{t('instructorPortal.checkStudentsBelow60', { count: checklist.failingCount })}</strong>
               </li>
-              <li style={{ marginBottom: 12, padding: 12, borderRadius: 'var(--rs)', background: checklist.weightsEqual100 ? 'var(--ok-bg)' : 'var(--warn-bg)' }}>
+              <li
+                style={{
+                  marginBottom: 12,
+                  padding: 12,
+                  borderRadius: 'var(--rs)',
+                  background: checklist.weightsEqual100 ? 'var(--ok-bg)' : 'var(--warn-bg)',
+                }}
+              >
                 <span>{checklist.weightsEqual100 ? '✅' : '⚠️'}</span>{' '}
                 <strong>{t('instructorPortal.checkWeights100')}</strong>
                 <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 4 }}>
                   100% = {checklist.weightsBreakdown}
                 </div>
               </li>
-              <li style={{ marginBottom: 12, padding: 12, borderRadius: 'var(--rs)', background: checklist.allStudentsHaveGrades ? 'var(--ok-bg)' : 'var(--warn-bg)' }}>
+              <li
+                style={{
+                  marginBottom: 12,
+                  padding: 12,
+                  borderRadius: 'var(--rs)',
+                  background: checklist.allStudentsHaveGrades ? 'var(--ok-bg)' : 'var(--warn-bg)',
+                }}
+              >
                 <span>{checklist.allStudentsHaveGrades ? '✅' : '⚠️'}</span>{' '}
                 <strong>{t('instructorPortal.checkAllStudentsHaveGrades')}</strong>
                 <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 4 }}>
-                  {checklist.studentsTotal} {t('instructorPortal.students')} — {checklist.gradesComplete} {t('instructorPortal.gradesComplete')}
+                  {checklist.studentsTotal} {t('instructorPortal.students')} — {checklist.gradesComplete}{' '}
+                  {t('instructorPortal.gradesComplete')}
                 </div>
               </li>
             </ul>
@@ -530,7 +498,13 @@ export default function InstructorGradeSubmission() {
                         className="prog-fill"
                         style={{
                           width: `${item.pct}%`,
-                          background: item.letter?.startsWith('A') ? 'var(--ok)' : item.letter?.startsWith('B') ? 'var(--info)' : item.letter?.startsWith('C') ? '#d97706' : item.letter?.startsWith('D') ? 'var(--warn)' : 'var(--err)',
+                          background: item.letter?.startsWith('A')
+                            ? 'var(--ok)'
+                            : item.letter?.startsWith('B')
+                              ? 'var(--info)'
+                              : item.letter?.startsWith('C')
+                                ? '#d97706'
+                                : 'var(--err)',
                         }}
                       />
                     </div>

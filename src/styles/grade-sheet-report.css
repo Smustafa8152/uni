@@ -1,0 +1,562 @@
+@import url('https://fonts.googleapis.com/css2?family=Tajawal:wght@300;400;500;700;800;900&display=swap');
+
+.instructor-portal .grade-sheet-root--embedded .grade-sheet-report {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.instructor-portal .grade-sheet-root--embedded .gs-report-panel {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.instructor-portal .grade-sheet-root--embedded .grade-sheet-table-wrap {
+  flex: 1;
+  min-height: 0;
+  max-height: none;
+}
+
+/* ========== Final grade sheet report (official template) ========== */
+.instructor-portal .grade-sheet-report {
+  --gs-dark-blue: #1a3a5c;
+  --gs-mid-blue: #2e6da4;
+  --gs-light-blue: #d6e4f0;
+  --gs-accent-gold: #c9a84c;
+  --gs-border: #b0c4de;
+  font-family: 'Tajawal', var(--font, 'Arial'), sans-serif;
+  width: 100%;
+  max-width: none;
+  margin: 0 0 24px;
+  background: transparent;
+  border-radius: 0;
+  box-shadow: none;
+  overflow: visible;
+}
+.instructor-portal .grade-sheet-report--embedded {
+  margin-bottom: 0;
+}
+
+.instructor-portal .gs-report-header {
+  background: linear-gradient(135deg, var(--gs-dark-blue) 0%, #0d2137 100%);
+  padding: 24px 0 18px;
+  position: relative;
+  overflow: hidden;
+  border-radius: 12px 12px 0 0;
+}
+.instructor-portal .gs-report-header::before {
+  content: '';
+  position: absolute;
+  top: -50px;
+  inset-inline-start: -50px;
+  width: 200px;
+  height: 200px;
+  background: rgba(201, 168, 76, 0.08);
+  border-radius: 50%;
+}
+.instructor-portal .gs-report-header::after {
+  content: '';
+  position: absolute;
+  bottom: -30px;
+  inset-inline-end: -30px;
+  width: 150px;
+  height: 150px;
+  background: rgba(46, 109, 164, 0.15);
+  border-radius: 50%;
+}
+.instructor-portal .gs-header-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  position: relative;
+  z-index: 1;
+  padding-inline: 8px;
+}
+.instructor-portal .gs-univ-name-ar {
+  font-size: 26px;
+  font-weight: 900;
+  color: #fff;
+  letter-spacing: 0.5px;
+}
+.instructor-portal .gs-univ-name-en {
+  font-size: 13px;
+  color: var(--gs-accent-gold);
+  font-weight: 500;
+  margin-top: 4px;
+}
+.instructor-portal .gs-header-badges {
+  margin-top: 10px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+.instructor-portal .gs-semester-badge {
+  background: linear-gradient(90deg, var(--gs-mid-blue), #1a5276);
+  color: #fff;
+  padding: 8px 20px;
+  border-radius: 30px;
+  font-size: 15px;
+  font-weight: 700;
+  box-shadow: 0 2px 10px rgba(46, 109, 164, 0.3);
+}
+.instructor-portal .gs-approved-badge {
+  background: linear-gradient(90deg, #2e7d32, #1b5e20);
+  color: #fff;
+  padding: 5px 14px;
+  border-radius: 20px;
+  font-size: 12px;
+  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.instructor-portal .gs-approved-badge::before {
+  content: '✓';
+  font-size: 14px;
+}
+.instructor-portal .gs-logo-circle {
+  width: 70px;
+  height: 70px;
+  background: linear-gradient(135deg, var(--gs-accent-gold), #e8c96a);
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 28px;
+  box-shadow: 0 4px 15px rgba(201, 168, 76, 0.4);
+}
+
+.instructor-portal .gs-info-section {
+  background: #f4f6f9;
+  padding: 20px 0;
+  border-bottom: 3px solid var(--gs-light-blue);
+}
+.instructor-portal .gs-info-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 12px;
+}
+.instructor-portal .gs-info-card {
+  background: #fff;
+  border-radius: 10px;
+  padding: 12px 16px;
+  border-inline-end: 4px solid var(--gs-mid-blue);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+}
+.instructor-portal .gs-info-label {
+  font-size: 11px;
+  color: #888;
+  font-weight: 500;
+  margin-bottom: 4px;
+}
+.instructor-portal .gs-info-value {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--gs-dark-blue);
+}
+
+.instructor-portal .gs-stats-bar {
+  background: linear-gradient(90deg, var(--gs-dark-blue), var(--gs-mid-blue));
+  padding: 16px 0;
+  display: flex;
+  justify-content: space-around;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+}
+.instructor-portal .gs-stat-item {
+  text-align: center;
+  color: #fff;
+}
+.instructor-portal .gs-stat-num {
+  font-size: 24px;
+  font-weight: 900;
+  color: var(--gs-accent-gold);
+  display: block;
+}
+.instructor-portal .gs-stat-label {
+  font-size: 11px;
+  opacity: 0.85;
+  font-weight: 500;
+}
+.instructor-portal .gs-stat-divider {
+  width: 1px;
+  align-self: stretch;
+  background: rgba(255, 255, 255, 0.2);
+  min-height: 36px;
+}
+
+.instructor-portal .gs-report-panel {
+  padding: 20px 0 0;
+}
+.instructor-portal .gs-controls {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 20px;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+.instructor-portal .gs-search-box {
+  position: relative;
+  flex: 1;
+  min-width: 200px;
+  max-width: 350px;
+}
+.instructor-portal .gs-search-box input {
+  width: 100%;
+  padding: 10px 40px 10px 16px;
+  border: 2px solid var(--gs-border);
+  border-radius: 30px;
+  font-family: inherit;
+  font-size: 13px;
+  outline: none;
+  transition: border-color 0.2s;
+}
+.instructor-portal .gs-search-box input:focus {
+  border-color: var(--gs-mid-blue);
+}
+.instructor-portal .gs-search-box::before {
+  content: '🔍';
+  position: absolute;
+  inset-inline-start: 14px;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 14px;
+}
+.instructor-portal .gs-controls-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+}
+.instructor-portal .gs-filter-select {
+  padding: 10px 14px;
+  border: 2px solid var(--gs-border);
+  border-radius: 30px;
+  font-family: inherit;
+  font-size: 13px;
+  background: #fff;
+  color: #333;
+}
+.instructor-portal .gs-btn-print,
+.instructor-portal .gs-btn-export {
+  padding: 10px 22px;
+  background: linear-gradient(135deg, var(--gs-mid-blue), var(--gs-dark-blue));
+  color: #fff;
+  border: none;
+  border-radius: 30px;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+  box-shadow: 0 3px 10px rgba(46, 109, 164, 0.3);
+}
+.instructor-portal .gs-btn-export {
+  background: #fff;
+  color: var(--gs-mid-blue);
+  border: 2px solid var(--gs-border);
+  box-shadow: none;
+}
+.instructor-portal .gs-btn-print:hover,
+.instructor-portal .gs-btn-export:hover {
+  transform: translateY(-2px);
+}
+
+.instructor-portal .gs-table-wrapper {
+  overflow-x: auto;
+  border-radius: 12px;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.08);
+  max-height: min(75vh, 720px);
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  background: #fff;
+}
+.instructor-portal .tw .gs-final-table {
+  width: 100%;
+  min-width: 1100px;
+  border-collapse: collapse;
+  font-size: 13px;
+  background: #fff;
+  border: none;
+  table-layout: auto;
+}
+.instructor-portal .tw .gs-final-table .gs-col-num {
+  width: 52px;
+  min-width: 52px;
+}
+.instructor-portal .tw .gs-final-table .gs-col-id {
+  width: 150px;
+  min-width: 150px;
+}
+.instructor-portal .tw .gs-final-table .gs-col-name {
+  width: 260px;
+  min-width: 220px;
+}
+.instructor-portal .tw .gs-final-table .gs-col-status {
+  width: 100px;
+  min-width: 90px;
+}
+.instructor-portal .tw .gs-final-table .gs-col-component {
+  width: 88px;
+  min-width: 80px;
+}
+.instructor-portal .tw .gs-final-table .gs-col-summary {
+  width: 76px;
+  min-width: 68px;
+}
+.instructor-portal .tw .gs-final-table .gs-col-record {
+  width: 128px;
+  min-width: 120px;
+}
+.instructor-portal .tw .gs-final-table .gs-col-action {
+  width: 52px;
+  min-width: 48px;
+}
+.instructor-portal .tw .gs-final-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: linear-gradient(135deg, var(--gs-mid-blue), var(--gs-dark-blue));
+  color: #fff;
+  padding: 13px 10px;
+  text-align: center;
+  font-weight: 700;
+  font-size: 12px;
+  white-space: nowrap;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+}
+.instructor-portal .tw .gs-final-table thead th:first-child {
+  border-radius: 0 12px 0 0;
+}
+.instructor-portal .tw .gs-final-table thead th:last-child {
+  border-radius: 12px 0 0 0;
+}
+.instructor-portal .tw .gs-final-table thead th small {
+  font-weight: 400;
+  opacity: 0.8;
+  font-size: 10px;
+}
+.instructor-portal .tw .gs-final-table tbody tr {
+  transition: background 0.15s;
+  border-bottom: 1px solid #e8eef4;
+}
+.instructor-portal .tw .grade-sheet-table.gs-final-table,
+.instructor-portal .tw .gs-final-table {
+  table-layout: auto !important;
+}
+.instructor-portal .tw .gs-final-table tbody tr:nth-child(even) td,
+.instructor-portal .tw .gs-final-table tbody tr:nth-child(odd) td {
+  background-color: inherit;
+}
+.instructor-portal .tw .gs-final-table tbody tr:hover td {
+  background: #ebf3fb !important;
+}
+.instructor-portal .tw .gs-final-table tbody td {
+  padding: 10px;
+  text-align: center;
+  vertical-align: middle;
+  border-inline-start: 1px solid #e8eef4;
+}
+.instructor-portal .gs-row-num {
+  color: var(--gs-mid-blue);
+  font-weight: 700;
+  font-size: 12px;
+  width: 52px;
+  min-width: 52px;
+  max-width: 52px;
+  text-align: center;
+  white-space: nowrap;
+  padding-inline: 6px !important;
+}
+.instructor-portal .gs-student-id {
+  font-family: ui-monospace, monospace;
+  font-size: 11px;
+  color: #555;
+  letter-spacing: 0;
+  width: 150px;
+  min-width: 150px;
+  max-width: 160px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-align: center;
+  padding-inline: 8px !important;
+}
+.instructor-portal .gs-name-col {
+  text-align: start !important;
+  padding-inline: 12px !important;
+  font-weight: 600;
+  color: var(--gs-dark-blue);
+  min-width: 220px;
+  max-width: 320px;
+  white-space: normal;
+  word-break: break-word;
+  line-height: 1.35;
+}
+.instructor-portal .gs-status-badge {
+  background: linear-gradient(90deg, #e8f5e9, #c8e6c9);
+  color: #2e7d32;
+  padding: 3px 10px;
+  border-radius: 12px;
+  font-size: 11px;
+  font-weight: 700;
+  display: inline-block;
+}
+.instructor-portal .gs-score-cell {
+  font-size: 15px;
+  font-weight: 900;
+}
+.instructor-portal .gs-score-a { color: #1b5e20; }
+.instructor-portal .gs-score-b { color: #1565c0; }
+.instructor-portal .gs-score-c { color: #e65100; }
+.instructor-portal .gs-score-d { color: #b71c1c; }
+.instructor-portal .gs-grade-badge {
+  display: inline-block;
+  padding: 3px 10px;
+  border-radius: 10px;
+  font-weight: 800;
+  font-size: 13px;
+}
+.instructor-portal .gs-grade-a { background: #e8f5e9; color: #1b5e20; }
+.instructor-portal .gs-grade-b { background: #e3f2fd; color: #1565c0; }
+.instructor-portal .gs-grade-c { background: #fff3e0; color: #e65100; }
+.instructor-portal .gs-grade-d { background: #ffebee; color: #b71c1c; }
+.instructor-portal .gs-grade-empty {
+  background: #f1f5f9;
+  color: #64748b;
+  font-weight: 500;
+}
+.instructor-portal .gs-row-a { background: #f1f8e9; }
+.instructor-portal .gs-row-b { background: #e8f4fd; }
+.instructor-portal .gs-row-c { background: #fff8e1; }
+.instructor-portal .gs-row-d { background: #ffebee; }
+.instructor-portal .gs-row-alt { background: #fafcff; }
+.instructor-portal .gs-points-val {
+  color: var(--gs-mid-blue);
+}
+.instructor-portal .gs-input-cell {
+  padding: 6px 8px !important;
+}
+.instructor-portal .gs-grade-input {
+  width: 100%;
+  max-width: 72px;
+  margin: 0 auto;
+  display: block;
+  padding: 8px 6px;
+  text-align: center;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--gs-dark-blue);
+  border: 1.5px solid #cbd5e1;
+  border-radius: 8px;
+  background: #fff;
+  font-family: inherit;
+}
+.instructor-portal .gs-grade-input:focus {
+  border-color: var(--gs-mid-blue);
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(46, 109, 164, 0.2);
+}
+.instructor-portal .gs-grade-input:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+  background: #f1f5f9;
+}
+.instructor-portal .gs-record-select {
+  width: 100%;
+  max-width: 110px;
+  margin: 0 auto;
+  display: block;
+  font-size: 11px;
+  padding: 6px 4px;
+  border-radius: 8px;
+  border: 1.5px solid #cbd5e1;
+  background: #fff;
+  font-family: inherit;
+}
+.instructor-portal .gs-record-col {
+  width: 120px;
+  min-width: 110px;
+}
+.instructor-portal .gs-action-col {
+  width: 48px;
+  min-width: 48px;
+  padding: 6px !important;
+}
+.instructor-portal .gs-history-btn {
+  padding: 6px 8px;
+  border-radius: 8px;
+  border: 1px solid var(--gs-border);
+  background: #fff;
+  cursor: pointer;
+  font-size: 14px;
+}
+.instructor-portal .gs-history-btn:hover {
+  background: var(--gs-light-blue);
+}
+.instructor-portal .gs-row--dirty td {
+  box-shadow: inset 0 -3px 0 var(--gs-mid-blue);
+}
+.instructor-portal .gs-row--final {
+  opacity: 0.88;
+}
+.instructor-portal .grade-sheet-empty {
+  text-align: center;
+  color: var(--muted);
+  padding: 40px 16px !important;
+}
+
+.instructor-portal .gs-report-footer {
+  background: var(--gs-dark-blue);
+  color: rgba(255, 255, 255, 0.6);
+  padding: 14px 0;
+  display: flex;
+  justify-content: space-between;
+  font-size: 11px;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.instructor-portal .gs-report-footer span {
+  color: var(--gs-accent-gold);
+  font-weight: 600;
+}
+
+@media (max-width: 768px) {
+  .instructor-portal .gs-info-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  .instructor-portal .gs-report-header,
+  .instructor-portal .gs-info-section,
+  .instructor-portal .gs-stats-bar,
+  .instructor-portal .gs-report-panel,
+  .instructor-portal .gs-report-footer {
+    padding-inline: 16px;
+  }
+  .instructor-portal .gs-report-panel {
+    padding-block: 20px;
+  }
+}
+
+@media print {
+  .instructor-portal .no-print,
+  .instructor-portal .grade-sheet-toolbar,
+  .instructor-portal .ph,
+  .instructor-portal .bc {
+    display: none !important;
+  }
+  .instructor-portal .grade-sheet-report {
+    box-shadow: none;
+    border-radius: 0;
+    max-width: none;
+  }
+  .instructor-portal .gs-table-wrapper {
+    max-height: none;
+    overflow: visible;
+  }
+}

@@ -1,5 +1,6 @@
 /* Instructor Portal — matches reference HTML (Arabic/RTL, Cairo, design tokens) */
 @import url('https://fonts.googleapis.com/css2?family=Cairo:wght@300;400;500;600;700;800&display=swap');
+@import './grade-sheet-report.css';
 
 @keyframes spin {
   to { transform: rotate(360deg); }
@@ -1049,10 +1050,23 @@
 .instructor-portal .grade-sheet-root--embedded .grade-sheet-table-card .card-hd {
   flex-shrink: 0;
 }
+.instructor-portal .grade-sheet-table-card {
+  border: 1px solid #bfdbfe;
+  box-shadow: 0 4px 24px rgba(30, 64, 175, 0.08);
+  overflow: hidden;
+}
 .instructor-portal .grade-sheet-table-wrap {
   max-height: min(70vh, 640px);
   overflow: auto;
   -webkit-overflow-scrolling: touch;
+  background: #f8fafc;
+}
+.instructor-portal .tw .grade-sheet-table thead .grade-sheet-head-row--groups th {
+  min-height: 40px;
+}
+.instructor-portal .tw .grade-sheet-table thead .grade-sheet-head-row--cols th {
+  min-height: 46px;
+  top: 40px;
 }
 .instructor-portal .grade-sheet-root--embedded .grade-sheet-table-wrap {
   flex: 1;
@@ -1060,109 +1074,323 @@
   max-height: none;
 }
 .instructor-portal .tw .grade-sheet-table {
-  border-collapse: separate;
-  border-spacing: 0;
+  border-collapse: collapse;
   width: 100%;
+  table-layout: fixed;
+  border: none;
+  background: #fff;
 }
 .instructor-portal .tw .grade-sheet-table thead th {
   position: sticky;
-  top: 0;
   z-index: 2;
-  vertical-align: bottom;
-  line-height: 1.3;
-  background-color: var(--p);
+  vertical-align: middle;
+  text-align: center;
+  line-height: 1.35;
+  padding: 10px 8px !important;
   color: #fff;
-  box-shadow: 0 1px 0 rgba(0, 0, 0, 0.12);
+  font-weight: 600;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  background: var(--p, #1a3a6b);
+}
+.instructor-portal .tw .grade-sheet-table thead .grade-sheet-head-row--groups th {
+  top: 0;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  background: linear-gradient(180deg, #1e40af 0%, #1a3a6b 100%);
+}
+.instructor-portal .tw .grade-sheet-table thead .grade-sheet-head-row--cols th {
+  font-size: 11px;
+  font-weight: 500;
+  text-transform: none;
+  letter-spacing: 0;
+  background: #2563eb;
+}
+.instructor-portal .grade-sheet-group-hdr {
+  background: linear-gradient(180deg, #1e40af 0%, #1a3a6b 100%) !important;
+}
+.instructor-portal .grade-sheet-head-merged {
+  background: linear-gradient(180deg, #1e40af 0%, #1a3a6b 100%) !important;
+  text-transform: none;
+  letter-spacing: 0;
+}
+.instructor-portal .tw .grade-sheet-table thead .grade-sheet-cell--activities {
+  background: linear-gradient(180deg, #1d4ed8 0%, #1e40af 100%) !important;
+}
+.instructor-portal .tw .grade-sheet-table thead .grade-sheet-cell--midterm {
+  background: linear-gradient(180deg, #2563eb 0%, #1d4ed8 100%) !important;
+}
+.instructor-portal .tw .grade-sheet-table thead .grade-sheet-cell--final {
+  background: linear-gradient(180deg, #3b82f6 0%, #2563eb 100%) !important;
+}
+.instructor-portal .grade-sheet-col-group {
+  display: block;
+  font-size: 9px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  opacity: 0.92;
+  margin-bottom: 4px;
+}
+.instructor-portal .grade-sheet-col-title {
+  display: block;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.25;
+}
+.instructor-portal .grade-sheet-col-meta {
+  display: block;
+  font-size: 10px;
+  font-weight: 400;
+  opacity: 0.9;
+  margin-top: 3px;
+}
+.instructor-portal .grade-sheet-col-weight,
+.instructor-portal .grade-sheet-col-max {
+  display: none;
+}
+.instructor-portal .tw .grade-sheet-table tbody tr {
+  transition: background 0.15s ease;
+}
+.instructor-portal .tw .grade-sheet-table tbody tr:hover td {
+  background-color: #eff6ff !important;
+}
+.instructor-portal .tw .grade-sheet-table tbody tr:nth-child(even) td {
+  background-color: #f8fafc;
+}
+.instructor-portal .tw .grade-sheet-table tbody tr:nth-child(odd) td {
+  background-color: #fff;
+}
+.instructor-portal .tw .grade-sheet-table tbody td {
+  border-bottom: 1px solid #e2e8f0;
+  border-inline-end: 1px solid #f1f5f9;
+  padding: 8px 8px !important;
+  vertical-align: middle;
+}
+.instructor-portal .grade-sheet-cell--activities {
+  background-color: #fafbff;
+}
+.instructor-portal .grade-sheet-cell--midterm {
+  background-color: #f5f8ff;
+}
+.instructor-portal .grade-sheet-cell--final {
+  background-color: #f0f6ff;
+}
+.instructor-portal .grade-sheet-stats-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 12px;
+}
+.instructor-portal .grade-sheet-completion-bar {
+  background: linear-gradient(90deg, #eff6ff 0%, #fff 100%);
+  border: 1px solid #bfdbfe;
+  border-radius: var(--rs);
+}
+.instructor-portal .grade-sheet-table-card .card-hd {
+  background: linear-gradient(180deg, #eff6ff 0%, #fff 100%);
+  border-bottom: 1px solid #bfdbfe;
+  padding-bottom: 12px;
 }
 .instructor-portal .grade-sheet-sticky-col {
   position: sticky;
   inset-inline-start: 0;
   left: 0;
-  z-index: 1;
-  background-color: var(--sur);
-  min-width: 160px;
-  box-shadow: 2px 0 4px rgba(0, 0, 0, 0.06);
+  z-index: 3;
+  background-color: inherit;
+  width: 200px;
+  min-width: 200px;
+  max-width: 200px;
+  text-align: start !important;
+  box-shadow: 4px 0 8px -2px rgba(30, 58, 138, 0.08);
 }
 .instructor-portal .tw .grade-sheet-table thead .grade-sheet-sticky-col {
-  z-index: 5;
-  background-color: var(--p);
-  box-shadow: 2px 1px 4px rgba(0, 0, 0, 0.1);
+  z-index: 6;
+  background: linear-gradient(180deg, #1e40af 0%, #1a3a6b 100%) !important;
 }
-.instructor-portal .tw .grade-sheet-table tbody .grade-sheet-sticky-col {
-  background-color: var(--sur);
+.instructor-portal .grade-sheet-student-cell {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
 }
-.instructor-portal .grade-sheet-row--risk .grade-sheet-sticky-col {
-  background-color: var(--err-bg, #fef2f2);
+.instructor-portal .grade-sheet-student-avatar {
+  flex-shrink: 0;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  font-weight: 700;
+  color: #1e40af;
+  background: linear-gradient(135deg, #dbeafe 0%, #bfdbfe 100%);
+  border: 1px solid #93c5fd;
 }
-.instructor-portal .grade-sheet-component-col {
-  text-align: center;
-  min-width: 88px;
-}
-.instructor-portal .grade-sheet-col-title {
-  display: block;
-  font-size: 12px;
-}
-.instructor-portal .grade-sheet-col-weight,
-.instructor-portal .grade-sheet-col-max {
-  display: block;
-  font-size: 11px;
-  font-weight: 400;
-  opacity: 0.85;
+.instructor-portal .grade-sheet-student-meta {
+  min-width: 0;
+  flex: 1;
 }
 .instructor-portal .grade-sheet-student-name {
   font-weight: 600;
   font-size: 13px;
+  line-height: 1.3;
+  color: #0f172a;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .instructor-portal .grade-sheet-student-id {
   font-size: 11px;
-  color: var(--muted);
+  color: #64748b;
+  margin-top: 2px;
+  font-variant-numeric: tabular-nums;
+}
+.instructor-portal .grade-sheet-component-col {
+  text-align: center;
+  width: 96px;
+  min-width: 96px;
+}
+.instructor-portal .grade-sheet-summary-col {
+  width: 88px;
+  min-width: 88px;
+  text-transform: uppercase;
+  font-size: 10px !important;
+  background: #f8fafc !important;
+}
+.instructor-portal .tw .grade-sheet-table thead .grade-sheet-summary-col {
+  background: linear-gradient(180deg, #1e3a8a 0%, #172554 100%) !important;
+}
+.instructor-portal .grade-sheet-status-col {
+  width: 124px;
+  min-width: 124px;
+}
+.instructor-portal .grade-sheet-action-col {
+  width: 52px;
+  min-width: 52px;
+  padding: 6px !important;
+  text-align: center;
 }
 .instructor-portal .grade-sheet-input-cell {
   text-align: center;
-  padding: 8px 6px !important;
+  padding: 6px 8px !important;
 }
 .instructor-portal .grade-sheet-input {
-  width: 72px;
-  min-width: 56px;
-  padding: 6px 8px;
+  width: 100%;
+  max-width: 76px;
+  margin: 0 auto;
+  display: block;
+  padding: 8px 6px;
   text-align: center;
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 600;
+  color: #1e3a8a;
+  border: 1.5px solid #cbd5e1;
+  border-radius: 8px;
+  background: #fff;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+.instructor-portal .grade-sheet-input:hover:not(:disabled) {
+  border-color: #93c5fd;
+}
+.instructor-portal .grade-sheet-input:focus {
+  border-color: #2563eb;
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.2);
 }
 .instructor-portal .grade-sheet-input:disabled {
-  opacity: 0.65;
+  opacity: 0.5;
   cursor: not-allowed;
+  background: #f1f5f9;
+  color: #94a3b8;
 }
-.instructor-portal .grade-sheet-total-col {
-  text-align: center;
-  min-width: 72px;
-}
-.instructor-portal .grade-sheet-total {
+.instructor-portal .grade-sheet-score-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 44px;
+  padding: 6px 10px;
+  border-radius: 8px;
   font-weight: 700;
-  font-size: 14px;
+  font-size: 13px;
+  line-height: 1;
 }
 .instructor-portal .grade-sheet-total--pass {
-  color: var(--ok);
+  color: #166534;
+  background: #dcfce7;
+  border: 1px solid #86efac;
 }
 .instructor-portal .grade-sheet-total--fail {
-  color: var(--err);
+  color: #b91c1c;
+  background: #fee2e2;
+  border: 1px solid #fca5a5;
 }
+.instructor-portal .grade-sheet-total--empty,
+.instructor-portal .grade-sheet-letter-pill--empty {
+  color: #64748b;
+  background: #f1f5f9;
+  border: 1px solid #e2e8f0;
+  font-weight: 500;
+}
+.instructor-portal .grade-sheet-letter-pill {
+  color: #1e40af;
+  background: #dbeafe;
+  border: 1px solid #93c5fd;
+}
+.instructor-portal .grade-sheet-letter-pill--fail {
+  color: #b91c1c;
+  background: #fee2e2;
+  border: 1px solid #fca5a5;
+}
+.instructor-portal .grade-sheet-total-col,
 .instructor-portal .grade-sheet-letter-col {
   text-align: center;
 }
-.instructor-portal .grade-sheet-row--risk {
-  background: var(--err-bg, #fef2f2);
+.instructor-portal .grade-sheet-status-col select,
+.instructor-portal .tw .grade-sheet-table tbody td select.fc {
+  width: 100%;
+  max-width: 116px;
+  margin: 0 auto;
+  display: block;
+  font-size: 11px;
+  padding: 7px 6px;
+  border-radius: 8px;
+  border: 1.5px solid #cbd5e1;
+  background: #fff;
+  color: #334155;
+}
+.instructor-portal .grade-sheet-status-col select:focus {
+  border-color: #2563eb;
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.15);
+}
+.instructor-portal .grade-sheet-action-col .btn {
+  padding: 6px 8px;
+  border-radius: 8px;
+  border-color: #bfdbfe;
+  color: #2563eb;
+  background: #eff6ff;
+}
+.instructor-portal .grade-sheet-action-col .btn:hover {
+  background: #dbeafe;
+  border-color: #93c5fd;
+}
+.instructor-portal .grade-sheet-row--risk td {
+  background: #fff1f2 !important;
+}
+.instructor-portal .grade-sheet-row--risk:hover td {
+  background: #ffe4e6 !important;
 }
 .instructor-portal .grade-sheet-row--dirty td {
-  background-image: linear-gradient(transparent 95%, rgba(245, 158, 11, 0.15) 95%);
+  box-shadow: inset 0 -3px 0 #3b82f6;
 }
 .instructor-portal .grade-sheet-row--final {
-  opacity: 0.92;
+  opacity: 0.85;
 }
 .instructor-portal .grade-sheet-empty {
   text-align: center;
   color: var(--muted);
-  padding: 32px 16px !important;
+  padding: 40px 16px !important;
 }
 .instructor-portal[dir='ltr'] .grade-sheet-component-col,
 .instructor-portal[dir='ltr'] .grade-sheet-total-col,

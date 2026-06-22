@@ -6,6 +6,8 @@ import { getLocalizedName } from '../../utils/localizedName'
 import { getGradingScaleFromUniversitySettings, getGradeTypesFromUniversitySettings, mergeGradeConfigWithTypes, GRADE_COMPONENT_DB_COLUMNS } from '../../utils/getCollegeSettings'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
+import { writeGradeAuditLog } from '../../utils/gradeAudit'
+import { RECORD_STATUS_OPTIONS } from '../../utils/gradeAssessmentGroups'
 import { ArrowLeft, ArrowRight, Save, Check, FileText, Users } from 'lucide-react'
 
 export default function ClassGrades() {
@@ -21,7 +23,8 @@ export default function ClassGrades() {
   const enrollmentIdParam = searchParams.get('enrollmentId')
   const singleEnrollmentId = enrollmentIdParam ? Number(enrollmentIdParam) : null
   const navigate = useNavigate()
-  const { userRole, collegeId: authCollegeId } = useAuth()
+  const { userRole, collegeId: authCollegeId, user } = useAuth()
+  const [appUserId, setAppUserId] = useState(null)
   const [loading, setLoading] = useState(false)
   const [fetching, setFetching] = useState(true)
   const [error, setError] = useState('')
@@ -36,6 +39,16 @@ export default function ClassGrades() {
     fetchClassData()
     fetchEnrollments()
   }, [classId])
+
+  useEffect(() => {
+    if (!user?.email) return
+    supabase
+      .from('users')
+      .select('id')
+      .ilike('email', user.email)
+      .maybeSingle()
+      .then(({ data }) => data?.id && setAppUserId(data.id))
+  }, [user?.email])
 
   const fetchClassData = async () => {
     try {
@@ -250,6 +263,16 @@ export default function ClassGrades() {
     }
   }
 
+  const handleRecordStatusChange = (enrollmentId, recordStatus) => {
+    setGrades((prev) => ({
+      ...prev,
+      [enrollmentId]: {
+        ...(prev[enrollmentId] || {}),
+        record_status: recordStatus,
+      },
+    }))
+  }
+
   const handleStatusChange = (enrollmentId, status) => {
     setGrades(prev => ({
       ...prev,
@@ -271,7 +294,7 @@ export default function ClassGrades() {
       const allowedKeys = new Set([
         'enrollment_id', 'class_id', 'student_id', 'semester_id', 'college_id',
         ...GRADE_COMPONENT_DB_COLUMNS,
-        'numeric_grade', 'letter_grade', 'gpa_points', 'status', 'notes',
+        'numeric_grade', 'letter_grade', 'gpa_points', 'status', 'notes', 'record_status',
         'graded_by', 'graded_at', 'approved_by', 'approved_at', 'updated_at',
       ])
       for (const grade of gradesToSave) {
@@ -298,13 +321,31 @@ export default function ClassGrades() {
         if (gradeData.college_id == null) gradeData.college_id = classCollegeId ?? enrollment?.college_id ?? authCollegeId ?? null
         if (gradeData.semester_id == null) gradeData.semester_id = classSemesterId ?? enrollment?.semester_id ?? null
 
-        const { error: upsertError } = await supabase
+        const { data: oldRow } = await supabase
+          .from('grade_components')
+          .select('*')
+          .eq('enrollment_id', enrollment_id)
+          .maybeSingle()
+
+        const { data: savedRow, error: upsertError } = await supabase
           .from('grade_components')
           .upsert(gradeData, {
             onConflict: 'enrollment_id',
           })
+          .select()
+          .single()
 
         if (upsertError) throw upsertError
+
+        await writeGradeAuditLog({
+          oldRow,
+          newRow: savedRow,
+          enrollmentId: enrollment_id,
+          classId: parseInt(classId, 10),
+          gradeComponentId: savedRow?.id,
+          userId: appUserId,
+          changeSource: 'admin_override',
+        })
       }
 
       setSuccess(true)
@@ -493,6 +534,7 @@ export default function ClassGrades() {
                   )}
                   <th className={`px-6 py-3 text-xs font-medium text-gray-500 uppercase tracking-wider ${isArabicLayout ? 'text-right' : 'text-left'}`}>{t('grading.classGrades.notes')}</th>
                   <th className={`px-6 py-3 text-xs font-medium text-gray-500 uppercase tracking-wider ${isArabicLayout ? 'text-right' : 'text-left'}`}>{t('grading.classGrades.status')}</th>
+                  <th className={`px-6 py-3 text-xs font-medium text-gray-500 uppercase tracking-wider ${isArabicLayout ? 'text-right' : 'text-left'}`}>{t('instructorPortal.recordStatusLabel', 'Record status')}</th>
                 </tr>
               </thead>
               <tbody className="bg-white divide-y divide-gray-200">
@@ -637,6 +679,19 @@ export default function ClassGrades() {
                           <option value="submitted">{t('grading.classGrades.submitted')}</option>
                           <option value="approved">{t('grading.classGrades.approved')}</option>
                           <option value="final">{t('grading.classGrades.finalStatus')}</option>
+                        </select>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <select
+                          value={grade.record_status || 'not_recorded'}
+                          onChange={(e) => handleRecordStatusChange(enrollment.id, e.target.value)}
+                          className="px-2 py-1 border border-gray-300 rounded focus:ring-2 focus:ring-primary-500 text-sm"
+                        >
+                          {RECORD_STATUS_OPTIONS.map((s) => (
+                            <option key={s} value={s}>
+                              {t(`instructorPortal.recordStatus.${s}`, s)}
+                            </option>
+                          ))}
                         </select>
                       </td>
                     </tr>
