@@ -12,7 +12,7 @@ A modern, full-featured university management system built with React, Vite, Tai
 - 📝 **Examinations**: Schedule and manage examinations and assessments
 - ⚙️ **Settings**: User preferences and system configuration
 - 🎨 **Modern UI**: Beautiful, responsive design with Tailwind CSS
-
+ 
 ## Tech Stack
 
 - **Frontend**: React 19, Vite
