@@ -5,6 +5,7 @@ import { useLanguage } from '../../contexts/LanguageContext'
 import { useAuth } from '../../contexts/AuthContext'
 import { supabase } from '../../lib/supabase'
 import { getLocalizedName } from '../../utils/localizedName'
+import { isExamEnterableForStudent } from '../../utils/subjectExamDateTime'
 
 const UI = {
   p: '#1a3a6b',
@@ -114,6 +115,17 @@ export default function StudentELearningExams() {
         if (error) throw error
 
         const examIds = (exams || []).map((x) => x.id)
+
+        // Best-effort: flip due scheduled exams to open so RLS/UI stay consistent
+        await Promise.all(
+          (exams || [])
+            .filter((x) => x.status === 'EX_SCH')
+            .map(async (x) => {
+              const { data } = await supabase.rpc('sync_subject_exam_window_status', { p_exam_id: x.id })
+              if (data && data !== x.status) x.status = data
+            }),
+        )
+
         const { data: subs } = await supabase
           .from('exam_submissions')
           .select('id, exam_id, status, points_earned, grade, submitted_at')
@@ -276,10 +288,10 @@ export default function StudentELearningExams() {
           const end = fmtTime(ex.end_time)
           const soonMs = msUntil(ex)
           const isTomorrow = soonMs != null && soonMs < 24 * 60 * 60 * 1000 && soonMs > 0
-          const canEnter = ex.status === 'EX_OPN'
+          const canEnter = isExamEnterableForStudent(ex)
 
-          const accent = ex.status === 'EX_OPN' ? UI.info : isTomorrow ? UI.err : UI.warn
-          const accentBg = ex.status === 'EX_OPN' ? UI.infoBg : isTomorrow ? UI.errBg : UI.warnBg
+          const accent = canEnter ? UI.info : isTomorrow ? UI.err : UI.warn
+          const accentBg = canEnter ? UI.infoBg : isTomorrow ? UI.errBg : UI.warnBg
 
           return (
             <div key={ex.id} className="bg-white rounded-xl border shadow-sm p-6" style={{ borderColor: UI.bdr, borderRight: `4px solid ${accent}` }}>
@@ -315,14 +327,16 @@ export default function StudentELearningExams() {
                 </div>
 
                 <div className="text-center">
-                  <span className="inline-flex px-3 py-1 rounded-full text-xs font-extrabold" style={{ backgroundColor: ex.status === 'EX_OPN' ? UI.infoBg : UI.bdr, color: ex.status === 'EX_OPN' ? UI.info : UI.txt }}>
-                    {ex.status === 'EX_OPN'
+                  <span className="inline-flex px-3 py-1 rounded-full text-xs font-extrabold" style={{ backgroundColor: canEnter ? UI.infoBg : UI.bdr, color: canEnter ? UI.info : UI.txt }}>
+                    {canEnter
                       ? t('studentPortal.elearning.open', 'Open')
                       : ex.status === 'EX_SCH'
                         ? t('studentPortal.elearning.scheduled', 'Scheduled')
                         : ex.status === 'EX_REL'
                           ? t('studentPortal.elearning.resultsReleased', 'Results released')
-                          : t('studentPortal.elearning.closed', 'Closed')}
+                          : ex.status === 'EX_OPN'
+                            ? t('studentPortal.elearning.open', 'Open')
+                            : t('studentPortal.elearning.closed', 'Closed')}
                   </span>
                   {isTomorrow && (
                     <>
@@ -342,7 +356,10 @@ export default function StudentELearningExams() {
 
         {list.length === 0 && (
           <div className="bg-white rounded-xl border p-6 text-sm" style={{ borderColor: UI.bdr, color: UI.muted }}>
-            {t('common.noData', 'No data found')}
+            <p>{t('studentPortal.elearning.noExamsYet', 'No published exams for your enrolled courses yet.')}</p>
+            <p style={{ marginTop: 8, fontSize: 12 }}>
+              {t('studentPortal.elearning.noExamsHint', 'Exams appear here after your instructor publishes them (scheduled or open). Draft exams are not visible.')}
+            </p>
           </div>
         )}
       </div>

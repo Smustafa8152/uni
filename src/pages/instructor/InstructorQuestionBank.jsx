@@ -8,12 +8,25 @@ import { supabase } from '../../lib/supabase'
 import { downloadQuestionBankTemplate, parseQuestionBankExcelFile } from '../../utils/questionBankExcel'
 import { QUESTION_TYPES_WITH_ALL, QUESTION_TYPE_OPTIONS } from '../../constants/questionTypes'
 import { getActiveInstructorByEmail } from '../../utils/getActiveInstructorByEmail'
+import QuestionBankCategoryPanel, { buildCategoryTree } from '../../components/exam/QuestionBankCategoryPanel'
+import QuestionPreviewPanel from '../../components/exam/QuestionPreviewPanel'
+import {
+  buildCorrectAnswers,
+  canAddOption,
+  defaultTrueFalseOptions,
+  optionsFromDb,
+  optionsToDb,
+  optionTexts,
+  QUESTION_STATUS_OPTIONS,
+} from '../../utils/questionValidation'
 
 const QB_DEFAULT_OPTIONS = ['Option 1', 'Option 2', 'Option 3', 'Option 4']
 
-function getEmptyQuestion() {
+function getEmptyQuestion(isArabic = false) {
   return {
+    question_name: '',
     question_type: 'multiple_choice',
+    status: 'draft',
     difficulty_level: 3,
     bloom_level: 'understand',
     unit_number: 1,
@@ -22,6 +35,10 @@ function getEmptyQuestion() {
     options: [...QB_DEFAULT_OPTIONS],
     correctIndices: [0],
     tags_text: '',
+    category_id: null,
+    general_feedback: '',
+    correct_feedback: '',
+    incorrect_feedback: '',
   }
 }
 
@@ -58,10 +75,9 @@ function parseJsonArray(value) {
   return []
 }
 
-function optionsFromDb(q) {
-  const raw = q?.options
-  if (Array.isArray(raw)) return raw.map((x) => String(x))
-  return []
+function rowOptionLabel(opt) {
+  if (typeof opt === 'string') return opt
+  return String(opt?.text ?? opt?.label ?? '')
 }
 
 function getTypeLabel(t, type) {
@@ -93,7 +109,7 @@ function getQuestionPlaceholder(t, type) {
   if (type === 'order') return t('instructorPortal.orderPlaceholderHint')
   if (type === 'numeric') return t('instructorPortal.numericPlaceholderHint')
   if (type === 'file_upload') return t('instructorPortal.fileUploadPlaceholderHint')
-  return t('instructorPortal.optionFocus')
+  return t('instructorPortal.enterQuestionText', 'Enter question text')
 }
 
 function getQuestionTextareaRows(type) {
@@ -131,13 +147,67 @@ export default function InstructorQuestionBank({ embedded = false, embedClassId 
   const [typeFilter, setTypeFilter] = useState('')
   const [difficultyFilter, setDifficultyFilter] = useState('')
   const [bloomFilter, setBloomFilter] = useState('')
+  const [statusFilter, setStatusFilter] = useState('')
+  const [searchQuery, setSearchQuery] = useState('')
+  const [categoryFilter, setCategoryFilter] = useState(null)
+  const [categories, setCategories] = useState([])
+  const [previewQuestion, setPreviewQuestion] = useState(null)
+  const [selectedIds, setSelectedIds] = useState(new Set())
   const [showForm, setShowForm] = useState(false)
   const [importing, setImporting] = useState(false)
   const importFileRef = useRef(null)
   const importExcelRef = useRef(null)
 
+  const isArabic = language === 'ar'
+
+  const categoryTree = useMemo(() => buildCategoryTree(categories), [categories])
+  const categoryCounts = useMemo(() => {
+    const counts = {}
+    questions.forEach((q) => {
+      if (q.category_id) counts[q.category_id] = (counts[q.category_id] || 0) + 1
+    })
+    return counts
+  }, [questions])
+
+  const filteredQuestions = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase()
+    return questions.filter((row) => {
+      if (categoryFilter && row.category_id !== categoryFilter) return false
+      if (statusFilter && row.status !== statusFilter) return false
+      if (!q) return true
+      return (
+        String(row.question_text || '').toLowerCase().includes(q) ||
+        String(row.question_name || '').toLowerCase().includes(q)
+      )
+    })
+  }, [questions, searchQuery, categoryFilter, statusFilter])
   const selectedClass = useMemo(() => classes.find((c) => c.id === selectedClassId) || null, [classes, selectedClassId])
   const subjectCode = selectedClass?.subjects?.code || 'ENG101'
+
+  const classOptionLabel = (cls) => {
+    const code = cls.subjects?.code || t('instructorPortal.unknownSubject', 'Subject')
+    const name = getLocalizedName(cls.subjects, isArabic) || code
+    return `${code} — ${name} (${t('instructorPortal.section')} ${cls.section})`
+  }
+
+  const classSelector = (
+    <select
+      className="fc qb-class-select"
+      value={selectedClassId || ''}
+      onChange={(e) => setSelectedClassId(Number(e.target.value))}
+      aria-label={t('instructorPortal.selectCourse', 'Select course')}
+    >
+      {classes.length === 0 ? (
+        <option value="">{t('instructorPortal.noCoursesAvailable', 'No courses available')}</option>
+      ) : (
+        classes.map((cls) => (
+          <option key={cls.id} value={cls.id}>
+            {classOptionLabel(cls)}
+          </option>
+        ))
+      )}
+    </select>
+  )
 
   const stats = useMemo(() => {
     const total = questions.length
@@ -160,10 +230,24 @@ export default function InstructorQuestionBank({ embedded = false, embedClassId 
     loadQuestions(selectedClassId)
   }, [selectedClassId, classes, typeFilter, difficultyFilter, bloomFilter])
 
+  const loadCategories = async (subjectId) => {
+    if (!subjectId) {
+      setCategories([])
+      return
+    }
+    const { data } = await supabase
+      .from('subject_question_categories')
+      .select('*')
+      .eq('subject_id', subjectId)
+      .order('sort_order', { ascending: true })
+      .order('id', { ascending: true })
+    setCategories(data || [])
+  }
+
   const initialize = async () => {
     setLoading(true)
     try {
-      const [{ data: instructor }, { data: userRow }] = await Promise.all([
+      const [instructor, { data: userRow }] = await Promise.all([
         getActiveInstructorByEmail(user.email),
         supabase.from('users').select('id').eq('email', user.email).maybeSingle(),
       ])
@@ -175,12 +259,14 @@ export default function InstructorQuestionBank({ embedded = false, embedClassId 
         return
       }
 
-      const { data: cls } = await supabase
+      const { data: cls, error: clsErr } = await supabase
         .from('classes')
         .select('id, section, subject_id, subjects(id, code, name_en, name_ar)')
         .eq('instructor_id', instructor.id)
         .eq('status', 'active')
         .order('id', { ascending: false })
+
+      if (clsErr) console.error(clsErr)
 
       const list = cls || []
       setClasses(list)
@@ -217,6 +303,7 @@ export default function InstructorQuestionBank({ embedded = false, embedClassId 
 
       const { data } = await query
       setQuestions(data || [])
+      await loadCategories(classObj.subject_id)
 
       const next = new URLSearchParams(searchParams)
       next.set('classId', String(classId))
@@ -230,21 +317,79 @@ export default function InstructorQuestionBank({ embedded = false, embedClassId 
 
   const resetForm = () => {
     setEditingId(null)
-    setForm(getEmptyQuestion())
+    setForm(getEmptyQuestion(isArabic))
     setShowForm(false)
   }
 
   const qbAddOption = () => {
+    if (!canAddOption(form.question_type)) return
     setForm((p) => {
       const opts = [...(p.options || [])]
-      opts.push(`${opts.length + 1}`)
+      opts.push(`${t('instructorPortal.optionLabel')} ${opts.length + 1}`)
       return { ...p, options: opts }
     })
   }
 
+  const qbUpdateOptionFeedback = (index, feedback) => {
+    setForm((p) => {
+      const opts = normalizeOptionsForForm(p.options)
+      opts[index] = { ...opts[index], feedback }
+      return { ...p, options: opts }
+    })
+  }
+
+  function normalizeOptionsForForm(raw) {
+    return optionsFromDb(raw).length ? optionsFromDb(raw) : [{ text: '', feedback: '' }]
+  }
+
+  const buildPreviewFromForm = () => ({
+    question_type: form.question_type,
+    question_text: form.question_text,
+    question_name: form.question_name,
+    status: form.status,
+    estimated_marks: form.estimated_marks,
+    options: optionsToDb(form.options),
+    correct_answers: buildCorrectAnswers(form),
+    general_feedback: form.general_feedback,
+    correct_feedback: form.correct_feedback,
+    incorrect_feedback: form.incorrect_feedback,
+  })
+
+  const toggleSelected = (id) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+
+  const bulkDelete = async () => {
+    if (selectedIds.size === 0) return
+    if (!confirm(t('instructorPortal.confirmBulkDelete', 'Delete selected questions?'))) return
+    const ids = [...selectedIds]
+    await supabase
+      .from('subject_question_bank')
+      .update({ is_active: false, updated_at: new Date().toISOString() })
+      .in('id', ids)
+    setSelectedIds(new Set())
+    if (selectedClassId) loadQuestions(selectedClassId)
+  }
+
+  const bulkMoveCategory = async (categoryId) => {
+    if (selectedIds.size === 0) return
+    const ids = [...selectedIds]
+    await supabase
+      .from('subject_question_bank')
+      .update({ category_id: categoryId, updated_at: new Date().toISOString() })
+      .in('id', ids)
+    setSelectedIds(new Set())
+    if (selectedClassId) loadQuestions(selectedClassId)
+  }
+
   const qbRemoveOption = (index) => {
     setForm((p) => {
-      const opts = (p.options || []).filter((_, i) => i !== index)
+      const opts = optionsFromDb(p.options).filter((_, i) => i !== index)
       if (usesOrderOptions(p.question_type)) {
         return { ...p, options: opts }
       }
@@ -274,8 +419,9 @@ export default function InstructorQuestionBank({ embedded = false, embedClassId 
 
   const qbUpdateOption = (index, value) => {
     setForm((p) => {
-      const opts = [...(p.options || [])]
-      opts[index] = value
+      const opts = optionsFromDb(p.options)
+      while (opts.length <= index) opts.push({ text: '', feedback: '' })
+      opts[index] = { ...opts[index], text: value }
       return { ...p, options: opts }
     })
   }
@@ -291,17 +437,18 @@ export default function InstructorQuestionBank({ embedded = false, embedClassId 
     let correct_answers = []
 
     if (order) {
-      options = (form.options || []).map((o) => String(o).trim()).filter(Boolean)
+      options = optionTexts(form.options).map((o) => String(o).trim()).filter(Boolean)
       if (options.length < 2) {
         alert(t('instructorPortal.validationOrderMinItems'))
         return
       }
       correct_answers = options.map((_, i) => i)
     } else if (mcTf) {
-      options = (form.options || []).map((o) => String(o).trim()).filter(Boolean)
+      options = optionsToDb(form.options)
+      const optTexts = optionTexts(form.options)
       const rawIdx = [...new Set(form.correctIndices || [])]
         .map((n) => Number(n))
-        .filter((n) => !Number.isNaN(n) && n >= 0 && n < options.length)
+        .filter((n) => !Number.isNaN(n) && n >= 0 && n < optTexts.length)
         .sort((a, b) => a - b)
 
       if (options.length > 0) {
@@ -318,7 +465,7 @@ export default function InstructorQuestionBank({ embedded = false, embedClassId 
           }
         }
       }
-      if (options.length > 0) {
+      if (optTexts.length > 0) {
         correct_answers = qt === 'true_false' ? [rawIdx[0]] : rawIdx
       }
     }
@@ -328,6 +475,9 @@ export default function InstructorQuestionBank({ embedded = false, embedClassId 
       const payload = {
         subject_id: selectedClass.subject_id,
         class_id: selectedClass.id,
+        category_id: form.category_id || null,
+        question_name: (form.question_name || '').trim() || null,
+        status: form.status || 'draft',
         question_type: qt,
         difficulty_level: Number(form.difficulty_level || 3),
         bloom_level: form.bloom_level,
@@ -337,6 +487,9 @@ export default function InstructorQuestionBank({ embedded = false, embedClassId 
         options,
         correct_answers,
         tags: parseOptions(form.tags_text),
+        general_feedback: form.general_feedback || null,
+        correct_feedback: form.correct_feedback || null,
+        incorrect_feedback: form.incorrect_feedback || null,
         updated_at: new Date().toISOString(),
       }
 
@@ -473,17 +626,25 @@ export default function InstructorQuestionBank({ embedded = false, embedClassId 
   const editQuestion = (q) => {
     setShowForm(true)
     setEditingId(q.id)
-    const opts = optionsFromDb(q)
+    const optsFromDb = optionsFromDb(q.options)
     const qt = q.question_type || 'multiple_choice'
     const mcTf = usesMcTfOptions(qt)
     const order = usesOrderOptions(qt)
     let nextOptions = []
     if (mcTf) {
-      nextOptions = opts.length ? opts : [...QB_DEFAULT_OPTIONS]
+      if (qt === 'true_false') {
+        nextOptions = optsFromDb.length === 2 ? optsFromDb : defaultTrueFalseOptions(isArabic).map((text) => ({ text, feedback: '' }))
+      } else {
+        nextOptions = optsFromDb.length ? optsFromDb : QB_DEFAULT_OPTIONS.map((text) => ({ text, feedback: '' }))
+      }
     } else if (order) {
-      nextOptions = opts.length >= 2 ? opts : [...QB_DEFAULT_ORDER_ITEMS]
+      nextOptions = optsFromDb.length >= 2 ? optsFromDb : QB_DEFAULT_ORDER_ITEMS.map((text) => ({ text, feedback: '' }))
     }
+    const optTexts = optionTexts(nextOptions)
     setForm({
+      question_name: q.question_name || '',
+      status: q.status || 'draft',
+      category_id: q.category_id || null,
       question_type: qt,
       difficulty_level: q.difficulty_level || 3,
       bloom_level: q.bloom_level || 'understand',
@@ -491,25 +652,32 @@ export default function InstructorQuestionBank({ embedded = false, embedClassId 
       estimated_marks: q.estimated_marks || 1,
       question_text: q.question_text || '',
       options: nextOptions,
-      correctIndices: buildCorrectIndicesFromDb(qt, mcTf && opts.length ? opts : [], q.correct_answers),
+      correctIndices: buildCorrectIndicesFromDb(qt, optTexts, q.correct_answers),
       tags_text: (q.tags || []).join('\n'),
+      general_feedback: q.general_feedback || '',
+      correct_feedback: q.correct_feedback || '',
+      incorrect_feedback: q.incorrect_feedback || '',
     })
   }
 
   const copyQuestion = (q) => {
     setEditingId(null)
     setShowForm(true)
-    const opts = optionsFromDb(q)
+    const optsFromDb = optionsFromDb(q.options)
     const qt = q.question_type || 'multiple_choice'
     const mcTf = usesMcTfOptions(qt)
     const order = usesOrderOptions(qt)
     let nextOptions = []
     if (mcTf) {
-      nextOptions = opts.length ? [...opts] : [...QB_DEFAULT_OPTIONS]
+      nextOptions = optsFromDb.length ? optsFromDb.map((o) => ({ ...o })) : QB_DEFAULT_OPTIONS.map((text) => ({ text, feedback: '' }))
     } else if (order) {
-      nextOptions = opts.length >= 2 ? [...opts] : [...QB_DEFAULT_ORDER_ITEMS]
+      nextOptions = optsFromDb.length >= 2 ? optsFromDb.map((o) => ({ ...o })) : QB_DEFAULT_ORDER_ITEMS.map((text) => ({ text, feedback: '' }))
     }
+    const optTexts = optionTexts(nextOptions)
     setForm({
+      question_name: q.question_name ? `${q.question_name}_copy` : '',
+      status: 'draft',
+      category_id: q.category_id || null,
       question_type: qt,
       difficulty_level: q.difficulty_level || 3,
       bloom_level: q.bloom_level || 'understand',
@@ -517,8 +685,11 @@ export default function InstructorQuestionBank({ embedded = false, embedClassId 
       estimated_marks: q.estimated_marks || 1,
       question_text: q.question_text || '',
       options: nextOptions,
-      correctIndices: buildCorrectIndicesFromDb(qt, mcTf && opts.length ? opts : [], q.correct_answers),
+      correctIndices: buildCorrectIndicesFromDb(qt, optTexts, q.correct_answers),
       tags_text: (q.tags || []).join('\n'),
+      general_feedback: q.general_feedback || '',
+      correct_feedback: q.correct_feedback || '',
+      incorrect_feedback: q.incorrect_feedback || '',
     })
   }
 
@@ -556,19 +727,6 @@ export default function InstructorQuestionBank({ embedded = false, embedClassId 
               <p className="ph-sub">{t('instructorPortal.questionBankSubtitle', { code: subjectCode })}</p>
             </div>
             <div className="ph-acts">
-          <select
-            className="fc"
-            style={{ width: 'auto' }}
-            value={selectedClassId || ''}
-            onChange={(e) => setSelectedClassId(Number(e.target.value))}
-            aria-label={t('instructorPortal.questionType')}
-          >
-            {classes.map((cls) => (
-              <option key={cls.id} value={cls.id}>
-                {cls.subjects?.code} — {getLocalizedName(cls.subjects, language === 'ar')} ({t('instructorPortal.section')} {cls.section})
-              </option>
-            ))}
-          </select>
           <input
             ref={importFileRef}
             type="file"
@@ -616,7 +774,7 @@ export default function InstructorQuestionBank({ embedded = false, embedClassId 
             onClick={() => {
               setShowForm(true)
               setEditingId(null)
-              setForm(getEmptyQuestion())
+              setForm(getEmptyQuestion(isArabic))
               setTimeout(() => document.getElementById('qb-form-card')?.scrollIntoView?.({ behavior: 'smooth' }), 100)
             }}
           >
@@ -629,23 +787,38 @@ export default function InstructorQuestionBank({ embedded = false, embedClassId 
 
       {embedded && (
         <div className="card" style={{ marginBottom: 16 }}>
-          <div className="card-hd">
+          <div className="card-hd" style={{ flexDirection: 'column', alignItems: 'stretch', gap: 12 }}>
             <div className="card-title">{t('instructorPortal.questionBankTitle')} — {subjectCode}</div>
-            <select
-              className="fc"
-              style={{ width: 'auto' }}
-              value={selectedClassId || ''}
-              onChange={(e) => setSelectedClassId(Number(e.target.value))}
-              aria-label={t('instructorPortal.questionType')}
-            >
-              {classes.map((cls) => (
-                <option key={cls.id} value={cls.id}>
-                  {cls.subjects?.code} — {getLocalizedName(cls.subjects, language === 'ar')} ({t('instructorPortal.section')}{' '}
-                  {cls.section})
-                </option>
-              ))}
-            </select>
+            <div className="fg" style={{ marginBottom: 0 }}>
+              <label className="fl">{t('instructorPortal.selectCourse', 'Subject / course')}</label>
+              {classSelector}
+            </div>
           </div>
+        </div>
+      )}
+
+      {!embedded && (
+        <div className="card" style={{ marginBottom: 16 }}>
+          <div className="fr" style={{ alignItems: 'flex-end', marginBottom: 0 }}>
+            <div className="fg" style={{ marginBottom: 0, flex: 1, maxWidth: 480 }}>
+              <label className="fl">{t('instructorPortal.selectCourse', 'Subject / course')}</label>
+              {classSelector}
+            </div>
+            {selectedClass && (
+              <div style={{ fontSize: 13, color: 'var(--muted)', paddingBottom: 10 }}>
+                {t('instructorPortal.section')} {selectedClass.section}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {classes.length === 0 && !loading && (
+        <div className="alert alert-warn" style={{ marginBottom: 16 }}>
+          {t('instructorPortal.noCoursesForQuestionBank', 'No active courses found. Assign classes to your instructor account first.')}
+          <Link to="/instructor/courses" className="btn btn-p btn-sm" style={{ marginInlineStart: 12 }}>
+            {t('instructorPortal.myCourses')}
+          </Link>
         </div>
       )}
 
@@ -676,6 +849,15 @@ export default function InstructorQuestionBank({ embedded = false, embedClassId 
         <div className="card-hd">
           <div className="card-title">🔍 {t('instructorPortal.filterAndSearch')}</div>
         </div>
+        <div className="fg" style={{ marginBottom: 12 }}>
+          <label className="fl">{t('instructorPortal.searchQuestions', 'Search')}</label>
+          <input
+            className="fc"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder={t('instructorPortal.searchQuestionsPlaceholder', 'Search by name or text…')}
+          />
+        </div>
         <div className="fr3">
           <div className="fg" style={{ marginBottom: 0 }}>
             <label className="fl">{t('instructorPortal.questionType')}</label>
@@ -702,8 +884,31 @@ export default function InstructorQuestionBank({ embedded = false, embedClassId 
             </select>
           </div>
         </div>
+        <div className="fr" style={{ marginTop: 12 }}>
+          <div className="fg" style={{ marginBottom: 0 }}>
+            <label className="fl">{t('instructorPortal.questionStatus', 'Status')}</label>
+            <select className="fc" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
+              <option value="">{t('instructorPortal.allTypes')}</option>
+              {QUESTION_STATUS_OPTIONS.map((s) => (
+                <option key={s} value={s}>{t(`instructorPortal.status_${s}`, s)}</option>
+              ))}
+            </select>
+          </div>
+        </div>
       </div>
 
+      <div className="qb-layout" style={{ display: 'grid', gridTemplateColumns: 'minmax(220px, 260px) 1fr', gap: 16, alignItems: 'start' }}>
+        <QuestionBankCategoryPanel
+          subjectId={selectedClass?.subject_id}
+          tree={categoryTree}
+          selectedCategoryId={categoryFilter}
+          onSelect={setCategoryFilter}
+          onReload={() => loadCategories(selectedClass?.subject_id)}
+          questionCounts={categoryCounts}
+          isArabic={isArabic}
+          platformUserId={platformUserId}
+        />
+        <div>
       {(showForm || editingId) && (
         <div id="qb-form-card" className="card" style={{ marginBottom: 24 }}>
           <div className="card-hd">
@@ -711,6 +916,34 @@ export default function InstructorQuestionBank({ embedded = false, embedClassId 
           </div>
           <div className="qa-compose" style={{ margin: '0 -4px 16px' }}>
             <div className="qa-compose__title">{t('instructorPortal.composeQuestion')}</div>
+            <div className="fr" style={{ marginBottom: 10 }}>
+              <div className="fg" style={{ marginBottom: 0 }}>
+                <label className="fl">{t('instructorPortal.questionName', 'Question name')}</label>
+                <input
+                  className="fc"
+                  value={form.question_name}
+                  onChange={(e) => setForm((p) => ({ ...p, question_name: e.target.value }))}
+                  placeholder="PM_CH2_Q15"
+                />
+              </div>
+              <div className="fg" style={{ marginBottom: 0, maxWidth: 140 }}>
+                <label className="fl">{t('instructorPortal.questionStatus', 'Status')}</label>
+                <select className="fc" value={form.status} onChange={(e) => setForm((p) => ({ ...p, status: e.target.value }))}>
+                  {QUESTION_STATUS_OPTIONS.map((s) => (
+                    <option key={s} value={s}>{t(`instructorPortal.status_${s}`, s)}</option>
+                  ))}
+                </select>
+              </div>
+              <div className="fg" style={{ marginBottom: 0 }}>
+                <label className="fl">{t('instructorPortal.category', 'Category')}</label>
+                <select className="fc" value={form.category_id || ''} onChange={(e) => setForm((p) => ({ ...p, category_id: e.target.value ? Number(e.target.value) : null }))}>
+                  <option value="">{t('instructorPortal.uncategorized', 'Uncategorized')}</option>
+                  {categories.map((c) => (
+                    <option key={c.id} value={c.id}>{isArabic ? c.name_ar || c.name_en : c.name_en || c.name_ar}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
             <div className="fr" style={{ marginBottom: 10, alignItems: 'flex-end' }}>
               <div className="fg" style={{ marginBottom: 0, flex: 1, minWidth: 0 }}>
                 <label className="fl">{t('instructorPortal.questionType')}</label>
@@ -723,16 +956,16 @@ export default function InstructorQuestionBank({ embedded = false, embedClassId 
                       const next = { ...p, question_type: v }
                       if (usesMcTfOptions(v)) {
                         if (v === 'true_false') {
-                          next.options = [t('instructorPortal.trueLabel'), t('instructorPortal.falseLabel')]
+                          next.options = defaultTrueFalseOptions(isArabic).map((text) => ({ text, feedback: '' }))
                           next.correctIndices = [0]
-                        } else if (!Array.isArray(p.options) || p.options.length === 0) {
-                          next.options = [...QB_DEFAULT_OPTIONS]
+                        } else if (!optionsFromDb(p.options).length) {
+                          next.options = QB_DEFAULT_OPTIONS.map((text) => ({ text, feedback: '' }))
                           next.correctIndices = [0]
                         } else {
                           next.correctIndices = [0]
                         }
                       } else if (usesOrderOptions(v)) {
-                        next.options = [...QB_DEFAULT_ORDER_ITEMS]
+                        next.options = QB_DEFAULT_ORDER_ITEMS.map((text) => ({ text, feedback: '' }))
                         next.correctIndices = []
                       } else {
                         next.options = []
@@ -777,49 +1010,61 @@ export default function InstructorQuestionBank({ embedded = false, embedClassId 
                     ? t('instructorPortal.validationSelectCorrectTf')
                     : t('instructorPortal.validationSelectCorrectMc')}
                 </div>
-                {(form.options || []).map((opt, i) => {
+                {(optionsFromDb(form.options) || []).map((opt, i) => {
                   const isMc = form.question_type === 'multiple_choice'
+                  const isTf = form.question_type === 'true_false'
                   const isCorrect = isMc
                     ? (form.correctIndices || []).includes(i)
                     : (form.correctIndices || [])[0] === i
                   return (
-                    <div key={i} className={`q-opt q-opt--lite ${isCorrect ? 'correct' : ''}`}>
-                      {isMc ? (
+                    <div key={i} className={`q-opt q-opt--lite ${isCorrect ? 'correct' : ''}`} style={{ flexDirection: 'column', alignItems: 'stretch', gap: 4 }}>
+                      <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                        {isMc ? (
+                          <input
+                            type="checkbox"
+                            checked={isCorrect}
+                            onChange={() => toggleMcCorrect(i)}
+                            aria-label={t('instructorPortal.correctAnswer', { index: i + 1 })}
+                            style={{ width: 18, height: 18, accentColor: 'var(--p)' }}
+                          />
+                        ) : (
+                          <input
+                            type="radio"
+                            name="qb-tf-correct"
+                            checked={isCorrect}
+                            onChange={() => setTfCorrect(i)}
+                            aria-label={t('instructorPortal.correctAnswer', { index: i + 1 })}
+                          />
+                        )}
                         <input
-                          type="checkbox"
-                          checked={isCorrect}
-                          onChange={() => toggleMcCorrect(i)}
-                          aria-label={t('instructorPortal.correctAnswer', { index: i + 1 })}
-                          style={{ width: 18, height: 18, accentColor: 'var(--p)' }}
+                          type="text"
+                          className="fc"
+                          value={opt.text || ''}
+                          readOnly={isTf}
+                          onChange={(e) => qbUpdateOption(i, e.target.value)}
+                          placeholder={`${t('instructorPortal.optionLabel')} ${i + 1}`}
+                          style={{ flex: 1, minWidth: 0 }}
                         />
-                      ) : (
-                        <input
-                          type="radio"
-                          name="qb-tf-correct"
-                          checked={isCorrect}
-                          onChange={() => setTfCorrect(i)}
-                          aria-label={t('instructorPortal.correctAnswer', { index: i + 1 })}
-                        />
-                      )}
+                        {isMc && (form.options || []).length > 2 && (
+                          <button
+                            type="button"
+                            className="btn btn-gh btn-sm"
+                            onClick={() => qbRemoveOption(i)}
+                            aria-label={t('instructorPortal.removeOption')}
+                            style={{ padding: '4px 8px' }}
+                          >
+                            ×
+                          </button>
+                        )}
+                      </div>
                       <input
                         type="text"
                         className="fc"
-                        value={typeof opt === 'string' ? opt : ''}
-                        onChange={(e) => qbUpdateOption(i, e.target.value)}
-                        placeholder={`${t('instructorPortal.optionLabel')} ${i + 1}`}
-                        style={{ flex: 1, minWidth: 0 }}
+                        value={opt.feedback || ''}
+                        onChange={(e) => qbUpdateOptionFeedback(i, e.target.value)}
+                        placeholder={t('instructorPortal.optionFeedback', 'Feedback for this response')}
+                        style={{ fontSize: 12, marginInlineStart: 26 }}
                       />
-                      {form.question_type === 'multiple_choice' && (form.options || []).length > 2 && (
-                        <button
-                          type="button"
-                          className="btn btn-gh btn-sm"
-                          onClick={() => qbRemoveOption(i)}
-                          aria-label={t('instructorPortal.removeOption')}
-                          style={{ padding: '4px 8px' }}
-                        >
-                          ×
-                        </button>
-                      )}
                     </div>
                   )
                 })}
@@ -884,11 +1129,28 @@ export default function InstructorQuestionBank({ embedded = false, embedClassId 
               </div>
             )}
             <div className="qa-compose__actions">
-              {(usesMcTfOptions(form.question_type) || usesOrderOptions(form.question_type)) && (
+              {canAddOption(form.question_type) && (
                 <button type="button" className="btn btn-gh btn-sm" onClick={qbAddOption}>
                   + {t('instructorPortal.addOption')}
                 </button>
               )}
+            </div>
+          </div>
+
+          <div className="fr">
+            <div className="fg">
+              <label className="fl">{t('instructorPortal.generalFeedback', 'General feedback')}</label>
+              <textarea className="fc" rows={2} value={form.general_feedback} onChange={(e) => setForm((p) => ({ ...p, general_feedback: e.target.value }))} />
+            </div>
+          </div>
+          <div className="fr">
+            <div className="fg">
+              <label className="fl">{t('instructorPortal.correctFeedback', 'Feedback for correct response')}</label>
+              <textarea className="fc" rows={2} value={form.correct_feedback} onChange={(e) => setForm((p) => ({ ...p, correct_feedback: e.target.value }))} />
+            </div>
+            <div className="fg">
+              <label className="fl">{t('instructorPortal.incorrectFeedback', 'Feedback for incorrect response')}</label>
+              <textarea className="fc" rows={2} value={form.incorrect_feedback} onChange={(e) => setForm((p) => ({ ...p, incorrect_feedback: e.target.value }))} />
             </div>
           </div>
 
@@ -919,9 +1181,15 @@ export default function InstructorQuestionBank({ embedded = false, embedClassId 
               <textarea className="fc" rows={2} value={form.tags_text} onChange={(e) => setForm((p) => ({ ...p, tags_text: e.target.value }))} />
             </div>
           </div>
-          <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
+          <div style={{ display: 'flex', gap: 8, marginTop: 12, flexWrap: 'wrap' }}>
             <button type="button" className="btn btn-p" onClick={saveQuestion} disabled={saving}>
               {editingId ? t('instructorPortal.edit') : t('instructorPortal.add')}
+            </button>
+            <button type="button" className="btn btn-gh" onClick={() => setPreviewQuestion(buildPreviewFromForm())}>
+              {t('instructorPortal.previewQuestion', 'Preview')}
+            </button>
+            <button type="button" className="btn btn-gh" onClick={async () => { await saveQuestion(); setPreviewQuestion(buildPreviewFromForm()) }}>
+              {t('instructorPortal.saveAndPreview', 'Save & preview')}
             </button>
             <button type="button" className="btn btn-gh" onClick={resetForm}>
               {t('common.cancel')}
@@ -931,17 +1199,33 @@ export default function InstructorQuestionBank({ embedded = false, embedClassId 
       )}
 
       <div className="card">
-        <div className="card-hd">
+        <div className="card-hd" style={{ flexWrap: 'wrap', gap: 8 }}>
           <div className="card-title">📋 {t('instructorPortal.questionList')}</div>
+          {selectedIds.size > 0 && (
+            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginInlineStart: 'auto' }}>
+              <select className="fc" style={{ width: 'auto' }} defaultValue="" onChange={(e) => { if (e.target.value) bulkMoveCategory(Number(e.target.value)); e.target.value = '' }}>
+                <option value="">{t('instructorPortal.bulkMove', 'Move to…')}</option>
+                {categories.map((c) => (
+                  <option key={c.id} value={c.id}>{isArabic ? c.name_ar || c.name_en : c.name_en || c.name_ar}</option>
+                ))}
+              </select>
+              <button type="button" className="btn btn-err btn-sm" onClick={bulkDelete}>
+                {t('instructorPortal.bulkDelete', 'Delete selected')} ({selectedIds.size})
+              </button>
+            </div>
+          )}
         </div>
 
-        {questions.map((q, idx) => (
+        {filteredQuestions.map((q, idx) => (
           <div key={q.id} className="q-card">
             <div className="q-card-hd" style={{ alignItems: 'flex-start' }}>
+              <input type="checkbox" checked={selectedIds.has(q.id)} onChange={() => toggleSelected(q.id)} style={{ marginTop: 4, accentColor: 'var(--p)' }} />
               <div className="q-num">{idx + 1}</div>
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div className="qa-qmeta">
+                  {q.question_name && <span className="qa-qmeta__badge" style={{ background: 'var(--bg)' }}>{q.question_name}</span>}
                   <span className="qa-qmeta__badge">{getTypeLabel(t, q.question_type)}</span>
+                  {q.status && <span className="qa-qmeta__badge">{t(`instructorPortal.status_${q.status}`, q.status)}</span>}
                   <span className="qa-qmeta__marks">
                     {q.estimated_marks} {t('instructorPortal.pts')}
                   </span>
@@ -972,7 +1256,7 @@ export default function InstructorQuestionBank({ embedded = false, embedClassId 
                 {q.options.map((opt, oi) => (
                   <div key={oi} className="qa-answer-preview__row">
                     <span className="qa-answer-preview__badge">{oi + 1}</span>
-                    <span>{opt}</span>
+                    <span>{rowOptionLabel(opt)}</span>
                   </div>
                 ))}
               </div>
@@ -987,7 +1271,7 @@ export default function InstructorQuestionBank({ embedded = false, embedClassId 
                       className={`qa-answer-preview__row ${q.correct_answers?.includes(oi) ? 'is-correct' : ''}`}
                     >
                       <span className="qa-answer-preview__badge">{String.fromCharCode(65 + oi)}</span>
-                      <span>{opt}</span>
+                      <span>{rowOptionLabel(opt)}</span>
                     </div>
                   ))}
                 </div>
@@ -1016,6 +1300,9 @@ export default function InstructorQuestionBank({ embedded = false, embedClassId 
                 {t('instructorPortal.usedTimes', { count: q.usage_count || 0 })}
               </div>
               <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                <button type="button" className="btn btn-gh btn-sm" onClick={() => setPreviewQuestion(q)}>
+                  {t('instructorPortal.previewQuestion', 'Preview')}
+                </button>
                 <button type="button" className="btn btn-gh btn-sm" onClick={() => editQuestion(q)}>
                   {t('instructorPortal.edit')}
                 </button>
@@ -1030,10 +1317,16 @@ export default function InstructorQuestionBank({ embedded = false, embedClassId 
           </div>
         ))}
 
-        {questions.length === 0 && (
+        {filteredQuestions.length === 0 && (
           <div style={{ color: 'var(--muted)', padding: 24, textAlign: 'center' }}>{t('instructorPortal.noData')}</div>
         )}
       </div>
+        </div>
+      </div>
+
+      {previewQuestion && (
+        <QuestionPreviewPanel question={previewQuestion} onClose={() => setPreviewQuestion(null)} isArabic={isArabic} />
+      )}
     </>
   )
 }

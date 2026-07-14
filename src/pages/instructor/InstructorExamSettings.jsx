@@ -3,48 +3,25 @@ import { Link, useSearchParams } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { useAuth } from '../../contexts/AuthContext'
 import { supabase } from '../../lib/supabase'
-import { examRowToDatetimeLocalValues, datetimeLocalsToExamPayload } from '../../utils/subjectExamDateTime'
+import { examRowToDatetimeLocalValues, datetimeLocalsToExamPayload, DEFAULT_AVAILABILITY_HOURS, EXAM_STATUS, resolvePublishStatus, defaultEndFromStart } from '../../utils/subjectExamDateTime'
 import { getActiveInstructorByEmail } from '../../utils/getActiveInstructorByEmail'
+import {
+  GRADING_METHOD,
+  LAYOUT_OPTIONS,
+  NAVIGATION_MODE,
+  hydrateExamSettingsForm,
+  mergeAssessmentSettings,
+  settingsFromExamSettingsForm,
+  validatePublishSettings,
+} from '../../utils/assessmentSettings'
 
 function defaultForm() {
   return {
     startDatetime: '',
     endDatetime: '',
     duration_minutes: 90,
-    timezone: 'riyadh',
-    shuffle_questions: true,
-    shuffle_answers: true,
-    randomize_pool: false,
-    integrity_statement: true,
-    safe_browser: false,
-    webcam_monitoring: false,
-    plagiarism_check: false,
-    result_policy: 'after_window',
-    summary_total: true,
-    summary_correct: false,
-    summary_feedback: false,
-    resume_policy: 'resume_time_runs',
-  }
-}
-
-function hydrateFormFromSettings(s) {
-  const base = defaultForm()
-  if (!s || typeof s !== 'object') return base
-  return {
-    ...base,
-    timezone: s.timezone ?? base.timezone,
-    shuffle_questions: s.shuffle_questions ?? base.shuffle_questions,
-    shuffle_answers: s.shuffle_answers ?? base.shuffle_answers,
-    randomize_pool: s.randomize_from_bank ?? s.randomize_pool ?? base.randomize_pool,
-    integrity_statement: s.integrity_statement ?? base.integrity_statement,
-    safe_browser: s.safe_browser ?? base.safe_browser,
-    webcam_monitoring: s.webcam_monitoring ?? base.webcam_monitoring,
-    plagiarism_check: s.plagiarism_check ?? base.plagiarism_check,
-    result_policy: s.result_visibility ?? s.result_policy ?? base.result_policy,
-    summary_total: s.summary_show_total ?? base.summary_total,
-    summary_correct: s.summary_show_correct ?? base.summary_correct,
-    summary_feedback: s.summary_show_feedback ?? base.summary_feedback,
-    resume_policy: s.resume_policy ?? base.resume_policy,
+    status: EXAM_STATUS.DRAFT,
+    ...hydrateExamSettingsForm(null),
   }
 }
 
@@ -107,7 +84,7 @@ export default function InstructorExamSettings() {
           const { data: exam, error: exErr } = await supabase
             .from('subject_exams')
             .select(
-              'id, title, scheduled_date, start_time, end_time, duration_minutes, assessment_settings, class_id, subject_id'
+              'id, title, status, scheduled_date, start_time, end_time, duration_minutes, assessment_settings, class_id, subject_id, published_at, opened_at'
             )
             .eq('id', examId)
             .maybeSingle()
@@ -118,13 +95,19 @@ export default function InstructorExamSettings() {
             setAccommodations([])
           } else {
             setExamRow(exam)
-            const { start, end } = examRowToDatetimeLocalValues(exam.scheduled_date, exam.start_time, exam.end_time)
+            const { start, end } = examRowToDatetimeLocalValues(
+              exam.scheduled_date,
+              exam.start_time,
+              exam.end_time,
+              exam.assessment_settings,
+            )
             const s = exam.assessment_settings || {}
             setForm({
-              ...hydrateFormFromSettings(s),
+              ...hydrateExamSettingsForm(s),
               startDatetime: start,
-              endDatetime: end,
+              endDatetime: end || defaultEndFromStart(start),
               duration_minutes: Number(exam.duration_minutes) || 90,
+              status: exam.status || EXAM_STATUS.DRAFT,
             })
             const acc = Array.isArray(s.accommodations) ? s.accommodations : []
             setAccommodations(
@@ -168,10 +151,7 @@ export default function InstructorExamSettings() {
   const accent = { accentColor: 'var(--p)', width: 16, height: 16 }
   const chkSmall = { accentColor: 'var(--p)' }
 
-  const mergeAssessmentSettings = () => {
-    const prev = examRow?.assessment_settings && typeof examRow.assessment_settings === 'object'
-      ? examRow.assessment_settings
-      : {}
+  const buildAssessmentSettings = () => {
     const accPayload = accommodations
       .map((a) => ({
         student_name: (a.student_name || '').trim(),
@@ -179,66 +159,58 @@ export default function InstructorExamSettings() {
       }))
       .filter((a) => a.student_name.length > 0)
 
-    return {
-      ...prev,
-      timezone: form.timezone,
-      shuffle_questions: !!form.shuffle_questions,
-      shuffle_answers: !!form.shuffle_answers,
-      randomize_from_bank: !!form.randomize_pool,
-      integrity_statement: !!form.integrity_statement,
-      safe_browser: !!form.safe_browser,
-      webcam_monitoring: !!form.webcam_monitoring,
-      plagiarism_check: !!form.plagiarism_check,
-      result_visibility: form.result_policy,
-      summary_show_total: !!form.summary_total,
-      summary_show_correct: !!form.summary_correct,
-      summary_show_feedback: !!form.summary_feedback,
-      resume_policy: form.resume_policy,
-      accommodations: accPayload,
-    }
+    const patch = settingsFromExamSettingsForm({ ...form, accommodations: accPayload })
+    return mergeAssessmentSettings(examRow?.assessment_settings, patch)
   }
 
   const save = async () => {
     if (!classRow || !examRow || saving) return
+    const assessment_settings = buildAssessmentSettings()
+    const publishErrors = validatePublishSettings(examRow, assessment_settings)
+    if (publishErrors.length && form.status !== EXAM_STATUS.DRAFT) {
+      alert(t('instructorPortal.publishValidationFailed', 'Please fix settings before activating.'))
+      return
+    }
     setSaving(true)
     setSaveStatus(null)
     try {
       const times = datetimeLocalsToExamPayload(
         form.startDatetime,
-        form.endDatetime,
-        form.duration_minutes
+        form.endDatetime || defaultEndFromStart(form.startDatetime),
+        form.duration_minutes,
+        DEFAULT_AVAILABILITY_HOURS,
       )
-      const assessment_settings = mergeAssessmentSettings()
+      const assessment_settings = mergeAssessmentSettings(buildAssessmentSettings(), {
+        availability_hours: times.availability_hours,
+        window_start_at: times.window_start_at,
+        window_end_at: times.window_end_at,
+      })
 
-      // Save & activate should also move the exam into a student-visible lifecycle status.
-      // If we are inside the window -> open; otherwise -> scheduled.
-      const startIso = times?.scheduled_date && times?.start_time ? new Date(`${times.scheduled_date}T${times.start_time}`).toISOString() : null
-      const endIso = times?.scheduled_date && times?.end_time ? new Date(`${times.scheduled_date}T${times.end_time}`).toISOString() : null
-      const now = Date.now()
-      const startMs = startIso ? new Date(startIso).getTime() : null
-      const endMs = endIso ? new Date(endIso).getTime() : null
-
-      let status = 'EX_SCH'
-      if (startMs != null && endMs != null && now >= startMs && now <= endMs) status = 'EX_OPN'
-      else status = 'EX_SCH'
+      const start = new Date(times.window_start_at)
+      const end = new Date(times.window_end_at)
+      // Instructor-selected status; if left on auto-activate path use window-based status
+      let status = form.status || resolvePublishStatus(start, end)
+      if (![EXAM_STATUS.DRAFT, EXAM_STATUS.SCHEDULED, EXAM_STATUS.PUBLISHED].includes(status)) {
+        status = resolvePublishStatus(start, end)
+      }
 
       const payload = {
-        ...times,
+        scheduled_date: times.scheduled_date,
+        start_time: times.start_time,
+        end_time: times.end_time,
         duration_minutes: Number(form.duration_minutes) || times.duration_minutes,
         assessment_settings,
-        // Ensure exam is linked to the current class; student visibility depends on class enrollment.
         class_id: examRow.class_id || classRow.id,
         status,
-        published_at: status === 'EX_SCH' ? new Date().toISOString() : examRow.published_at || new Date().toISOString(),
-        opened_at: status === 'EX_OPN' ? new Date().toISOString() : examRow.opened_at || null,
+        published_at:
+          status === EXAM_STATUS.DRAFT ? null : examRow.published_at || new Date().toISOString(),
+        opened_at: status === EXAM_STATUS.PUBLISHED ? new Date().toISOString() : null,
         updated_at: new Date().toISOString(),
       }
 
       const { error } = await supabase.from('subject_exams').update(payload).eq('id', examRow.id)
       if (error) throw error
 
-      // Force-persist lifecycle fields and read back what the DB accepted.
-      // (We’ve seen cases where the update succeeds but status isn’t applied due to older builds or partial payloads.)
       const { data: after, error: afterErr } = await supabase
         .from('subject_exams')
         .update({
@@ -253,7 +225,8 @@ export default function InstructorExamSettings() {
         .single()
       if (afterErr) throw afterErr
 
-      setExamRow((er) => (er ? { ...er, ...payload, ...(after || {}) , assessment_settings } : er))
+      setExamRow((er) => (er ? { ...er, ...payload, ...(after || {}), assessment_settings } : er))
+      setForm((f) => ({ ...f, status, endDatetime: f.endDatetime || defaultEndFromStart(f.startDatetime) }))
       setSaveStatus('ok')
     } catch (e) {
       console.error(e)
@@ -391,9 +364,19 @@ export default function InstructorExamSettings() {
                   type="datetime-local"
                   className="fc"
                   value={form.startDatetime}
-                  onChange={(e) => setForm((f) => ({ ...f, startDatetime: e.target.value }))}
+                  onChange={(e) => {
+                    const start = e.target.value
+                    setForm((f) => ({
+                      ...f,
+                      startDatetime: start,
+                      endDatetime: f.endDatetime || defaultEndFromStart(start),
+                    }))
+                  }}
                   data-field="exam_start"
                 />
+                <div className="fh">
+                  {t('instructorPortal.availabilityWindowHint', 'When students may enter the exam (availability window).')}
+                </div>
               </div>
               <div className="fg">
                 <label className="fl">{t('instructorPortal.examSettingsEnd')}</label>
@@ -404,6 +387,9 @@ export default function InstructorExamSettings() {
                   onChange={(e) => setForm((f) => ({ ...f, endDatetime: e.target.value }))}
                   data-field="exam_end"
                 />
+                <div className="fh">
+                  {t('instructorPortal.availabilityEndHint', 'Defaults to 24 hours after start. Separate from attempt duration below.')}
+                </div>
               </div>
             </div>
             <div className="fr">
@@ -417,8 +403,34 @@ export default function InstructorExamSettings() {
                   onChange={(e) => setForm((f) => ({ ...f, duration_minutes: Number(e.target.value) || 0 }))}
                   data-field="duration_minutes"
                 />
-                <div className="fh">{t('instructorPortal.examSettingsDurationHint')}</div>
+                <div className="fh">
+                  {t(
+                    'instructorPortal.attemptDurationHint',
+                    'Countdown for each student after they start (not the 24-hour availability window).',
+                  )}
+                </div>
               </div>
+              <div className="fg">
+                <label className="fl">{t('instructorPortal.examStatus', 'Exam status')}</label>
+                <select
+                  className="fc"
+                  value={form.status || EXAM_STATUS.DRAFT}
+                  onChange={(e) => setForm((f) => ({ ...f, status: e.target.value }))}
+                  data-field="exam_status"
+                >
+                  <option value={EXAM_STATUS.DRAFT}>{t('instructorPortal.draft', 'Draft')}</option>
+                  <option value={EXAM_STATUS.SCHEDULED}>{t('instructorPortal.scheduled', 'Scheduled')}</option>
+                  <option value={EXAM_STATUS.PUBLISHED}>{t('instructorPortal.publishedOpen', 'Published (open)')}</option>
+                </select>
+                <div className="fh">
+                  {t(
+                    'instructorPortal.examStatusHelp',
+                    'Draft = hidden. Scheduled = visible, not enterable. Published = open for students.',
+                  )}
+                </div>
+              </div>
+            </div>
+            <div className="fr">
               <div className="fg">
                 <label className="fl">{t('instructorPortal.examSettingsTimezone')}</label>
                 <select
@@ -546,6 +558,58 @@ export default function InstructorExamSettings() {
               </button>
             </div>
           </div>
+
+          <div className="card">
+            <div className="card-hd">
+              <div className="card-title">📐 {t('instructorPortal.quizLayoutNav', 'Layout & navigation')}</div>
+            </div>
+            <div className="fr">
+              <div className="fg">
+                <label className="fl">{t('instructorPortal.maxAttemptsAllowed')}</label>
+                <input type="number" className="fc" min={1} value={form.max_attempts ?? 1} onChange={(e) => setForm((f) => ({ ...f, max_attempts: Number(e.target.value) || 1 }))} />
+              </div>
+              <div className="fg">
+                <label className="fl">{t('instructorPortal.gradingMethod', 'Grading method')}</label>
+                <select className="fc" value={form.grading_method ?? GRADING_METHOD.HIGHEST} onChange={(e) => setForm((f) => ({ ...f, grading_method: e.target.value }))}>
+                  <option value={GRADING_METHOD.HIGHEST}>{t('instructorPortal.gradingHighest', 'Highest')}</option>
+                  <option value={GRADING_METHOD.AVERAGE}>{t('instructorPortal.gradingAverage', 'Average')}</option>
+                  <option value={GRADING_METHOD.FIRST}>{t('instructorPortal.gradingFirst', 'First')}</option>
+                  <option value={GRADING_METHOD.LAST}>{t('instructorPortal.gradingLast', 'Last')}</option>
+                </select>
+              </div>
+            </div>
+            <div className="fr">
+              <div className="fg">
+                <label className="fl">{t('instructorPortal.questionsPerPage', 'Questions per page')}</label>
+                <select className="fc" value={form.layout ?? 1} onChange={(e) => setForm((f) => ({ ...f, layout: e.target.value === 'all' ? 'all' : Number(e.target.value) }))}>
+                  {LAYOUT_OPTIONS.map((n) => (
+                    <option key={String(n)} value={n}>{n === 'all' ? t('instructorPortal.allQuestions', 'All') : n}</option>
+                  ))}
+                </select>
+              </div>
+              <div className="fg">
+                <label className="fl">{t('instructorPortal.navigationMode', 'Navigation')}</label>
+                <select className="fc" value={form.navigation_mode ?? NAVIGATION_MODE.FREE} onChange={(e) => setForm((f) => ({ ...f, navigation_mode: e.target.value }))}>
+                  <option value={NAVIGATION_MODE.FREE}>{t('instructorPortal.navFree', 'Free')}</option>
+                  <option value={NAVIGATION_MODE.SEQUENTIAL}>{t('instructorPortal.navSequential', 'Sequential')}</option>
+                </select>
+              </div>
+            </div>
+            <div className="fr">
+              <div className="fg">
+                <label className="fl">{t('instructorPortal.quizPassword', 'Quiz password')}</label>
+                <input type="text" className="fc" value={form.quiz_password || ''} onChange={(e) => setForm((f) => ({ ...f, quiz_password: e.target.value }))} />
+              </div>
+              <div className="fg">
+                <label className="fl">{t('instructorPortal.autosaveInterval', 'Autosave (sec)')}</label>
+                <input type="number" className="fc" min={10} value={form.autosave_interval_sec ?? 30} onChange={(e) => setForm((f) => ({ ...f, autosave_interval_sec: Number(e.target.value) || 30 }))} />
+              </div>
+            </div>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, marginTop: 8 }}>
+              <input type="checkbox" checked={!!form.notify_students_on_change} onChange={(e) => setForm((f) => ({ ...f, notify_students_on_change: e.target.checked }))} style={chkSmall} />
+              {t('instructorPortal.notifyStudentsOnChange', 'Notify students about changes')}
+            </label>
+          </div>
         </div>
 
         <div>
@@ -626,7 +690,7 @@ export default function InstructorExamSettings() {
               >
                 <option value="immediate">{t('instructorPortal.examSettingsResultImmediate')}</option>
                 <option value="after_window">{t('instructorPortal.examSettingsResultAfterWindow')}</option>
-                <option value="manual">{t('instructorPortal.examSettingsResultManual')}</option>
+                <option value="manual_release">{t('instructorPortal.examSettingsResultManual')}</option>
               </select>
             </div>
             <div className="fg">

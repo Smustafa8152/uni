@@ -5,6 +5,7 @@ import { useLanguage } from '../../contexts/LanguageContext'
 import { useAuth } from '../../contexts/AuthContext'
 import { supabase } from '../../lib/supabase'
 import { getLocalizedName } from '../../utils/localizedName'
+import { mergeAssessmentSettings, RESULT_VISIBILITY, canShowReviewField } from '../../utils/assessmentSettings'
 
 const UI = {
   p: '#1a3a6b',
@@ -52,14 +53,14 @@ export default function StudentExamSubmitted() {
 
         const { data: ex } = await supabase
           .from('subject_exams')
-          .select('id, class_id, title, title_ar, scheduled_date, start_time, classes(id, subjects(id, code, name_en, name_ar))')
+          .select('id, class_id, title, title_ar, scheduled_date, start_time, total_points, assessment_settings, classes(id, subjects(id, code, name_en, name_ar))')
           .eq('id', Number(examId))
           .single()
         setExam(ex)
 
         const { data: sub } = await supabase
           .from('exam_submissions')
-          .select('id, exam_id, status, submitted_at, submission_data')
+          .select('id, exam_id, status, submitted_at, started_at, points_earned, grade, submission_data')
           .eq('exam_id', Number(examId))
           .eq('student_id', st.id)
           .maybeSingle()
@@ -83,6 +84,15 @@ export default function StudentExamSubmitted() {
   const courseName = getLocalizedName(exam?.classes?.subjects, isArabic) || '—'
   const title = (isArabic ? exam?.title_ar : exam?.title) || exam?.title || '—'
   const answered = submission?.submission_data?.answers ? Object.keys(submission.submission_data.answers).length : 0
+  const settings = mergeAssessmentSettings(exam?.assessment_settings)
+  const showScore =
+    settings.result_visibility === RESULT_VISIBILITY.IMMEDIATE &&
+    canShowReviewField(settings, 'immediately_after', 'marks') &&
+    submission?.points_earned != null
+  const durationMin =
+    submission?.started_at && submission?.submitted_at
+      ? Math.round((new Date(submission.submitted_at) - new Date(submission.started_at)) / 60000)
+      : null
 
   return (
     <div dir={isArabic ? 'rtl' : 'ltr'} className="max-w-2xl mx-auto py-10">
@@ -134,18 +144,34 @@ export default function StudentExamSubmitted() {
           <div className="flex items-center justify-between py-2">
             <span style={{ color: UI.muted }}>{t('studentPortal.elearning.status', 'Status')}</span>
             <span className="px-3 py-1 rounded-full text-xs font-extrabold" style={{ background: UI.okBg, color: UI.ok }}>
-              {t('studentPortal.elearning.submitted', 'Submitted')}
+              {submission?.status === 'EX_GRD' ? t('studentPortal.elearning.graded', 'Graded') : t('studentPortal.elearning.submitted', 'Submitted')}
             </span>
           </div>
+          {showScore && (
+            <>
+              <div className="flex items-center justify-between py-2 border-t" style={{ borderColor: UI.bdr }}>
+                <span style={{ color: UI.muted }}>{t('studentPortal.elearning.score', 'Score')}</span>
+                <strong>{submission.points_earned}/{exam?.total_points} ({submission.grade}%)</strong>
+              </div>
+              {durationMin != null && (
+                <div className="flex items-center justify-between py-2">
+                  <span style={{ color: UI.muted }}>{t('studentPortal.elearning.duration', 'Duration')}</span>
+                  <strong>{durationMin} {t('studentPortal.elearning.minutes', 'min')}</strong>
+                </div>
+              )}
+            </>
+          )}
         </div>
       </div>
 
+      {!showScore && (
       <div className="rounded-lg px-4 py-3 border-r-4 flex gap-3 items-start mb-4" style={{ background: UI.infoBg, color: UI.info, borderColor: UI.info }}>
         <span>ℹ️</span>
         <div className="text-sm">
           {t('studentPortal.elearning.resultsInfo', 'Your result will appear after it is released by the instructor. You will receive a notification when published.')}
         </div>
       </div>
+      )}
 
       <div className="flex flex-wrap gap-3 justify-center">
         <Link to="/student/elearning/exams" className="px-6 py-2.5 rounded-md font-extrabold text-white" style={{ background: UI.p }}>

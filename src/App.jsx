@@ -125,6 +125,8 @@ import InstructorContentRelease from './pages/instructor/InstructorContentReleas
 import InstructorAssessmentAuthoring from './pages/instructor/InstructorAssessmentAuthoring'
 import InstructorQuestionBank from './pages/instructor/InstructorQuestionBank'
 import InstructorGradebook from './pages/instructor/InstructorGradebook'
+import InstructorExamMonitor from './pages/instructor/InstructorExamMonitor'
+import InstructorManualGrading from './pages/instructor/InstructorManualGrading'
 import InstructorComingSoon from './pages/instructor/InstructorComingSoon'
 import InstructorTemplates from './pages/instructor/InstructorTemplates'
 import CreateMaterial from './pages/instructor/CreateMaterial'
@@ -1403,7 +1405,17 @@ function App() {
             element={
               <ProtectedRoute allowedRoles={['instructor']}>
                 <RoleBasedLayout>
-                  <InstructorComingSoon />
+                  <InstructorExamMonitor />
+                </RoleBasedLayout>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/instructor/grade-exam"
+            element={
+              <ProtectedRoute allowedRoles={['instructor']}>
+                <RoleBasedLayout>
+                  <InstructorManualGrading />
                 </RoleBasedLayout>
               </ProtectedRoute>
             }

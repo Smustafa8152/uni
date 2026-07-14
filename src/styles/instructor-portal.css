@@ -830,6 +830,22 @@
 }
 .instructor-portal select.fc {
   cursor: pointer;
+  appearance: auto;
+  -webkit-appearance: menulist;
+  color: var(--txt);
+  background-color: var(--sur);
+}
+.instructor-portal .qb-class-select {
+  width: 100%;
+  min-width: 260px;
+  max-width: 100%;
+}
+.instructor-portal .ph-acts select.fc {
+  min-width: 220px;
+  width: auto;
+  flex-shrink: 0;
+  background-color: var(--sur);
+  color: var(--txt);
 }
 .instructor-portal .fh {
   font-size: 12px;
@@ -2085,4 +2101,54 @@
   justify-content: center;
   text-align: center;
   white-space: normal;
+}
+
+/* Question bank categories */
+.instructor-portal .qb-cat-list { padding: 8px; }
+.instructor-portal .qb-cat-row { display: flex; align-items: center; gap: 4px; }
+.instructor-portal .qb-cat-item {
+  flex: 1;
+  text-align: start;
+  border: none;
+  background: transparent;
+  padding: 8px 10px;
+  border-radius: var(--rs);
+  font-size: 13px;
+  cursor: pointer;
+  color: var(--txt);
+}
+.instructor-portal .qb-cat-item:hover { background: var(--bg); }
+.instructor-portal .qb-cat-item.active { background: var(--p); color: #fff; font-weight: 600; }
+
+/* Exam preview / question renderer */
+.instructor-portal .exam-preview-qtext { font-size: 16px; font-weight: 700; line-height: 1.6; }
+.instructor-portal .exam-q-options { display: flex; flex-direction: column; gap: 8px; }
+.instructor-portal .exam-q-option {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1.5px solid var(--bdr);
+  border-radius: var(--rs);
+  cursor: pointer;
+  font-size: 14px;
+}
+.instructor-portal .exam-q-option.is-selected { border-color: var(--p); background: rgba(26, 58, 92, 0.06); }
+.instructor-portal .exam-q-option.is-correct { border-color: var(--ok); background: var(--ok-bg); }
+.instructor-portal .exam-preview-modal .exam-preview-feedback-box {
+  margin-top: 12px;
+  padding: 10px;
+  background: var(--bg);
+  border-radius: var(--rs);
+  font-size: 13px;
+  color: var(--muted);
+}
+.instructor-portal .modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 300;
 }

@@ -6,6 +6,8 @@ import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
 import { checkFinancePermission, getStudentSemesterMilestone } from '../../utils/financePermissions'
 import { getPaymentsEnabled } from '../../utils/getPaymentsEnabled'
+import { isExamEnterableForStudent } from '../../utils/subjectExamDateTime'
+
 import { 
   ArrowLeft, BookOpen, FileText, Video, Download, Upload, CheckCircle, 
   XCircle, Clock, AlertCircle, GraduationCap, Eye, MessageSquare, 
@@ -518,8 +520,12 @@ export default function StudentSubjectView() {
       return { label: 'Results Released', color: 'bg-green-100 text-green-800', canView: true }
     }
     if (exam.status === 'EX_CLS') return { label: 'Closed', color: 'bg-gray-100 text-gray-800', canView: false }
-    if (exam.status === 'EX_OPN') return { label: 'Open', color: 'bg-blue-100 text-blue-800', canView: canPerformAction('SS_EXAM') }
-    if (exam.status === 'EX_SCH') return { label: 'Scheduled', color: 'bg-yellow-100 text-yellow-800', canView: false }
+    if (isExamEnterableForStudent(exam)) {
+      return { label: 'Open', color: 'bg-blue-100 text-blue-800', canView: canPerformAction('SS_EXAM') }
+    }
+    if (exam.status === 'EX_OPN' || exam.status === 'EX_SCH') {
+      return { label: 'Scheduled', color: 'bg-yellow-100 text-yellow-800', canView: false }
+    }
     return { label: 'Unknown', color: 'bg-gray-100 text-gray-800', canView: false }
   }
 
