@@ -15,7 +15,7 @@ A modern, full-featured university management system built with React, Vite, Tai
  
 ## Tech Stack
 
-- **Frontend**: React 19, Vite
+- **Frontend**: React 19, Vite 
 - **Styling**: Tailwind CSS
 - **Backend**: Supabase (PostgreSQL, Auth, Storage)
 - **Routing**: React Router DOM
