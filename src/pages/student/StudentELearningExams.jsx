@@ -5,7 +5,7 @@ import { useLanguage } from '../../contexts/LanguageContext'
 import { useAuth } from '../../contexts/AuthContext'
 import { supabase } from '../../lib/supabase'
 import { getLocalizedName } from '../../utils/localizedName'
-import { isExamEnterableForStudent, isExamSubmissionComplete, canStudentAttemptExam } from '../../utils/subjectExamDateTime'
+import { isExamSubmissionComplete, canStudentAttemptExam } from '../../utils/subjectExamDateTime'
 
 const UI = {
   p: '#1a3a6b',
