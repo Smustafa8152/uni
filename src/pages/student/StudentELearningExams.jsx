@@ -5,7 +5,7 @@ import { useLanguage } from '../../contexts/LanguageContext'
 import { useAuth } from '../../contexts/AuthContext'
 import { supabase } from '../../lib/supabase'
 import { getLocalizedName } from '../../utils/localizedName'
-import { isExamEnterableForStudent } from '../../utils/subjectExamDateTime'
+import { isExamEnterableForStudent, isExamSubmissionComplete, canStudentAttemptExam } from '../../utils/subjectExamDateTime'
 
 const UI = {
   p: '#1a3a6b',
@@ -128,7 +128,7 @@ export default function StudentELearningExams() {
 
         const { data: subs } = await supabase
           .from('exam_submissions')
-          .select('id, exam_id, status, points_earned, grade, submitted_at')
+          .select('id, exam_id, status, points_earned, grade, submitted_at, submission_data')
           .eq('student_id', sid)
           .in('exam_id', examIds)
 
@@ -147,8 +147,14 @@ export default function StudentELearningExams() {
   }, [user])
 
   const computed = useMemo(() => {
-    const upcoming = rows.filter((x) => x.status === 'EX_SCH' || x.status === 'EX_OPN')
-    const completed = rows.filter((x) => x.status === 'EX_CLS' || x.status === 'EX_REL')
+    const isDoneForStudent = (x) => isExamSubmissionComplete(x.submission)
+    const upcoming = rows.filter(
+      (x) =>
+        (x.status === 'EX_SCH' || x.status === 'EX_OPN') && !isDoneForStudent(x),
+    )
+    const completed = rows.filter(
+      (x) => x.status === 'EX_CLS' || x.status === 'EX_REL' || isDoneForStudent(x),
+    )
     const graded = rows.filter((x) => x.submission?.points_earned != null)
 
     const avg = graded.length
@@ -288,10 +294,12 @@ export default function StudentELearningExams() {
           const end = fmtTime(ex.end_time)
           const soonMs = msUntil(ex)
           const isTomorrow = soonMs != null && soonMs < 24 * 60 * 60 * 1000 && soonMs > 0
-          const canEnter = isExamEnterableForStudent(ex)
+          const alreadySubmitted = isExamSubmissionComplete(ex.submission)
+          const canEnter = canStudentAttemptExam(ex, ex.submission)
+          const canViewResult = alreadySubmitted && !canEnter
 
-          const accent = canEnter ? UI.info : isTomorrow ? UI.err : UI.warn
-          const accentBg = canEnter ? UI.infoBg : isTomorrow ? UI.errBg : UI.warnBg
+          const accent = canEnter ? UI.info : alreadySubmitted ? UI.ok : isTomorrow ? UI.err : UI.warn
+          const accentBg = canEnter ? UI.infoBg : alreadySubmitted ? UI.okBg : isTomorrow ? UI.errBg : UI.warnBg
 
           return (
             <div key={ex.id} className="bg-white rounded-xl border shadow-sm p-6" style={{ borderColor: UI.bdr, borderRight: `4px solid ${accent}` }}>
@@ -318,6 +326,10 @@ export default function StudentELearningExams() {
                       <button type="button" className="px-5 py-2 rounded-md font-extrabold text-white" style={{ backgroundColor: UI.p }} onClick={() => navigate(`/student/elearning/exams/${ex.id}`)}>
                         📋 {t('studentPortal.elearning.enterExam', 'Enter exam')}
                       </button>
+                    ) : canViewResult ? (
+                      <button type="button" className="px-5 py-2 rounded-md font-extrabold text-white" style={{ backgroundColor: UI.ok }} onClick={() => navigate(`/student/elearning/exams/${ex.id}/submitted`)}>
+                        ✅ {t('studentPortal.elearning.viewSubmission', 'View submission')}
+                      </button>
                     ) : (
                       <button type="button" className="px-4 py-2 rounded-md border font-bold text-sm" style={{ borderColor: UI.p, color: UI.p }} onClick={() => navigate(`/student/elearning/exams/${ex.id}`)}>
                         📋 {t('studentPortal.elearning.examDetails', 'Exam details')}
@@ -327,16 +339,18 @@ export default function StudentELearningExams() {
                 </div>
 
                 <div className="text-center">
-                  <span className="inline-flex px-3 py-1 rounded-full text-xs font-extrabold" style={{ backgroundColor: canEnter ? UI.infoBg : UI.bdr, color: canEnter ? UI.info : UI.txt }}>
-                    {canEnter
-                      ? t('studentPortal.elearning.open', 'Open')
-                      : ex.status === 'EX_SCH'
-                        ? t('studentPortal.elearning.scheduled', 'Scheduled')
-                        : ex.status === 'EX_REL'
-                          ? t('studentPortal.elearning.resultsReleased', 'Results released')
-                          : ex.status === 'EX_OPN'
-                            ? t('studentPortal.elearning.open', 'Open')
-                            : t('studentPortal.elearning.closed', 'Closed')}
+                  <span className="inline-flex px-3 py-1 rounded-full text-xs font-extrabold" style={{ backgroundColor: canEnter ? UI.infoBg : alreadySubmitted ? UI.okBg : UI.bdr, color: canEnter ? UI.info : alreadySubmitted ? UI.ok : UI.txt }}>
+                    {alreadySubmitted
+                      ? t('studentPortal.elearning.submitted', 'Submitted')
+                      : canEnter
+                        ? t('studentPortal.elearning.open', 'Open')
+                        : ex.status === 'EX_SCH'
+                          ? t('studentPortal.elearning.scheduled', 'Scheduled')
+                          : ex.status === 'EX_REL'
+                            ? t('studentPortal.elearning.resultsReleased', 'Results released')
+                            : ex.status === 'EX_OPN'
+                              ? t('studentPortal.elearning.open', 'Open')
+                              : t('studentPortal.elearning.closed', 'Closed')}
                   </span>
                   {isTomorrow && (
                     <>

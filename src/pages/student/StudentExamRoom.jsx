@@ -7,7 +7,13 @@ import { supabase } from '../../lib/supabase'
 import { getLocalizedName } from '../../utils/localizedName'
 import { mergeAssessmentSettings, RESULT_VISIBILITY, canShowReviewField } from '../../utils/assessmentSettings'
 import { autoGradeExam, studentAnswerIsAnswered } from '../../utils/autoGradeExam'
-import { resolveExamAvailabilityWindow, isExamEnterableForStudent } from '../../utils/subjectExamDateTime'
+import {
+  resolveExamAvailabilityWindow,
+  isExamEnterableForStudent,
+  isExamSubmissionComplete,
+  canStudentAttemptExam,
+} from '../../utils/subjectExamDateTime'
+import { syncExamSubmissionToGradebookRpc } from '../../utils/syncExamGradesToGradebook'
 
 const UI = {
   p: '#1a3a6b',
@@ -63,6 +69,9 @@ export default function StudentExamRoom() {
   const [submitting, setSubmitting] = useState(false)
 
   const savingRef = useRef(false)
+  const submittingRef = useRef(false)
+  const hadPositiveTimeRef = useRef(false)
+  const autoSubmitTriedRef = useRef(false)
 
   useEffect(() => {
     if (!user?.email || !examId) return
@@ -117,11 +126,17 @@ export default function StudentExamRoom() {
 
         const { data: sub } = await supabase
           .from('exam_submissions')
-          .select('id, exam_id, student_id, enrollment_id, submission_data, status, submitted_at, started_at')
+          .select('id, exam_id, student_id, enrollment_id, submission_data, status, submitted_at, started_at, points_earned, grade')
           .eq('exam_id', ex.id)
           .eq('student_id', st.id)
           .maybeSingle()
         setSubmission(sub || null)
+
+        // Already submitted — do not allow another attempt (unless max_attempts still available)
+        if (isExamSubmissionComplete(sub) && !canStudentAttemptExam(ex, sub)) {
+          navigate(`/student/elearning/exams/${ex.id}/submitted`, { replace: true })
+          return
+        }
 
         const prevData = sub?.submission_data && typeof sub.submission_data === 'object' ? sub.submission_data : {}
         setAnswers(prevData.answers || {})
@@ -260,28 +275,28 @@ export default function StudentExamRoom() {
   // Countdown
   useEffect(() => {
     if (!remainingSec) return
+    hadPositiveTimeRef.current = true
     const it = setInterval(() => setRemainingSec((s) => Math.max(0, s - 1)), 1000)
     return () => clearInterval(it)
   }, [remainingSec])
 
-  // Auto-submit when timer hits 0 (best-effort)
+  // Auto-submit when attempt timer hits 0 (only if a real countdown had started)
   useEffect(() => {
-    if (!exam?.id) return
+    if (!exam?.id || loading) return
     if (remainingSec !== 0) return
-    if (isExamEnterableForStudent(exam)) {
-      // do not spam if already submitted
-      if (submission?.status === 'EX_SUB') return
-      ;(async () => {
-        try {
-          await persistDraft({ time_up: true })
-          await submitFinal()
-        } catch {
-          // ignore
-        }
-      })()
-    }
+    if (!hadPositiveTimeRef.current || autoSubmitTriedRef.current) return
+    if (submission?.status === 'EX_SUB' || submission?.status === 'EX_GRD') return
+    if (!isExamEnterableForStudent(exam) && !submission?.started_at) return
+    autoSubmitTriedRef.current = true
+    ;(async () => {
+      try {
+        await submitFinal()
+      } catch {
+        autoSubmitTriedRef.current = false
+      }
+    })()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [remainingSec, exam?.id])
+  }, [remainingSec, exam?.id, loading])
 
   const courseCode = exam?.classes?.subjects?.code || '—'
   const courseName = getLocalizedName(exam?.classes?.subjects, isArabic) || '—'
@@ -296,7 +311,8 @@ export default function StudentExamRoom() {
 
   const persistDraft = async (patch = {}) => {
     if (!student?.id || !enrollment?.id || !exam?.id) return
-    if (savingRef.current) return
+    if (savingRef.current || submittingRef.current) return
+    if (submission?.status === 'EX_SUB' || submission?.status === 'EX_GRD') return
     savingRef.current = true
     setAutosaveState('saving')
     try {
@@ -321,9 +337,9 @@ export default function StudentExamRoom() {
         const { error } = await supabase.from('exam_submissions').update(row).eq('id', submission.id)
         if (error) throw error
       } else {
-        const { data, error } = await supabase.from('exam_submissions').insert(row).select('id, submission_data, status').single()
+        const { data, error } = await supabase.from('exam_submissions').insert(row).select('id, submission_data, status, started_at').single()
         if (error) throw error
-        setSubmission({ id: data.id, submission_data: data.submission_data, status: data.status })
+        setSubmission({ id: data.id, submission_data: data.submission_data, status: data.status, started_at: data.started_at })
       }
       setAutosaveState('saved')
       setTimeout(() => setAutosaveState('idle'), 1200)
@@ -337,7 +353,8 @@ export default function StudentExamRoom() {
 
   // Autosave on answer changes (debounced)
   useEffect(() => {
-    if (!exam?.id || !student?.id) return
+    if (!exam?.id || !student?.id || loading) return
+    if (submission?.status === 'EX_SUB' || submission?.status === 'EX_GRD') return
     const h = setTimeout(() => persistDraft(), 700)
     return () => clearTimeout(h)
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -350,18 +367,25 @@ export default function StudentExamRoom() {
   const settings = useMemo(() => mergeAssessmentSettings(exam?.assessment_settings), [exam?.assessment_settings])
 
   const unansweredCount = useMemo(
-    () => questions.filter((q) => !studentAnswerIsAnswered(q, answers[String(q.id)])).length,
+    () => questions.filter((q) => !studentAnswerIsAnswered(answers[String(q.id)])).length,
     [questions, answers],
   )
 
   const submitFinal = async () => {
-    if (!student?.id || !enrollment?.id || !exam?.id || submitting) return
+    if (!student?.id || !enrollment?.id || !exam?.id || submittingRef.current) return
     if (submission?.status === 'EX_SUB' || submission?.status === 'EX_GRD') {
       navigate(`/student/elearning/exams/${exam.id}/submitted`)
       return
     }
+    submittingRef.current = true
     setSubmitting(true)
+    setError('')
     try {
+      // Wait briefly if an autosave is mid-flight
+      for (let i = 0; i < 20 && savingRef.current; i += 1) {
+        await new Promise((r) => setTimeout(r, 50))
+      }
+
       const grade = autoGradeExam(questions, answers)
       const nowIso = new Date().toISOString()
       const payload = {
@@ -370,33 +394,85 @@ export default function StudentExamRoom() {
         qIndex,
         optionOrder,
         submitted: true,
+        attempt_count: Math.max(
+          1,
+          Number(submission?.submission_data?.attempt_count || 0) + 1,
+        ),
         autoGrade: grade,
       }
+      // Always write EX_SUB first (RLS historically only allowed EX_DRF/EX_SUB).
+      // Prefer EX_GRD when fully auto-graded if DB policy allows it; fall back to EX_SUB.
+      const preferredStatus = grade.fullyAutoGraded ? 'EX_GRD' : 'EX_SUB'
+      let finalStatus = preferredStatus
       const row = {
         exam_id: exam.id,
         student_id: student.id,
         enrollment_id: enrollment.id,
         submission_data: payload,
-        status: grade.fullyAutoGraded ? 'EX_GRD' : 'EX_SUB',
+        status: preferredStatus,
         points_earned: grade.points_earned,
-        grade: exam.total_points ? Math.round((grade.points_earned / exam.total_points) * 1000) / 10 : grade.percent,
+        grade: exam.total_points ? Math.round((grade.points_earned / Number(exam.total_points)) * 1000) / 10 : grade.percent,
         started_at: submission?.started_at || nowIso,
         submitted_at: nowIso,
         updated_at: nowIso,
       }
+
+      let writeErr = null
       if (submission?.id) {
         const { error } = await supabase.from('exam_submissions').update(row).eq('id', submission.id)
-        if (error) throw error
+        writeErr = error
       } else {
-        const { error } = await supabase.from('exam_submissions').insert(row)
-        if (error) throw error
+        const { data, error } = await supabase.from('exam_submissions').insert(row).select('id').single()
+        writeErr = error
+        if (!error && data?.id) setSubmission((prev) => ({ ...(prev || {}), id: data.id, status: preferredStatus }))
       }
+
+      // Fallback if EX_GRD is blocked by older RLS
+      if (writeErr && preferredStatus === 'EX_GRD') {
+        finalStatus = 'EX_SUB'
+        const fallback = { ...row, status: 'EX_SUB' }
+        if (submission?.id) {
+          const { error } = await supabase.from('exam_submissions').update(fallback).eq('id', submission.id)
+          writeErr = error
+        } else {
+          const { data, error } = await supabase.from('exam_submissions').insert(fallback).select('id').single()
+          writeErr = error
+          if (!error && data?.id) setSubmission((prev) => ({ ...(prev || {}), id: data.id, status: 'EX_SUB' }))
+        }
+      }
+
+      if (writeErr) throw writeErr
+
+      let submissionId = submission?.id
+      if (!submissionId) {
+        const { data: latest } = await supabase
+          .from('exam_submissions')
+          .select('id')
+          .eq('exam_id', exam.id)
+          .eq('student_id', student.id)
+          .order('updated_at', { ascending: false })
+          .limit(1)
+          .maybeSingle()
+        submissionId = latest?.id
+      }
+
+      // Push score into gradebook (midterm/final/quizzes column)
+      if (submissionId) {
+        await syncExamSubmissionToGradebookRpc(submissionId)
+      }
+
+      setSubmission((prev) =>
+        prev ? { ...prev, id: submissionId || prev.id, status: finalStatus, points_earned: row.points_earned, submitted_at: nowIso } : prev,
+      )
       setShowSummary(false)
       navigate(`/student/elearning/exams/${exam.id}/submitted`)
     } catch (e) {
       console.error(e)
-      setError(e?.message || String(e))
+      const msg = e?.message || e?.error_description || String(e)
+      setError(msg)
+      alert(t('studentPortal.elearning.submitFailed', { defaultValue: 'Submit failed: {{msg}}', msg }))
     } finally {
+      submittingRef.current = false
       setSubmitting(false)
     }
   }
@@ -611,6 +687,11 @@ export default function StudentExamRoom() {
             <h2 className="text-lg font-extrabold mb-4" style={{ color: UI.p }}>
               {t('studentPortal.elearning.submitConfirmTitle', 'Submit all your answers and finish?')}
             </h2>
+            {error && (
+              <div className="rounded-lg px-3 py-2 text-sm mb-3" style={{ background: UI.errBg, color: UI.err }}>
+                {error}
+              </div>
+            )}
             {settings.summary_show_total !== false && (
               <table className="w-full text-sm mb-4">
                 <tbody>

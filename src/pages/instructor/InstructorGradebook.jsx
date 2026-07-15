@@ -52,6 +52,11 @@ import {
   exportGradeSheetPdf,
 } from '../../utils/exportInstructorGradeSheet'
 import { useGradeAutoSave } from '../../hooks/useGradeAutoSave'
+import {
+  fetchExamScoresByEnrollment,
+  mergeExamScoresIntoDrafts,
+  persistExamScoresToGradebook,
+} from '../../utils/syncExamGradesToGradebook'
 
 export default function InstructorGradebook({ embedded = false, embedClassId = null } = {}) {
   const { t } = useTranslation()
@@ -220,7 +225,7 @@ export default function InstructorGradebook({ embedded = false, embedClassId = n
           'enrollment_id',
           enrolls.map((e) => e.id)
         )
-        .then(({ data: gradesData }) => {
+        .then(async ({ data: gradesData }) => {
           const map = {}
           ;(gradesData || []).forEach((g) => {
             map[g.enrollment_id] = g
@@ -239,8 +244,62 @@ export default function InstructorGradebook({ embedded = false, embedClassId = n
                 existing.record_status || deriveRecordStatus(existing, merged.length ? merged : LEGACY_GRADE_COLUMNS),
             }
           })
-          setDraftGrades(base)
-          setDirtyIds(new Set())
+
+          // Pull online exam submission scores into empty gradebook cells
+          try {
+            const { byEnrollment } = await fetchExamScoresByEnrollment(selectedClassId)
+            const { nextDrafts, dirtyEnrollmentIds } = mergeExamScoresIntoDrafts(
+              base,
+              byEnrollment,
+              merged.length ? merged : LEGACY_GRADE_COLUMNS,
+            )
+            setDraftGrades(nextDrafts)
+            setDirtyIds(new Set())
+
+            if (dirtyEnrollmentIds.length) {
+              await persistExamScoresToGradebook({
+                classId: selectedClassId,
+                classData: cls,
+                enrollments: enrolls,
+                draftGrades: nextDrafts,
+                dirtyEnrollmentIds,
+                gradeConfig: merged.length ? merged : LEGACY_GRADE_COLUMNS,
+                instructorId: instructor?.id,
+              })
+              // Refresh persisted rows
+              const { data: refreshed } = await supabase
+                .from('grade_components')
+                .select('*')
+                .in(
+                  'enrollment_id',
+                  enrolls.map((e) => e.id),
+                )
+              if (refreshed) {
+                const map2 = {}
+                refreshed.forEach((g) => {
+                  map2[g.enrollment_id] = g
+                })
+                setGradesMap(map2)
+                const base2 = { ...nextDrafts }
+                enrolls.forEach((e) => {
+                  if (map2[e.id]) {
+                    base2[e.id] = {
+                      ...base2[e.id],
+                      ...map2[e.id],
+                      enrollment_id: e.id,
+                      class_id: selectedClassId,
+                      student_id: e.student_id,
+                    }
+                  }
+                })
+                setDraftGrades(base2)
+              }
+            }
+          } catch (syncErr) {
+            console.error('Exam→gradebook sync', syncErr)
+            setDraftGrades(base)
+            setDirtyIds(new Set())
+          }
         })
         .finally(() => setLoading(false))
     })
