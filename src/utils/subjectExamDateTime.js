@@ -158,3 +158,34 @@ export function isExamEnterableForStudent(exam, now = new Date()) {
   if (exam.status !== EXAM_STATUS.SCHEDULED && exam.status !== EXAM_STATUS.PUBLISHED) return false
   return isExamWithinAvailabilityWindow(exam, now)
 }
+
+/** True when the student's attempt is already finalized (cannot keep answering). */
+export function isExamSubmissionComplete(submission) {
+  if (!submission) return false
+  if (submission.status === 'EX_SUB' || submission.status === 'EX_GRD') return true
+  const data = submission.submission_data
+  return !!(data && (data.submitted === true || data.autoGrade))
+}
+
+/**
+ * Whether the student may start/continue answering.
+ * Default max_attempts = 1 → one submission and done.
+ */
+export function canStudentAttemptExam(exam, submission, now = new Date()) {
+  if (!isExamEnterableForStudent(exam, now)) return false
+  if (!isExamSubmissionComplete(submission)) return true
+
+  const settings =
+    exam?.assessment_settings && typeof exam.assessment_settings === 'object'
+      ? exam.assessment_settings
+      : {}
+  const maxAttempts = Math.max(1, Number(settings.max_attempts) || 1)
+  const used = Math.max(
+    1,
+    Number(submission?.submission_data?.attempt_count) ||
+      Number(submission?.attempt_count) ||
+      1,
+  )
+  // Unique (exam_id, student_id) → one row; retakes only when max_attempts > used
+  return used < maxAttempts
+}
