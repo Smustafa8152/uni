@@ -5,7 +5,12 @@ import { useLanguage } from '../../contexts/LanguageContext'
 import { useAuth } from '../../contexts/AuthContext'
 import { supabase } from '../../lib/supabase'
 import { getLocalizedName } from '../../utils/localizedName'
-import { isExamSubmissionComplete, canStudentAttemptExam } from '../../utils/subjectExamDateTime'
+import {
+  isExamSubmissionComplete,
+  canStudentAttemptExam,
+  resolveExamAvailabilityWindow,
+  parseLocalDateOnly,
+} from '../../utils/subjectExamDateTime'
 
 const UI = {
   p: '#1a3a6b',
@@ -28,12 +33,24 @@ const UI = {
 
 function fmtDate(d, isArabic) {
   if (!d) return '—'
-  const dt = new Date(d)
+  // Prefer Date objects (availability window) or local calendar date strings
+  let dt = d instanceof Date ? d : null
+  if (!dt && typeof d === 'string' && /^\d{4}-\d{2}-\d{2}/.test(d)) {
+    dt = parseLocalDateOnly(d.slice(0, 10))
+  }
+  if (!dt) {
+    dt = new Date(d)
+  }
+  if (!dt || Number.isNaN(dt.getTime())) return '—'
   return dt.toLocaleDateString(isArabic ? 'ar' : 'en', { year: 'numeric', month: 'long', day: 'numeric' })
 }
 
 function fmtTime(t) {
   if (!t) return ''
+  if (t instanceof Date) {
+    const pad = (n) => String(n).padStart(2, '0')
+    return `${pad(t.getHours())}:${pad(t.getMinutes())}`
+  }
   return String(t).slice(0, 5)
 }
 
@@ -45,8 +62,9 @@ function pct(n, d) {
 
 function msUntil(exam) {
   try {
-    const dt = new Date(`${exam.scheduled_date}T${exam.start_time}`)
-    return dt.getTime() - Date.now()
+    const { start } = resolveExamAvailabilityWindow(exam)
+    if (!start) return null
+    return start.getTime() - Date.now()
   } catch {
     return null
   }
@@ -290,8 +308,10 @@ export default function StudentELearningExams() {
           const code = ex?.classes?.subjects?.code || '—'
           const courseName = getLocalizedName(ex?.classes?.subjects, isArabic) || '—'
           const title = (isArabic ? ex.title_ar : ex.title) || ex.title || '—'
-          const start = fmtTime(ex.start_time)
-          const end = fmtTime(ex.end_time)
+          const window = resolveExamAvailabilityWindow(ex)
+          const displayDate = window.start || ex.scheduled_date
+          const displayStart = window.start || ex.start_time
+          const displayEnd = window.end || ex.end_time
           const soonMs = msUntil(ex)
           const isTomorrow = soonMs != null && soonMs < 24 * 60 * 60 * 1000 && soonMs > 0
           const alreadySubmitted = isExamSubmissionComplete(ex.submission)
@@ -315,8 +335,8 @@ export default function StudentELearningExams() {
                     {title}
                   </div>
                   <div className="flex flex-wrap gap-4 text-sm mt-2" style={{ color: UI.muted }}>
-                    <span>📅 {fmtDate(ex.scheduled_date, isArabic)}</span>
-                    <span>🕐 {start} – {end}</span>
+                    <span>📅 {fmtDate(displayDate, isArabic)}</span>
+                    <span>🕐 {fmtTime(displayStart)} – {fmtTime(displayEnd)}</span>
                     <span>⏱️ {ex.duration_minutes || 0} {t('studentPortal.elearning.minutes', 'minutes')}</span>
                     <span>📊 {ex.total_points || 0} {t('studentPortal.elearning.points', 'points')}</span>
                   </div>

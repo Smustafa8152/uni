@@ -8,10 +8,48 @@ export function timeToHmFragment(t) {
   return s.length >= 5 ? s.slice(0, 5) : s.padStart(5, '0')
 }
 
+function pad2(n) {
+  return String(n).padStart(2, '0')
+}
+
+/** Calendar date in the browser's local timezone (NOT UTC). */
+export function toLocalYmd(d) {
+  if (!(d instanceof Date) || Number.isNaN(d.getTime())) return ''
+  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`
+}
+
+export function toLocalHms(d) {
+  if (!(d instanceof Date) || Number.isNaN(d.getTime())) return ''
+  return `${pad2(d.getHours())}:${pad2(d.getMinutes())}:${pad2(d.getSeconds())}`
+}
+
 function toDatetimeLocalValue(d) {
   if (!(d instanceof Date) || Number.isNaN(d.getTime())) return ''
-  const pad = (n) => String(n).padStart(2, '0')
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
+  return `${toLocalYmd(d)}T${pad2(d.getHours())}:${pad2(d.getMinutes())}`
+}
+
+/**
+ * Parse a date-only string (YYYY-MM-DD) as a local calendar date.
+ * Avoids `new Date('YYYY-MM-DD')` which is treated as UTC midnight.
+ */
+export function parseLocalDateOnly(dateStr) {
+  if (!dateStr) return null
+  const s = String(dateStr).slice(0, 10)
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(s)
+  if (!m) return null
+  const d = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]), 0, 0, 0, 0)
+  return Number.isNaN(d.getTime()) ? null : d
+}
+
+/** Combine local date + time columns into a Date in local timezone. */
+export function combineLocalDateTime(dateStr, timeStr) {
+  if (!dateStr) return null
+  const day = parseLocalDateOnly(dateStr)
+  if (!day) return null
+  const t = String(timeStr || '00:00:00').slice(0, 8)
+  const [hh = '0', mm = '0', ss = '0'] = t.split(':')
+  day.setHours(Number(hh) || 0, Number(mm) || 0, Number(ss) || 0, 0)
+  return day
 }
 
 /**
@@ -34,15 +72,14 @@ export function resolveExamAvailabilityWindow(exam) {
   }
 
   if (!exam?.scheduled_date || !exam?.start_time) return { start: null, end: null }
-  const d = String(exam.scheduled_date).slice(0, 10)
-  const start = new Date(`${d}T${String(exam.start_time).slice(0, 8)}`)
-  if (Number.isNaN(start.getTime())) return { start: null, end: null }
+  const start = combineLocalDateTime(exam.scheduled_date, exam.start_time)
+  if (!start) return { start: null, end: null }
 
-  let end = exam.end_time ? new Date(`${d}T${String(exam.end_time).slice(0, 8)}`) : null
-  if (end && !Number.isNaN(end.getTime()) && end <= start) {
+  let end = exam.end_time ? combineLocalDateTime(exam.scheduled_date, exam.end_time) : null
+  if (end && end <= start) {
     end = new Date(end.getTime() + 24 * 60 * 60 * 1000)
   }
-  if (!end || Number.isNaN(end.getTime())) {
+  if (!end) {
     const hours = Number(settings.availability_hours) || DEFAULT_AVAILABILITY_HOURS
     end = new Date(start.getTime() + hours * 60 * 60 * 1000)
   }
@@ -81,30 +118,45 @@ export function examRowToDatetimeLocalValues(scheduled_date, start_time, end_tim
  * Availability end defaults to start + 24 hours (not attempt duration).
  * Also returns assessment_settings window patch.
  */
-export function datetimeLocalsToExamPayload(startLocal, endLocal, durationMinutes, availabilityHours = DEFAULT_AVAILABILITY_HOURS) {
-  const start = startLocal ? new Date(startLocal) : new Date()
-  const hours = Math.max(1, Number(availabilityHours) || DEFAULT_AVAILABILITY_HOURS)
-  if (Number.isNaN(start.getTime())) {
-    const now = new Date()
-    const end = new Date(now.getTime() + hours * 60 * 60 * 1000)
-    return {
-      scheduled_date: now.toISOString().slice(0, 10),
-      start_time: now.toTimeString().slice(0, 8),
-      end_time: end.toTimeString().slice(0, 8),
-      duration_minutes: Math.max(1, Number(durationMinutes) || 90),
-      window_start_at: now.toISOString(),
-      window_end_at: end.toISOString(),
-      availability_hours: hours,
-    }
+/**
+ * Parse `<input type="datetime-local" />` value as local wall-clock time.
+ * Avoid relying on Date parsing quirks across browsers.
+ */
+export function parseDatetimeLocal(value) {
+  if (!value) return null
+  const m = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2}))?/.exec(String(value).trim())
+  if (!m) {
+    const d = new Date(value)
+    return Number.isNaN(d.getTime()) ? null : d
   }
-  let end = endLocal ? new Date(endLocal) : new Date(start.getTime() + hours * 60 * 60 * 1000)
-  if (Number.isNaN(end.getTime()) || end <= start) {
+  const d = new Date(
+    Number(m[1]),
+    Number(m[2]) - 1,
+    Number(m[3]),
+    Number(m[4]),
+    Number(m[5]),
+    Number(m[6] || 0),
+    0,
+  )
+  return Number.isNaN(d.getTime()) ? null : d
+}
+
+export function datetimeLocalsToExamPayload(startLocal, endLocal, durationMinutes, availabilityHours = DEFAULT_AVAILABILITY_HOURS) {
+  const hours = Math.max(1, Number(availabilityHours) || DEFAULT_AVAILABILITY_HOURS)
+  let start = parseDatetimeLocal(startLocal) || new Date()
+  if (Number.isNaN(start.getTime())) start = new Date()
+
+  let end = parseDatetimeLocal(endLocal)
+  if (!end || Number.isNaN(end.getTime()) || end <= start) {
     end = new Date(start.getTime() + hours * 60 * 60 * 1000)
   }
+
+  // scheduled_date/start_time/end_time must be LOCAL calendar parts (what the instructor typed).
+  // window_* stay as absolute ISO for countdown / enter checks across timezones.
   return {
-    scheduled_date: start.toISOString().slice(0, 10),
-    start_time: start.toTimeString().slice(0, 8),
-    end_time: end.toTimeString().slice(0, 8),
+    scheduled_date: toLocalYmd(start),
+    start_time: toLocalHms(start),
+    end_time: toLocalHms(end),
     duration_minutes: Math.max(1, Number(durationMinutes) || 90),
     window_start_at: start.toISOString(),
     window_end_at: end.toISOString(),
@@ -115,8 +167,8 @@ export function datetimeLocalsToExamPayload(startLocal, endLocal, durationMinute
 /** Suggested end datetime-local = start + 24h */
 export function defaultEndFromStart(startLocal, hours = DEFAULT_AVAILABILITY_HOURS) {
   if (!startLocal) return ''
-  const start = new Date(startLocal)
-  if (Number.isNaN(start.getTime())) return ''
+  const start = parseDatetimeLocal(startLocal)
+  if (!start) return ''
   return toDatetimeLocalValue(new Date(start.getTime() + Math.max(1, hours) * 60 * 60 * 1000))
 }
 
