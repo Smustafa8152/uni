@@ -122,7 +122,7 @@ function NavigationItem({ item, location, setSidebarOpen, t, openSubmenuKey, set
                     : undefined
                 }
               >
-                {t(subItem.translationKey)}
+                {t(subItem.translationKey, subItem.name)}
               </Link>
             )
           })}
@@ -360,6 +360,8 @@ const adminNavigation = [
       { name: 'Schedule', translationKey: 'navigation.schedule', href: '/schedule' },
       { name: 'Attendance', translationKey: 'navigation.attendance', href: '/attendance' },
       { name: 'Examinations', translationKey: 'navigation.examinations', href: '/examinations' },
+      { name: 'Exam answers', translationKey: 'navigation.examAnswers', href: '/admin/exam-answers' },
+      { name: 'Grades export', translationKey: 'navigation.gradesExport', href: '/admin/grades-export' },
       { name: 'Student requests', translationKey: 'navigation.studentRequests', href: '/admin/requests' },
     ],
   },

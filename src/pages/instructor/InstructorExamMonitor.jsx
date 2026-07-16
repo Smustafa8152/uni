@@ -126,6 +126,12 @@ export default function InstructorExamMonitor() {
         </div>
         <div className="ph-acts">
           <button type="button" className="btn btn-gh" onClick={exportCsv}>⬇ CSV</button>
+          <Link
+            to={`/instructor/exam-answers?examId=${examId}&classId=${classId || exam.class_id || ''}`}
+            className="btn btn-ok"
+          >
+            {t('examAnswers.title', 'Student answers')}
+          </Link>
           <Link to={`/instructor/grade-exam?examId=${examId}`} className="btn btn-p">{t('instructorPortal.manualGrading', 'Manual grading')}</Link>
         </div>
       </div>

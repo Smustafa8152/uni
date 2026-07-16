@@ -16,6 +16,7 @@ const instructorNavigation = [
   { translationKey: 'instructorPortal.contentRelease', href: '/instructor/content-release', icon: '📅' },
   { translationKey: 'instructorPortal.questionBank', href: '/instructor/question-bank', icon: '🗃️' },
   { translationKey: 'instructorPortal.createAssessments', href: '/instructor/assessments', icon: '📝' },
+  { translationKey: 'instructorPortal.examAnswersNav', href: '/instructor/exam-answers', icon: '📋', defaultLabel: 'Exam answers' },
   { translationKey: 'instructorPortal.gradebook', href: '/instructor/gradebook', icon: '📊' },
   { translationKey: 'instructorPortal.analyticsAndEngagement', href: '/instructor/analytics', icon: '📈' },
   { translationKey: 'instructorPortal.communicationNav', href: '/instructor/communication', icon: '💬' },
@@ -84,8 +85,13 @@ export default function InstructorLayout({ children }) {
     if (path === '/instructor/reports') {
       return t('instructorPortal.reportsPageTitle')
     }
+    if (path === '/instructor/exam-answers' || path.startsWith('/instructor/exam-answers')) {
+      return t('instructorPortal.examAnswersPageTopbarTitle', 'Exam answers')
+    }
     const current = instructorNavigation.find((n) => path === n.href || (n.href !== '/instructor/dashboard' && path.startsWith(n.href)))
-    return current ? t(current.translationKey) : t('instructorPortal.dashboard')
+    return current
+      ? t(current.translationKey, current.defaultLabel || current.translationKey)
+      : t('instructorPortal.dashboard')
   }
 
   const displayName = instructorProfile
@@ -126,7 +132,7 @@ export default function InstructorLayout({ children }) {
                       aria-current={isActive ? 'page' : undefined}
                     >
                       <span className="ic" aria-hidden>{item.icon}</span>
-                      {t(item.translationKey)}
+                      {t(item.translationKey, item.defaultLabel || item.translationKey)}
                     </Link>
                   </li>
                 )

@@ -863,6 +863,14 @@ export default function InstructorAssessmentAuthoring({ embedded = false, embedC
               >
                 👁️ {t('instructorPortal.previewExamPage')}
               </Link>
+              {selectedExamId && (
+                <Link
+                  to={`/instructor/exam-answers?examId=${selectedExamId}&classId=${selectedClassId || ''}`}
+                  className="btn btn-gh"
+                >
+                  📋 {t('examAnswers.title', 'Student answers')}
+                </Link>
+              )}
               <Link
                 to={`/instructor/exam-settings?classId=${selectedClassId || ''}&examId=${selectedExamId || ''}`}
                 className="btn btn-p"

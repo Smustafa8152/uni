@@ -127,6 +127,8 @@ import InstructorQuestionBank from './pages/instructor/InstructorQuestionBank'
 import InstructorGradebook from './pages/instructor/InstructorGradebook'
 import InstructorExamMonitor from './pages/instructor/InstructorExamMonitor'
 import InstructorManualGrading from './pages/instructor/InstructorManualGrading'
+import ExamStudentAnswers from './pages/shared/ExamStudentAnswers'
+import AdminGradesExport from './pages/admin/AdminGradesExport'
 import InstructorComingSoon from './pages/instructor/InstructorComingSoon'
 import InstructorTemplates from './pages/instructor/InstructorTemplates'
 import CreateMaterial from './pages/instructor/CreateMaterial'
@@ -1416,6 +1418,36 @@ function App() {
               <ProtectedRoute allowedRoles={['instructor']}>
                 <RoleBasedLayout>
                   <InstructorManualGrading />
+                </RoleBasedLayout>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/instructor/exam-answers"
+            element={
+              <ProtectedRoute allowedRoles={['instructor']}>
+                <RoleBasedLayout>
+                  <ExamStudentAnswers mode="instructor" />
+                </RoleBasedLayout>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/admin/exam-answers"
+            element={
+              <ProtectedRoute allowedRoles={['admin']}>
+                <RoleBasedLayout>
+                  <ExamStudentAnswers mode="admin" />
+                </RoleBasedLayout>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/admin/grades-export"
+            element={
+              <ProtectedRoute allowedRoles={['admin']}>
+                <RoleBasedLayout>
+                  <AdminGradesExport />
                 </RoleBasedLayout>
               </ProtectedRoute>
             }

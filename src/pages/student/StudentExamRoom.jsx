@@ -67,6 +67,8 @@ export default function StudentExamRoom() {
   const [autosaveState, setAutosaveState] = useState('idle') // idle|saving|saved|err
   const [showSummary, setShowSummary] = useState(false)
   const [submitting, setSubmitting] = useState(false)
+  /** Seconds until exam start (waiting lobby) — distinct from attempt countdown */
+  const [startsInSec, setStartsInSec] = useState(null)
 
   const savingRef = useRef(false)
   const submittingRef = useRef(false)
@@ -151,21 +153,27 @@ export default function StudentExamRoom() {
         const endMs = end?.getTime()
         const startMs = start?.getTime()
 
-        // Allow EX_SCH once start time has arrived (auto-open); still block outside window
+        // Block entry until the availability window is open
         if (!isExamEnterableForStudent(ex, new Date(now))) {
-          if (ex.status !== 'EX_SCH' && ex.status !== 'EX_OPN') {
-            setError(t('studentPortal.elearning.examNotOpen', 'This exam is not open.'))
-          } else if (startMs && now < startMs) {
-            setError(t('studentPortal.elearning.examNotStarted', 'Exam has not started yet.'))
-            setRemainingSec(Math.max(0, Math.floor((startMs - now) / 1000)))
-          } else if (endMs && now > endMs) {
+          if (startMs && now < startMs) {
+            setStartsInSec(Math.max(0, Math.floor((startMs - now) / 1000)))
+            setRemainingSec(0)
+            setQuestions([])
+            setLoading(false)
+            return
+          }
+          if (endMs && now > endMs) {
             setError(t('studentPortal.elearning.examWindowClosed', 'The exam availability window has closed.'))
           } else {
             setError(t('studentPortal.elearning.examNotOpen', 'This exam is not open.'))
           }
-          if (!(startMs && now < startMs)) setRemainingSec(0)
+          setStartsInSec(null)
+          setRemainingSec(0)
+          setQuestions([])
+          setLoading(false)
           return
         }
+        setStartsInSec(null)
 
         const { data: qs, error: qErr } = await supabase
           .from('subject_exam_questions')
@@ -272,16 +280,31 @@ export default function StudentExamRoom() {
     })
   }, [exam?.id, student?.id, questions])
 
-  // Countdown
+  // Countdown — attempt timer OR waiting-to-start timer
   useEffect(() => {
+    if (startsInSec != null && startsInSec > 0) {
+      const it = setInterval(() => {
+        setStartsInSec((s) => {
+          if (s == null) return s
+          const next = Math.max(0, s - 1)
+          if (next === 0) {
+            // Reload so student can enter once start time hits
+            window.location.reload()
+          }
+          return next
+        })
+      }, 1000)
+      return () => clearInterval(it)
+    }
     if (!remainingSec) return
     hadPositiveTimeRef.current = true
     const it = setInterval(() => setRemainingSec((s) => Math.max(0, s - 1)), 1000)
     return () => clearInterval(it)
-  }, [remainingSec])
+  }, [remainingSec, startsInSec])
 
   // Auto-submit when attempt timer hits 0 (only if a real countdown had started)
   useEffect(() => {
+    if (startsInSec != null) return
     if (!exam?.id || loading) return
     if (remainingSec !== 0) return
     if (!hadPositiveTimeRef.current || autoSubmitTriedRef.current) return
@@ -296,7 +319,7 @@ export default function StudentExamRoom() {
       }
     })()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [remainingSec, exam?.id, loading])
+  }, [remainingSec, exam?.id, loading, startsInSec])
 
   const courseCode = exam?.classes?.subjects?.code || '—'
   const courseName = getLocalizedName(exam?.classes?.subjects, isArabic) || '—'
@@ -489,6 +512,71 @@ export default function StudentExamRoom() {
     return (
       <div className="rounded-xl border bg-white p-6" style={{ borderColor: UI.bdr }}>
         <div className="text-sm" style={{ color: UI.err }}>{error}</div>
+        <Link to="/student/elearning/exams" className="inline-block mt-4 text-sm font-bold" style={{ color: UI.p }}>
+          ← {t('studentPortal.elearning.backToExams', 'Back to exams')}
+        </Link>
+      </div>
+    )
+  }
+
+  // Waiting lobby — exam scheduled but start time not reached (do not show exam UI)
+  if (startsInSec != null) {
+    return (
+      <div dir={isArabic ? 'rtl' : 'ltr'} className="space-y-4">
+        <nav className="flex flex-wrap items-center gap-2 text-sm" style={{ color: UI.muted }}>
+          <Link to="/dashboard" style={{ color: UI.muted }} className="hover:underline">
+            {t('studentPortal.dashboard', 'Dashboard')}
+          </Link>
+          <span style={{ color: UI.bdr }}>›</span>
+          <Link to="/student/elearning/exams" style={{ color: UI.muted }} className="hover:underline">
+            {t('studentPortal.elearning.exams', 'Exams')}
+          </Link>
+          <span style={{ color: UI.bdr }}>›</span>
+          <span className="font-semibold" style={{ color: UI.p }}>
+            {courseCode}
+          </span>
+        </nav>
+
+        <div className="bg-white rounded-xl border shadow-sm p-8 text-center max-w-lg mx-auto" style={{ borderColor: UI.bdr }}>
+          <div className="text-4xl mb-3">📅</div>
+          <h1 className="text-xl font-extrabold mb-2" style={{ color: UI.p }}>
+            {examTitle}
+          </h1>
+          <p className="text-sm mb-6" style={{ color: UI.muted }}>
+            {t('studentPortal.elearning.examNotStarted', 'Exam has not started yet.')}
+          </p>
+          <div className="rounded-xl px-5 py-6 text-white" style={{ background: `linear-gradient(135deg, ${UI.warn}, #d97706)` }}>
+            <div className="text-xs font-extrabold uppercase tracking-widest opacity-90">
+              {t('studentPortal.elearning.startsIn', 'Starts in')}
+            </div>
+            <div className="text-4xl font-extrabold mt-1" style={{ fontVariantNumeric: 'tabular-nums' }}>
+              {fmtHMS(startsInSec)}
+            </div>
+            <div className="text-xs opacity-80 mt-2">
+              {t('studentPortal.elearning.waitingToStartHint', 'You can enter the exam when this countdown reaches zero.')}
+            </div>
+          </div>
+          <Link
+            to="/student/elearning/exams"
+            className="inline-block mt-6 px-5 py-2 rounded-md border font-bold text-sm"
+            style={{ borderColor: UI.p, color: UI.p }}
+          >
+            ← {t('studentPortal.elearning.backToExams', 'Back to exams')}
+          </Link>
+        </div>
+      </div>
+    )
+  }
+
+  if (error) {
+    return (
+      <div dir={isArabic ? 'rtl' : 'ltr'} className="space-y-4">
+        <div className="rounded-xl border bg-white p-6 max-w-lg" style={{ borderColor: UI.bdr }}>
+          <div className="text-sm font-bold mb-2" style={{ color: UI.err }}>{error}</div>
+          <Link to="/student/elearning/exams" className="text-sm font-bold" style={{ color: UI.p }}>
+            ← {t('studentPortal.elearning.backToExams', 'Back to exams')}
+          </Link>
+        </div>
       </div>
     )
   }
@@ -509,7 +597,7 @@ export default function StudentExamRoom() {
         </span>
       </nav>
 
-      {/* Timer header */}
+      {/* Attempt timer — only while exam is in progress */}
       <div className="rounded-xl px-5 py-4 text-white flex items-center gap-4" style={{ background: `linear-gradient(135deg, ${UI.err}, #dc2626)` }}>
         <div className="text-2xl">⏱️</div>
         <div className="flex-1">

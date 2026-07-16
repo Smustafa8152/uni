@@ -313,13 +313,12 @@ export default function StudentELearningExams() {
           const displayStart = window.start || ex.start_time
           const displayEnd = window.end || ex.end_time
           const soonMs = msUntil(ex)
-          const isTomorrow = soonMs != null && soonMs < 24 * 60 * 60 * 1000 && soonMs > 0
           const alreadySubmitted = isExamSubmissionComplete(ex.submission)
           const canEnter = canStudentAttemptExam(ex, ex.submission)
           const canViewResult = alreadySubmitted && !canEnter
 
-          const accent = canEnter ? UI.info : alreadySubmitted ? UI.ok : isTomorrow ? UI.err : UI.warn
-          const accentBg = canEnter ? UI.infoBg : alreadySubmitted ? UI.okBg : isTomorrow ? UI.errBg : UI.warnBg
+          const accent = canEnter ? UI.info : alreadySubmitted ? UI.ok : soonMs != null && soonMs > 0 ? UI.warn : UI.muted
+          const accentBg = canEnter ? UI.infoBg : alreadySubmitted ? UI.okBg : soonMs != null && soonMs > 0 ? UI.warnBg : UI.bg
 
           return (
             <div key={ex.id} className="bg-white rounded-xl border shadow-sm p-6" style={{ borderColor: UI.bdr, borderRight: `4px solid ${accent}` }}>
@@ -351,8 +350,14 @@ export default function StudentELearningExams() {
                         ✅ {t('studentPortal.elearning.viewSubmission', 'View submission')}
                       </button>
                     ) : (
-                      <button type="button" className="px-4 py-2 rounded-md border font-bold text-sm" style={{ borderColor: UI.p, color: UI.p }} onClick={() => navigate(`/student/elearning/exams/${ex.id}`)}>
-                        📋 {t('studentPortal.elearning.examDetails', 'Exam details')}
+                      <button
+                        type="button"
+                        className="px-4 py-2 rounded-md border font-bold text-sm opacity-60 cursor-not-allowed"
+                        style={{ borderColor: UI.bdr, color: UI.muted }}
+                        disabled
+                        title={t('studentPortal.elearning.examNotStarted', 'Exam has not started yet.')}
+                      >
+                        🔒 {t('studentPortal.elearning.notOpenYet', 'Not open yet')}
                       </button>
                     )}
                   </div>
@@ -372,12 +377,12 @@ export default function StudentELearningExams() {
                               ? t('studentPortal.elearning.open', 'Open')
                               : t('studentPortal.elearning.closed', 'Closed')}
                   </span>
-                  {isTomorrow && (
+                  {soonMs != null && soonMs > 0 && !canEnter && !alreadySubmitted && (
                     <>
-                      <div className="text-xs mt-2" style={{ color: UI.muted }}>
+                      <div className="text-xs mt-2 font-bold" style={{ color: UI.warn }}>
                         {t('studentPortal.elearning.startsIn', 'Starts in')}
                       </div>
-                      <div className="text-xl font-extrabold" style={{ color: UI.err }}>
+                      <div className="text-xl font-extrabold" style={{ color: UI.err, fontVariantNumeric: 'tabular-nums' }}>
                         {countdown(soonMs)}
                       </div>
                     </>
