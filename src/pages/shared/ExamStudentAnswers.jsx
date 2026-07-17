@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { Link, useSearchParams } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { useAuth } from '../../contexts/AuthContext'
@@ -37,6 +38,10 @@ export default function ExamStudentAnswers({ mode = 'instructor' }) {
   const [submissions, setSubmissions] = useState([])
   const [selectedSubmissionId, setSelectedSubmissionId] = useState(submissionIdParam)
   const [detailLoading, setDetailLoading] = useState(false)
+  const [reexamBusy, setReexamBusy] = useState(false)
+  const [reexamConfirmOpen, setReexamConfirmOpen] = useState(false)
+  const [actionError, setActionError] = useState('')
+  const [actionOk, setActionOk] = useState('')
 
   const basePath = mode === 'admin' ? '/admin/exam-answers' : '/instructor/exam-answers'
   const homeHref = mode === 'admin' ? '/dashboard' : '/instructor/dashboard'
@@ -193,12 +198,78 @@ export default function ExamStudentAnswers({ mode = 'instructor' }) {
 
   const selectSubmission = (id) => {
     setSelectedSubmissionId(id)
+    setActionError('')
+    setActionOk('')
+    setReexamConfirmOpen(false)
     const params = new URLSearchParams(searchParams)
     if (selectedExamId) params.set('examId', String(selectedExamId))
     if (id) params.set('submissionId', String(id))
     else params.delete('submissionId')
     setSearchParams(params)
   }
+
+  const reloadSubmissions = async (preferId = null) => {
+    if (!selectedExamId) return
+    const { data: subs } = await supabase
+      .from('exam_submissions')
+      .select(
+        'id, student_id, status, started_at, submitted_at, points_earned, grade, submission_data, students(id, student_id, name_en, name_ar)',
+      )
+      .eq('exam_id', selectedExamId)
+      .order('submitted_at', { ascending: false, nullsFirst: false })
+    const list = subs || []
+    setSubmissions(list)
+    const nextId =
+      (preferId && list.find((s) => s.id === preferId)?.id) ||
+      list.find((s) => s.id === selectedSubmissionId)?.id ||
+      list[0]?.id ||
+      null
+    setSelectedSubmissionId(nextId)
+  }
+
+  const selectedStudentName =
+    (isArabic ? selectedSubmission?.students?.name_ar : selectedSubmission?.students?.name_en) ||
+    selectedSubmission?.students?.name_en ||
+    selectedSubmission?.students?.student_id ||
+    ''
+
+  const reexamPending =
+    !!(selectedSubmission?.submission_data?.instructor_retake && selectedSubmission?.status === 'EX_DRF')
+
+  const confirmAllowReexam = async () => {
+    if (!selectedSubmission?.id) return
+    setReexamBusy(true)
+    setActionError('')
+    setActionOk('')
+    try {
+      const { error } = await supabase.rpc('reset_exam_submission_for_retake', {
+        p_submission_id: selectedSubmission.id,
+      })
+      if (error) throw error
+      await reloadSubmissions(selectedSubmission.id)
+      setReexamConfirmOpen(false)
+      setActionOk(
+        t(
+          'examAnswers.reexamDone',
+          'Re-exam allowed. The student can open the exam again and start a new attempt.',
+        ),
+      )
+    } catch (e) {
+      console.error(e)
+      setActionError(e?.message || String(e))
+    } finally {
+      setReexamBusy(false)
+    }
+  }
+
+  useEffect(() => {
+    if (!reexamConfirmOpen) return undefined
+    const prev = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    return () => {
+      document.body.style.overflow = prev
+    }
+  }, [reexamConfirmOpen])
 
   const subjectCode = exam?.classes?.subjects?.code || '—'
   const subjectName = getLocalizedName(exam?.classes?.subjects, isArabic) || ''
@@ -242,10 +313,15 @@ export default function ExamStudentAnswers({ mode = 'instructor' }) {
         <div>
           <h1 style={{ margin: 0 }}>{t('examAnswers.title', 'Student exam answers')}</h1>
           <p className="ph-sub" style={{ marginTop: 4 }}>
-            {t(
-              'examAnswers.subtitle',
-              'Review each student’s answers for an online exam — questions, responses, and scores.',
-            )}
+            {mode === 'admin'
+              ? t(
+                  'examAnswers.subtitleAdmin',
+                  'Review student answers for any online exam. You can allow a specific student to re-take the exam.',
+                )
+              : t(
+                  'examAnswers.subtitle',
+                  'Review each student’s answers for an online exam — questions, responses, and scores.',
+                )}
           </p>
         </div>
         <div className="ph-acts">
@@ -351,9 +427,9 @@ export default function ExamStudentAnswers({ mode = 'instructor' }) {
               >
                 {t('examAnswers.students', 'Students')} ({submissions.length})
               </div>
-              <div style={{ maxHeight: '70vh', overflowY: 'auto' }}>
+              <div style={{ maxHeight: '70vh', overflowY: 'auto', background: '#fff' }}>
                 {submissions.length === 0 && (
-                  <div style={{ padding: 20, textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>
+                  <div style={{ padding: 20, textAlign: 'center', color: '#6b7a99', fontSize: 13 }}>
                     {t('examAnswers.noAttempts', 'No student attempts for this exam yet.')}
                   </div>
                 )}
@@ -363,27 +439,70 @@ export default function ExamStudentAnswers({ mode = 'instructor' }) {
                     (isArabic ? s.students?.name_ar : s.students?.name_en) ||
                     s.students?.name_en ||
                     '—'
+                  const isRetake =
+                    !!(s.submission_data?.instructor_retake && s.status === 'EX_DRF')
+                  const isDone = s.status === 'EX_GRD' || s.status === 'EX_SUB'
                   return (
                     <button
                       key={s.id}
                       type="button"
                       onClick={() => selectSubmission(s.id)}
+                      aria-current={active ? 'true' : undefined}
                       style={{
                         display: 'block',
                         width: '100%',
                         textAlign: 'start',
                         padding: '12px 14px',
                         border: 'none',
-                        borderBottom: '1px solid var(--bdr)',
-                        background: active ? 'var(--p)' : '#fff',
-                        color: active ? '#fff' : 'inherit',
+                        borderBottom: '1px solid #e8edf5',
+                        borderInlineStart: active ? '4px solid #1a3a6b' : '4px solid transparent',
+                        background: active ? '#e8eef8' : '#ffffff',
+                        color: '#1e2a3a',
                         cursor: 'pointer',
+                        boxShadow: active ? 'inset 0 0 0 1px #c5d4eb' : 'none',
                       }}
                     >
-                      <div style={{ fontWeight: 700, fontSize: 13 }}>{name}</div>
-                      <div style={{ fontSize: 11, opacity: 0.85, marginTop: 2 }}>
-                        {s.students?.student_id || '—'} · {submissionStatusLabel(s.status, t)}
-                        {s.points_earned != null ? ` · ${s.points_earned}/${exam.total_points}` : ''}
+                      <div
+                        style={{
+                          fontWeight: active ? 800 : 700,
+                          fontSize: 13,
+                          color: '#1a3a6b',
+                          lineHeight: 1.35,
+                        }}
+                      >
+                        {name}
+                      </div>
+                      <div
+                        style={{
+                          fontSize: 11,
+                          marginTop: 4,
+                          color: '#5b6b86',
+                          display: 'flex',
+                          flexWrap: 'wrap',
+                          alignItems: 'center',
+                          gap: 6,
+                        }}
+                      >
+                        <span>{s.students?.student_id || '—'}</span>
+                        <span
+                          style={{
+                            fontWeight: 800,
+                            fontSize: 10,
+                            padding: '2px 7px',
+                            borderRadius: 999,
+                            background: isRetake ? '#fef3c7' : isDone ? '#e6f7ef' : '#f1f5f9',
+                            color: isRetake ? '#92400e' : isDone ? '#166534' : '#475569',
+                          }}
+                        >
+                          {isRetake
+                            ? t('examAnswers.reexamShort', 'Re-exam')
+                            : submissionStatusLabel(s.status, t)}
+                        </span>
+                        {s.points_earned != null && (
+                          <span style={{ fontWeight: 700, color: '#1e2a3a' }}>
+                            {s.points_earned}/{exam.total_points}
+                          </span>
+                        )}
                       </div>
                     </button>
                   )
@@ -406,42 +525,134 @@ export default function ExamStudentAnswers({ mode = 'instructor' }) {
                       display: 'flex',
                       flexWrap: 'wrap',
                       justifyContent: 'space-between',
-                      gap: 12,
-                      marginBottom: 16,
-                      paddingBottom: 12,
-                      borderBottom: '1px solid var(--bdr)',
+                      alignItems: 'flex-start',
+                      gap: 16,
+                      marginBottom: 12,
                     }}
                   >
-                    <div>
-                      <div style={{ fontWeight: 800, fontSize: 16 }}>
-                        {(isArabic
-                          ? selectedSubmission.students?.name_ar
-                          : selectedSubmission.students?.name_en) ||
-                          selectedSubmission.students?.name_en ||
-                          '—'}
+                    <div style={{ minWidth: 0, flex: '1 1 200px' }}>
+                      <div style={{ fontWeight: 800, fontSize: 18, color: 'var(--p)' }}>
+                        {selectedStudentName || '—'}
                       </div>
-                      <div style={{ fontSize: 12, color: 'var(--muted)' }}>
-                        {selectedSubmission.students?.student_id || '—'} ·{' '}
-                        {submissionStatusLabel(selectedSubmission.status, t)}
+                      <div style={{ fontSize: 13, color: 'var(--muted)', marginTop: 4 }}>
+                        {selectedSubmission.students?.student_id || '—'}
+                        <span style={{ marginInline: 6 }}>·</span>
+                        <span
+                          style={{
+                            display: 'inline-block',
+                            fontSize: 11,
+                            fontWeight: 800,
+                            padding: '2px 8px',
+                            borderRadius: 999,
+                            background: reexamPending
+                              ? '#fef3c7'
+                              : selectedSubmission.status === 'EX_GRD' || selectedSubmission.status === 'EX_SUB'
+                                ? '#e6f7ef'
+                                : '#f1f5f9',
+                            color: reexamPending
+                              ? '#b45309'
+                              : selectedSubmission.status === 'EX_GRD' || selectedSubmission.status === 'EX_SUB'
+                                ? '#1a7a4a'
+                                : '#475569',
+                          }}
+                        >
+                          {reexamPending
+                            ? t('examAnswers.reexamPending', 'Re-exam allowed — waiting for student')
+                            : submissionStatusLabel(selectedSubmission.status, t)}
+                        </span>
                       </div>
                     </div>
-                    <div style={{ textAlign: 'end', fontSize: 13 }}>
-                      <div>
-                        <strong>{t('examAnswers.score', 'Score')}:</strong>{' '}
+                    <div style={{ textAlign: 'end', fontSize: 13, flex: '0 0 auto' }}>
+                      <div style={{ fontWeight: 800, fontSize: 16 }}>
+                        {t('examAnswers.score', 'Score')}:{' '}
                         {selectedSubmission.points_earned != null
                           ? `${selectedSubmission.points_earned} / ${exam.total_points}`
                           : '—'}
-                        {selectedSubmission.grade != null ? ` (${selectedSubmission.grade}%)` : ''}
+                        {selectedSubmission.grade != null ? (
+                          <span style={{ color: 'var(--muted)', fontWeight: 600 }}>
+                            {' '}
+                            ({selectedSubmission.grade}%)
+                          </span>
+                        ) : null}
                       </div>
-                      <div style={{ color: 'var(--muted)', fontSize: 12 }}>
+                      <div style={{ color: 'var(--muted)', fontSize: 12, marginTop: 2 }}>
                         {selectedSubmission.submitted_at
                           ? `${t('examAnswers.submittedAt', 'Submitted')}: ${new Date(selectedSubmission.submitted_at).toLocaleString()}`
                           : selectedSubmission.started_at
                             ? `${t('examAnswers.startedAt', 'Started')}: ${new Date(selectedSubmission.started_at).toLocaleString()}`
-                            : ''}
+                            : t('examAnswers.notStartedYet', 'Not started yet')}
                       </div>
                     </div>
                   </div>
+
+                  <div
+                    style={{
+                      display: 'flex',
+                      flexWrap: 'wrap',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      gap: 12,
+                      padding: '12px 14px',
+                      marginBottom: 16,
+                      borderRadius: 12,
+                      border: '1px solid #c7d2fe',
+                      background: 'linear-gradient(180deg, #eef2ff 0%, #f8fafc 100%)',
+                    }}
+                  >
+                    <div style={{ flex: '1 1 220px' }}>
+                      <div style={{ fontWeight: 800, fontSize: 13, color: 'var(--p)' }}>
+                        {t('examAnswers.reexamPanelTitle', 'Student re-exam')}
+                      </div>
+                      <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 2 }}>
+                        {reexamPending
+                          ? t(
+                              'examAnswers.reexamPanelPendingHint',
+                              'This student may open the exam again and start a new attempt.',
+                            )
+                          : t(
+                              'examAnswers.reexamPanelHint',
+                              'Reset this student’s attempt so they can take the exam again. Previous answers are kept in history.',
+                            )}
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      disabled={reexamBusy}
+                      onClick={() => {
+                        setActionError('')
+                        setActionOk('')
+                        setReexamConfirmOpen(true)
+                      }}
+                      style={{
+                        appearance: 'none',
+                        border: 'none',
+                        background: '#1a3a6b',
+                        color: '#ffffff',
+                        fontWeight: 800,
+                        fontSize: 14,
+                        padding: '10px 16px',
+                        borderRadius: 10,
+                        cursor: 'pointer',
+                        whiteSpace: 'nowrap',
+                        flexShrink: 0,
+                      }}
+                    >
+                      {reexamPending
+                        ? t('examAnswers.allowReexamAgain', 'Allow another re-exam')
+                        : t('examAnswers.allowReexam', 'Allow re-exam')}
+                    </button>
+                  </div>
+
+                  {actionError && (
+                    <div className="alert alert-err" style={{ marginBottom: 12 }} role="alert">
+                      {actionError}
+                    </div>
+                  )}
+                  {actionOk && !actionError && (
+                    <div className="alert alert-ok" style={{ marginBottom: 12 }} role="status">
+                      {actionOk}
+                    </div>
+                  )}
 
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
                     {questions.map((q, idx) => {
@@ -625,6 +836,119 @@ export default function ExamStudentAnswers({ mode = 'instructor' }) {
           `}</style>
         </>
       )}
+
+      {reexamConfirmOpen &&
+        selectedSubmission &&
+        createPortal(
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="reexam-confirm-title"
+            onClick={() => !reexamBusy && setReexamConfirmOpen(false)}
+            style={{
+              position: 'fixed',
+              top: 0,
+              left: 0,
+              right: 0,
+              bottom: 0,
+              width: '100vw',
+              height: '100vh',
+              background: 'rgba(15, 23, 42, 0.55)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              zIndex: 99999,
+              padding: 20,
+              boxSizing: 'border-box',
+            }}
+          >
+            <div
+              onClick={(e) => e.stopPropagation()}
+              style={{
+                width: '100%',
+                maxWidth: 460,
+                background: '#ffffff',
+                borderRadius: 16,
+                border: '1px solid #dde3ef',
+                boxShadow: '0 24px 64px rgba(15, 23, 42, 0.35)',
+                padding: 24,
+                color: '#1e2a3a',
+              }}
+            >
+              <div
+                id="reexam-confirm-title"
+                style={{ fontWeight: 800, fontSize: 18, color: '#1a3a6b', marginBottom: 10 }}
+              >
+                {t('examAnswers.reexamModalTitle', 'Allow re-exam?')}
+              </div>
+              <p style={{ fontSize: 14, color: '#6b7a99', margin: '0 0 20px', lineHeight: 1.55 }}>
+                {t('examAnswers.reexamConfirm', {
+                  defaultValue:
+                    'Allow {{name}} to re-take this exam? Their current answers and score will be cleared (a copy is kept in history). The synced gradebook cell for this exam type will also be cleared.',
+                  name: selectedStudentName || '—',
+                })}
+              </p>
+              {actionError && (
+                <div
+                  role="alert"
+                  style={{
+                    marginBottom: 14,
+                    padding: '10px 12px',
+                    borderRadius: 10,
+                    background: '#fee2e2',
+                    color: '#b91c1c',
+                    fontSize: 13,
+                    fontWeight: 600,
+                  }}
+                >
+                  {actionError}
+                </div>
+              )}
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, flexWrap: 'wrap' }}>
+                <button
+                  type="button"
+                  disabled={reexamBusy}
+                  onClick={() => setReexamConfirmOpen(false)}
+                  style={{
+                    appearance: 'none',
+                    border: '1px solid #dde3ef',
+                    background: '#f4f6fb',
+                    color: '#1e2a3a',
+                    fontWeight: 700,
+                    fontSize: 14,
+                    padding: '10px 16px',
+                    borderRadius: 10,
+                    cursor: reexamBusy ? 'not-allowed' : 'pointer',
+                  }}
+                >
+                  {t('common.cancel', 'Cancel')}
+                </button>
+                <button
+                  type="button"
+                  disabled={reexamBusy}
+                  onClick={confirmAllowReexam}
+                  style={{
+                    appearance: 'none',
+                    border: 'none',
+                    background: '#1a3a6b',
+                    color: '#ffffff',
+                    fontWeight: 800,
+                    fontSize: 14,
+                    padding: '10px 16px',
+                    borderRadius: 10,
+                    cursor: reexamBusy ? 'not-allowed' : 'pointer',
+                    opacity: reexamBusy ? 0.75 : 1,
+                  }}
+                >
+                  {reexamBusy
+                    ? t('common.loading', 'Loading…')
+                    : t('examAnswers.reexamConfirmBtn', 'Yes, allow re-exam')}
+                </button>
+              </div>
+            </div>
+          </div>,
+          document.body,
+        )}
     </div>
   )
 }

@@ -1435,7 +1435,7 @@ function App() {
           <Route
             path="/admin/exam-answers"
             element={
-              <ProtectedRoute allowedRoles={['admin']}>
+              <ProtectedRoute allowedRoles={['admin', 'user']}>
                 <RoleBasedLayout>
                   <ExamStudentAnswers mode="admin" />
                 </RoleBasedLayout>
@@ -1445,7 +1445,7 @@ function App() {
           <Route
             path="/admin/grades-export"
             element={
-              <ProtectedRoute allowedRoles={['admin']}>
+              <ProtectedRoute allowedRoles={['admin', 'user']}>
                 <RoleBasedLayout>
                   <AdminGradesExport />
                 </RoleBasedLayout>

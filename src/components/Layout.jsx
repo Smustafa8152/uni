@@ -212,6 +212,8 @@ const defaultNavigation = [
       { name: 'Grade Management', translationKey: 'navigation.gradeManagement', href: '/grading' },
       { name: 'Student Grades', translationKey: 'navigation.studentGrades', href: '/grading/students' },
       { name: 'Analytics', translationKey: 'navigation.analytics', href: '/grading/analytics' },
+      { name: 'Exam answers', translationKey: 'navigation.examAnswers', href: '/admin/exam-answers' },
+      { name: 'Grades export', translationKey: 'navigation.gradesExport', href: '/admin/grades-export' },
     ],
   },
   { name: 'My Grades', translationKey: 'navigation.myGrades', href: '/student/grades', icon: FileText, roles: ['student'] },
@@ -331,6 +333,8 @@ const adminNavigation = [
       { name: 'Student Grades', translationKey: 'navigation.studentGrades', href: '/grading/students' },
       { name: 'Transcripts', translationKey: 'navigation.transcripts', href: '/grading/transcripts' },
       { name: 'Analytics', translationKey: 'navigation.analytics', href: '/grading/analytics' },
+      { name: 'Exam answers', translationKey: 'navigation.examAnswers', href: '/admin/exam-answers' },
+      { name: 'Grades export', translationKey: 'navigation.gradesExport', href: '/admin/grades-export' },
     ],
   },
   {

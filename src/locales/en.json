@@ -6520,6 +6520,7 @@
     "breadcrumb": "Exam answers",
     "title": "Student exam answers",
     "subtitle": "Review each student's answers for an online exam — questions, responses, and scores.",
+    "subtitleAdmin": "Review student answers for any online exam. You can allow a specific student to re-take the exam.",
     "selectExam": "Select exam",
     "chooseExam": "Choose an exam",
     "noExams": "No online exams found.",
@@ -6557,7 +6558,19 @@
     "typeFillBlank": "fill in the blank",
     "trueLabel": "True",
     "falseLabel": "False",
-    "optionN": "Option {{n}}"
+    "optionN": "Option {{n}}",
+    "allowReexam": "Allow re-exam",
+    "allowReexamAgain": "Allow another re-exam",
+    "reexamPanelTitle": "Student re-exam",
+    "reexamPanelHint": "Reset this student’s attempt so they can take the exam again. Previous answers are kept in history.",
+    "reexamPanelPendingHint": "This student may open the exam again and start a new attempt.",
+    "reexamModalTitle": "Allow re-exam?",
+    "reexamConfirmBtn": "Yes, allow re-exam",
+    "notStartedYet": "Not started yet",
+    "reexamConfirm": "Allow {{name}} to re-take this exam? Their current answers and score will be cleared (a copy is kept in history). The synced gradebook cell for this exam type will also be cleared.",
+    "reexamDone": "Re-exam allowed. The student can open the exam again and start a new attempt.",
+    "reexamPending": "Re-exam allowed — waiting for student",
+    "reexamShort": "Re-exam"
   },
   "adminGradesExport": {
     "breadcrumb": "Grades export",

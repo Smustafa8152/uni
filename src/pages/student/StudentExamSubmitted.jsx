@@ -1,11 +1,12 @@
 import { useEffect, useState } from 'react'
-import { Link, useParams } from 'react-router-dom'
+import { Link, Navigate, useParams } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { useLanguage } from '../../contexts/LanguageContext'
 import { useAuth } from '../../contexts/AuthContext'
 import { supabase } from '../../lib/supabase'
 import { getLocalizedName } from '../../utils/localizedName'
 import { mergeAssessmentSettings, RESULT_VISIBILITY, canShowReviewField } from '../../utils/assessmentSettings'
+import { isExamSubmissionComplete } from '../../utils/subjectExamDateTime'
 
 const UI = {
   p: '#1a3a6b',
@@ -78,6 +79,11 @@ export default function StudentExamSubmitted() {
         <div className="animate-spin rounded-full h-12 w-12 border-2 border-slate-600 border-t-transparent" />
       </div>
     )
+  }
+
+  // Instructor allowed a re-exam — send student back to the exam room
+  if (submission && !isExamSubmissionComplete(submission)) {
+    return <Navigate to={`/student/elearning/exams/${examId}`} replace />
   }
 
   const code = exam?.classes?.subjects?.code || '—'

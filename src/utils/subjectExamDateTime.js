@@ -222,6 +222,7 @@ export function isExamSubmissionComplete(submission) {
 /**
  * Whether the student may start/continue answering.
  * Default max_attempts = 1 → one submission and done.
+ * Instructor/admin re-exam resets the row to EX_DRF (see reset_exam_submission_for_retake).
  */
 export function canStudentAttemptExam(exam, submission, now = new Date()) {
   if (!isExamEnterableForStudent(exam, now)) return false
