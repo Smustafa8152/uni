@@ -1,6 +1,6 @@
 import { supabase } from '../lib/supabase'
 
-/** After email OTP + password, create/update public.users row with role applicant (Edge Function). */
+/** After email/password signup or login, create/update public.users row with role applicant (Edge Function). */
 export async function syncApplicantProfile({ name } = {}) {
   const { data, error } = await supabase.functions.invoke('sync-applicant-profile', {
     body: { name: name || undefined },
