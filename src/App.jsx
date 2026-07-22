@@ -191,7 +191,7 @@ function App() {
           <Route path="/login/instructor" element={<LoginInstructor />} />
           <Route path="/login/student" element={<LoginStudent />} />
           <Route path="/signup" element={<Signup />} />
-          {/* Applicant portal (pre-enrollment): register with email OTP + password, then dashboard / apply */}
+          {/* Applicant portal (pre-enrollment): email + password register / login */}
           <Route path="/register" element={<ApplicantRegister />} />
           <Route path="/login/applicant" element={<LoginApplicant />} />
           <Route
