@@ -455,7 +455,9 @@
     "invalidOtp": "Enter the code from your email.",
     "otpVerifyFailed": "Invalid or expired code.",
     "completeFailed": "Could not finish registration.",
-    "confirmEmailBlocked": "Account created, but sign-in needs email confirmation in Supabase. Disable Confirm email under Authentication → Providers → Email, or sign in from Applicant login after confirming."
+    "confirmEmailBlocked": "Account created, but sign-in needs email confirmation in Supabase. Disable Confirm email under Authentication → Providers → Email, or sign in from Applicant login after confirming.",
+    "alreadyRegistered": "This email is already registered. Please sign in instead.",
+    "alreadyRegisteredWrongPassword": "This email is already registered. Check your password, or use Applicant sign in."
   },
   "applicantLogin": {
     "title": "Applicant sign in",
