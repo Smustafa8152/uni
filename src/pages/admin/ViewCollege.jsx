@@ -232,7 +232,7 @@ export default function ViewCollege() {
             <div className="space-y-2">
               <div className="flex justify-between">
                 <span className="text-sm text-gray-500">{t('colleges.prefix')}:</span>
-                <span className="text-sm font-medium text-gray-900">{college.student_id_prefix || 'STU'}</span>
+                <span className="text-sm font-medium text-gray-900">{college.student_id_prefix || '—'}</span>
               </div>
               <div className="flex justify-between">
                 <span className="text-sm text-gray-500">{t('colleges.format')}:</span>

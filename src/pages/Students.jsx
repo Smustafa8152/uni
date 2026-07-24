@@ -505,7 +505,7 @@ export default function Students() {
                       </Link>
                     </td>
                     <td className={`px-4 py-3 whitespace-nowrap text-sm text-gray-600 hidden sm:table-cell ${isRTL ? 'text-right' : 'text-left'}`}>
-                      {student.student_id || '—'}
+                      {String(student.student_id || '—').replace(/^STU/i, '') || '—'}
                     </td>
                     <td className={`px-4 py-3 whitespace-nowrap text-sm text-gray-600 hidden md:table-cell max-w-[180px] truncate ${isRTL ? 'text-right' : 'text-left'}`}>
                       {student.email || '—'}

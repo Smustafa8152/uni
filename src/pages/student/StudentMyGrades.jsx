@@ -199,7 +199,7 @@ export default function StudentMyGrades() {
           <div>
             <span className="text-slate-500 block text-xs uppercase tracking-wide">{t('studentPortal.cumulativeGpa', 'Cumulative GPA')}</span>
             <span className="font-semibold text-green-600">{typeof displayGpa === 'number' ? displayGpa.toFixed(2) : displayGpa}</span>
-            <span className="text-slate-600"> / 4.00</span>
+            <span className="text-slate-600"> / 4.30</span>
           </div>
         </div>
       </div>

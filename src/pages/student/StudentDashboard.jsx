@@ -376,7 +376,7 @@ export default function StudentDashboard() {
         <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-4 border-t-4" style={{ borderTopColor: '#1a7a4a' }}>
           <div className="text-[11px] font-extrabold text-slate-500 uppercase tracking-wide">{tx('المعدل التراكمي', 'Cumulative GPA')}</div>
           <div className="text-3xl font-extrabold mt-1" style={{ color: STUDENT_PORTAL_BG }}>{displayGpa.toFixed(2)}</div>
-          <div className="text-xs text-slate-500">{tx('من 4.00', 'of 4.00')}</div>
+          <div className="text-xs text-slate-500">{tx('من 4.30', 'of 4.30')}</div>
         </div>
         <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-4 border-t-4" style={{ borderTopColor: '#b45309' }}>
           <div className="text-[11px] font-extrabold text-slate-500 uppercase tracking-wide">{tx('الرصيد المستحق', 'Balance due')}</div>

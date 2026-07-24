@@ -70,12 +70,15 @@ export default function StudentGrades() {
     if (collegeId || userRole === 'admin') {
       supabase
         .from('semesters')
-        .select('id, name_en, code')
-        .or('status.eq.active,is_current.eq.true')
+        .select('id, name_en, code, status, is_current, start_date')
+        .in('status', ['active', 'in_progress', 'registration_open'])
         .order('start_date', { ascending: false })
-        .limit(1)
-        .maybeSingle()
-        .then(({ data }) => setActiveSemester(data))
+        .limit(20)
+        .then(({ data }) => {
+          const list = data || []
+          const current = list.find((s) => s.is_current) || list[0] || null
+          setActiveSemester(current)
+        })
     }
   }, [collegeId, userRole])
 
@@ -84,29 +87,34 @@ export default function StudentGrades() {
       setEnrollmentsByStudent({})
       return
     }
-    const studentIds = filteredStudents.map(s => s.id)
-    supabase
-      .from('enrollments')
-      .select(`
-        student_id,
-        semester_id,
-        classes(id, subjects(id, credit_hours)),
-        grade_components(numeric_grade, gpa_points)
-      `)
-      .in('student_id', studentIds)
-      .eq('status', 'enrolled')
-      .then(({ data }) => {
-        const byStudent = {}
-        ;(data || []).forEach(e => {
+    const studentIds = filteredStudents.map((s) => s.id)
+    // Batch to avoid oversized .in() filters
+    const batchSize = 100
+    const load = async () => {
+      const byStudent = {}
+      for (let i = 0; i < studentIds.length; i += batchSize) {
+        const batch = studentIds.slice(i, i + batchSize)
+        const { data } = await supabase
+          .from('enrollments')
+          .select(`
+            student_id,
+            semester_id,
+            numeric_grade,
+            grade_points,
+            grade,
+            classes(id, subjects(id, credit_hours)),
+            grade_components(numeric_grade, final, gpa_points, letter_grade)
+          `)
+          .in('student_id', batch)
+          .eq('status', 'enrolled')
+        ;(data || []).forEach((e) => {
           if (!byStudent[e.student_id]) byStudent[e.student_id] = []
-          byStudent[e.student_id].push({
-            ...e,
-            grade_components: e.grade_components,
-            classes: e.classes,
-          })
+          byStudent[e.student_id].push(e)
         })
-        setEnrollmentsByStudent(byStudent)
-      })
+      }
+      setEnrollmentsByStudent(byStudent)
+    }
+    load()
   }, [filteredStudents])
 
   const fetchStudents = async () => {
@@ -206,12 +214,14 @@ export default function StudentGrades() {
     const allGpa = calculateGpaWithScale(enrollments, gradingScale)
     const currentGpa = activeSemester
       ? calculateGpaWithScale(enrollments, gradingScale, activeSemester.id)
-      : { gpa: '0.00' }
+      : allGpa
     return {
       currentSemesterGpa: currentGpa.gpa,
       totalGpa: allGpa.gpa,
     }
   }
+
+  const formatStudentId = (id) => String(id || '').replace(/^STU/i, '')
 
   const programOptions = useMemo(() => {
     const map = new Map()
@@ -338,7 +348,7 @@ export default function StudentGrades() {
                 {filteredStudents.map((student) => (
                   <tr key={student.id} className="hover:bg-gray-50">
                     <td className={`px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900 ${isArabicLayout ? 'text-right' : 'text-left'}`} dir="ltr">
-                      {student.student_id}
+                      {formatStudentId(student.student_id)}
                     </td>
                     <td className={`px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900 ${isArabicLayout ? 'text-right' : 'text-left'}`}>
                       {displayStudentName(student)}

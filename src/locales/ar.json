@@ -457,7 +457,9 @@
     "invalidOtp": "أدخل الرمز من بريدك.",
     "otpVerifyFailed": "رمز غير صالح أو منتهي.",
     "completeFailed": "تعذر إكمال التسجيل.",
-    "confirmEmailBlocked": "تم إنشاء الحساب، لكن تسجيل الدخول يتطلب تأكيد البريد في Supabase. عطّل «Confirm email» من Authentication → Providers → Email، أو سجّل الدخول من صفحة المتقدمين بعد التأكيد."
+    "confirmEmailBlocked": "تم إنشاء الحساب، لكن تسجيل الدخول يتطلب تأكيد البريد في Supabase. عطّل «Confirm email» من Authentication → Providers → Email، أو سجّل الدخول من صفحة المتقدمين بعد التأكيد.",
+    "alreadyRegistered": "هذا البريد مسجّل مسبقاً. يرجى تسجيل الدخول بدل إنشاء حساب جديد.",
+    "alreadyRegisteredWrongPassword": "هذا البريد مسجّل مسبقاً. تحقق من كلمة المرور، أو استخدم دخول المتقدمين."
   },
   "applicantLogin": {
     "title": "دخول المتقدمين",
@@ -1471,7 +1473,8 @@
       "courseCode": "رمز المقرر",
       "courseTitle": "اسم المقرر",
       "creditsCol": "الساعات",
-      "grade": "الدرجة",
+      "score": "الدرجة العددية",
+      "grade": "التقدير",
       "subjectGpa": "معدل المقرر",
       "status": "الحالة",
       "semesterTotals": "إجمالي الفصل",
@@ -4713,7 +4716,7 @@
     "balanceDue": "الرصيد المستحق",
     "saudiRiyal": "ريال سعودي",
     "cumulativeGpa": "المعدل التراكمي",
-    "from4": "من 4.00",
+    "from4": "من 4.30",
     "recordedHours": "الساعات المسجلة",
     "currentSemester": "الفصل الحالي",
     "academicProgress": "التقدم الأكاديمي",

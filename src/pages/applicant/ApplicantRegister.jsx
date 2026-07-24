@@ -65,16 +65,33 @@ export default function ApplicantRegister() {
         },
       })
 
-      // Already registered → sign in with the same credentials
       const alreadyExists =
-        signUpErr &&
-        /already|registered|exists|duplicate/i.test(signUpErr.message || '')
+        signUpErr?.code === 'user_already_exists' ||
+        (signUpErr && /already|registered|exists|duplicate/i.test(signUpErr.message || '')) ||
+        // Supabase sometimes returns 200 with empty identities when email is taken
+        (signUpData?.user && Array.isArray(signUpData.user.identities) && signUpData.user.identities.length === 0)
 
       if (alreadyExists) {
         const { error: signInErr } = await signIn(em, password, 'applicant')
-        if (signInErr) throw signInErr
-        await finishSession(name)
-        return
+        if (!signInErr) {
+          await finishSession(name)
+          return
+        }
+        // Wrong password or other sign-in issue — still tell them the account exists
+        const wrongPassword = /invalid login|invalid credentials|wrong password/i.test(
+          signInErr.message || '',
+        )
+        throw new Error(
+          wrongPassword
+            ? t(
+                'applicantRegister.alreadyRegisteredWrongPassword',
+                'This email is already registered. Check your password, or use Applicant sign in.',
+              )
+            : t(
+                'applicantRegister.alreadyRegistered',
+                'This email is already registered. Please sign in instead.',
+              ),
+        )
       }
 
       if (signUpErr) throw signUpErr
