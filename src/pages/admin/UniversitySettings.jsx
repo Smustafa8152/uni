@@ -28,17 +28,9 @@ import {
 } from 'lucide-react'
 import { useAuth } from '../../contexts/AuthContext'
 import { sendSmtpTestEmail } from '../../utils/sendSmtpTestEmail'
+import { DEFAULT_GRADING_SCALE, MAX_GPA_SCALE } from '../../utils/getCollegeSettings'
 
-const defaultGradingScale = [
-  { letter: 'A+', minPercent: 95, maxPercent: 100, points: 4.0, passing: true },
-  { letter: 'A', minPercent: 90, maxPercent: 94, points: 3.7, passing: true },
-  { letter: 'B+', minPercent: 85, maxPercent: 89, points: 3.3, passing: true },
-  { letter: 'B', minPercent: 80, maxPercent: 84, points: 3.0, passing: true },
-  { letter: 'C+', minPercent: 75, maxPercent: 79, points: 2.7, passing: true },
-  { letter: 'C', minPercent: 70, maxPercent: 74, points: 2.0, passing: true },
-  { letter: 'D', minPercent: 60, maxPercent: 69, points: 1.0, passing: true },
-  { letter: 'F', minPercent: 0, maxPercent: 59, points: 0.0, passing: false },
-]
+const defaultGradingScale = DEFAULT_GRADING_SCALE
 
 export default function UniversitySettings() {
   const { t } = useTranslation()
@@ -64,7 +56,7 @@ export default function UniversitySettings() {
     max_with_permission: 21,
     min_gpa_for_overload: 3,
     min_passing_gpa: 2,
-    max_gpa_scale: 4,
+    max_gpa_scale: MAX_GPA_SCALE,
     honor_roll_min_gpa: 3.5,
     probation_threshold: 2,
     grading_scale: defaultGradingScale,

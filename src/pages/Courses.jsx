@@ -216,7 +216,8 @@ export default function Courses() {
       const coursesData = (enrollments || []).map(enrollment => {
         const classData = enrollment.classes
         const subject = classData?.subjects
-        const grade = enrollment.grade_components?.[0]
+        const grade = enrollment.grade_components
+        const comp = Array.isArray(grade) ? grade[0] : grade
         return {
           id: enrollment.id,
           enrollmentId: enrollment.id,
@@ -234,9 +235,9 @@ export default function Courses() {
           semesterId: enrollment.semester_id,
           enrollmentDate: enrollment.enrollment_date,
           status: enrollment.status,
-          grade: grade?.letter_grade || null,
-          numericGrade: grade?.numeric_grade || null,
-          gpaPoints: grade?.gpa_points || null,
+          grade: comp?.letter_grade || enrollment.grade || null,
+          numericGrade: comp?.numeric_grade ?? enrollment.numeric_grade ?? null,
+          gpaPoints: comp?.gpa_points ?? enrollment.grade_points ?? null,
           room: classData?.room || '',
           building: classData?.building || '',
         }

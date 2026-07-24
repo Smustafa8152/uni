@@ -7,6 +7,7 @@ import {
   getGradingScaleFromUniversitySettings,
   getSubjectGpaFromEnrollment,
   calculateGpaWithScale,
+  normalizeGradeComponent,
 } from '../../utils/getCollegeSettings'
 import { supabase } from '../../lib/supabase'
 import { FileText, Download, Printer, Calendar } from 'lucide-react'
@@ -132,6 +133,7 @@ export default function Transcripts() {
           semesters(id, name_en, name_ar, code, start_date, end_date),
           grade_components(
             numeric_grade,
+            final,
             letter_grade,
             gpa_points,
             status
@@ -351,7 +353,13 @@ export default function Transcripts() {
             .reduce((sum, e) => sum + (e.classes?.subjects?.credit_hours || 0), 0)
 
           const semName = getLocalizedName(semester, isArabicLayout) || semester?.code || '—'
-          const semYear = semester?.start_date ? new Date(semester.start_date).getFullYear() : ''
+          const semYear = (() => {
+            const code = semester?.code || ''
+            const m = code.match(/(\d{4}-\d{4})/)
+            if (m) return m[1]
+            if (semester?.start_date) return String(new Date(semester.start_date).getFullYear())
+            return ''
+          })()
 
           return (
             <div key={semester?.id || semName} className="mb-8">
@@ -378,6 +386,7 @@ export default function Transcripts() {
                       <th className={thClass}>{t('grading.transcripts.courseCode')}</th>
                       <th className={thClass}>{t('grading.transcripts.courseTitle')}</th>
                       <th className={thClass}>{t('grading.transcripts.creditsCol')}</th>
+                      <th className={thClass}>{t('grading.transcripts.score', { defaultValue: 'Score' })}</th>
                       <th className={thClass}>{t('grading.transcripts.grade')}</th>
                       <th className={thClass}>{t('grading.transcripts.subjectGpa')}</th>
                       <th className={thClass}>{t('grading.transcripts.status')}</th>
@@ -385,8 +394,16 @@ export default function Transcripts() {
                   </thead>
                   <tbody className="bg-white divide-y divide-gray-200">
                     {semesterEnrollments.map((enrollment) => {
-                      const grade = enrollment.grade_components?.[0]
-                      const { points: subjectGpa } = getSubjectGpaFromEnrollment(enrollment, gradingScale)
+                      const grade = normalizeGradeComponent(enrollment.grade_components)
+                      const { points: subjectGpa, letter } = getSubjectGpaFromEnrollment(enrollment, gradingScale)
+                      const letterGrade = grade?.letter_grade || letter || enrollment.grade || '—'
+                      const scoreRaw =
+                        grade?.numeric_grade ?? grade?.final ?? enrollment.numeric_grade ?? null
+                      const score =
+                        scoreRaw != null && scoreRaw !== '' && !Number.isNaN(Number(scoreRaw))
+                          ? Number(scoreRaw)
+                          : null
+                      const statusValue = grade?.status || (letterGrade !== '—' ? 'final' : null)
                       const subj = enrollment.classes?.subjects
                       return (
                         <tr key={enrollment.id}>
@@ -403,7 +420,12 @@ export default function Transcripts() {
                           </td>
                           <td className={`${cellClass} whitespace-nowrap`}>
                             <TranscriptValueRow className="text-sm text-gray-900" numeric>
-                              {grade?.letter_grade || '—'}
+                              {score != null ? score.toFixed(score % 1 === 0 ? 0 : 2) : '—'}
+                            </TranscriptValueRow>
+                          </td>
+                          <td className={`${cellClass} whitespace-nowrap`}>
+                            <TranscriptValueRow className="text-sm text-gray-900" numeric>
+                              {letterGrade}
                             </TranscriptValueRow>
                           </td>
                           <td className={`${cellClass} whitespace-nowrap`}>
@@ -411,7 +433,7 @@ export default function Transcripts() {
                               {subjectGpa != null ? subjectGpa.toFixed(2) : '—'}
                             </TranscriptValueRow>
                           </td>
-                          <td className={cellClass}>{gradeStatusLabel(grade?.status)}</td>
+                          <td className={cellClass}>{gradeStatusLabel(statusValue)}</td>
                         </tr>
                       )
                     })}
@@ -424,6 +446,7 @@ export default function Transcripts() {
                           {semesterCredits}
                         </TranscriptValueRow>
                       </td>
+                      <td className={cellClass} />
                       <td className={cellClass}>
                         {t('grading.transcripts.semesterTotalsGpa', { gpa: formatGpaDisplay(semesterGPA) })}
                       </td>

@@ -111,7 +111,7 @@ export async function generateStudentId(supabase, collegeId) {
 
     if (!college) return null
 
-    const prefix = college.student_id_prefix ?? 'STU'
+    const prefix = college.student_id_prefix ?? ''
     const collegeCode = college.code ?? ''
     const year = new Date().getFullYear()
     const format = college.student_id_format || '{prefix}{year}{sequence:D4}'

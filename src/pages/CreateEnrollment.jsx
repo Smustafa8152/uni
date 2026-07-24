@@ -397,7 +397,9 @@ export default function CreateEnrollment() {
       const passedSubjects = (completedEnrollments || [])
         .map(e => {
           // Use grade_components GPA points if available, otherwise use enrollment grade_points
-          const gpaPoints = e.grade_components?.[0]?.gpa_points ?? e.grade_points ?? 0
+          const raw = e.grade_components
+          const comp = Array.isArray(raw) ? raw[0] : raw
+          const gpaPoints = comp?.gpa_points ?? e.grade_points ?? 0
           const subjId = e.classes?.subjects?.id
           if (subjId && gpaPoints >= 2.0) { // Minimum passing grade (C or 2.0 GPA)
             return {

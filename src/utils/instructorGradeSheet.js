@@ -2,6 +2,7 @@ import * as XLSX from 'xlsx'
 import {
   GRADE_COMPONENT_DB_COLUMNS,
   numericGradeToGpaPoints,
+  DEFAULT_GRADING_SCALE,
 } from './getCollegeSettings'
 
 export const LEGACY_GRADE_COLUMNS = [
@@ -75,7 +76,7 @@ export function getTotalPercent(gradeRow, gradeConfig) {
 
 export function getLetterFromPercent(percent, gradingScale) {
   if (percent == null) return null
-  const scale = Array.isArray(gradingScale) && gradingScale.length > 0 ? gradingScale : []
+  const scale = Array.isArray(gradingScale) && gradingScale.length > 0 ? gradingScale : DEFAULT_GRADING_SCALE
   const entry = scale.find((g) => {
     const min = g.minPercent ?? g.min_percent ?? 0
     const max = g.maxPercent ?? g.max_percent ?? 100

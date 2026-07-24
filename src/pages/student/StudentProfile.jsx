@@ -421,7 +421,7 @@ export default function StudentProfile() {
               </div>
               <div>
                 <div className="text-[#6b7a99]">{t('studentPortal.cumulativeGpa', { defaultValue: 'Cumulative GPA' })}</div>
-                <div className="text-xl font-extrabold text-emerald-700">{(student.gpa != null ? Number(student.gpa) : 0).toFixed(2)} / 4.00</div>
+                <div className="text-xl font-extrabold text-emerald-700">{(student.gpa != null ? Number(student.gpa) : 0).toFixed(2)} / 4.30</div>
               </div>
               <div>
                 <div className="text-[#6b7a99]">{t('studentPortal.profile.completedHours', { defaultValue: 'Completed hours' })}</div>

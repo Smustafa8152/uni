@@ -112,8 +112,11 @@ export default function GradeAnalytics() {
 
       // Calculate analytics
       const grades = enrollments
-        .map(e => e.grade_components?.[0])
-        .filter(g => g && g.numeric_grade !== null)
+        .map((e) => {
+          const raw = e.grade_components
+          return Array.isArray(raw) ? raw[0] : raw
+        })
+        .filter((g) => g && g.numeric_grade !== null)
 
       if (grades.length === 0) {
         setAnalytics({

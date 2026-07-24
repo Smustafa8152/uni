@@ -125,15 +125,30 @@ export async function getSemesterCreditsFromUniversitySettings() {
 }
 
 const defaultGradingScale = [
-  { letter: 'A+', minPercent: 95, maxPercent: 100, points: 4.0, passing: true },
-  { letter: 'A', minPercent: 90, maxPercent: 94, points: 3.7, passing: true },
-  { letter: 'B+', minPercent: 85, maxPercent: 89, points: 3.3, passing: true },
-  { letter: 'B', minPercent: 80, maxPercent: 84, points: 3.0, passing: true },
-  { letter: 'C+', minPercent: 75, maxPercent: 79, points: 2.7, passing: true },
-  { letter: 'C', minPercent: 70, maxPercent: 74, points: 2.0, passing: true },
-  { letter: 'D', minPercent: 60, maxPercent: 69, points: 1.0, passing: true },
-  { letter: 'F', minPercent: 0, maxPercent: 59, points: 0.0, passing: false },
+  { letter: 'A+', minPercent: 90, maxPercent: 100, points: 4.3, passing: true },
+  { letter: 'A', minPercent: 80, maxPercent: 89, points: 4.0, passing: true },
+  { letter: 'A-', minPercent: 70, maxPercent: 79, points: 3.7, passing: true },
+  { letter: 'B+', minPercent: 67, maxPercent: 69, points: 3.3, passing: true },
+  { letter: 'B', minPercent: 64, maxPercent: 66, points: 3.0, passing: true },
+  { letter: 'B-', minPercent: 60, maxPercent: 63, points: 2.7, passing: true },
+  { letter: 'C+', minPercent: 57, maxPercent: 59, points: 2.3, passing: true },
+  { letter: 'C', minPercent: 54, maxPercent: 56, points: 2.0, passing: true },
+  { letter: 'C-', minPercent: 50, maxPercent: 53, points: 1.7, passing: true },
+  { letter: 'D', minPercent: 40, maxPercent: 49, points: 1.0, passing: true },
+  { letter: 'F', minPercent: 0, maxPercent: 39, points: 0.0, passing: false },
 ]
+
+/** IBU / university default: 4.3 GPA scale */
+export { defaultGradingScale as DEFAULT_GRADING_SCALE }
+export const MAX_GPA_SCALE = 4.3
+
+/**
+ * Supabase may return grade_components as an object (1:1) or array (1:n).
+ */
+export function normalizeGradeComponent(raw) {
+  if (!raw) return null
+  return Array.isArray(raw) ? raw[0] || null : raw
+}
 
 /**
  * Converts numeric grade (0-100) to GPA points using the grading scale.
@@ -179,19 +194,28 @@ export async function getUniversityBranding() {
  * Uses numeric_grade + scale if available; otherwise falls back to stored gpa_points.
  * @param {Object} enrollment - Has grade_components, classes.subjects.credit_hours
  * @param {Array} gradingScale - From getGradingScaleFromUniversitySettings()
- * @returns {{ points: number|null, credits: number }} - GPA points and credits
+ * @returns {{ points: number|null, credits: number, letter: string|null }}
  */
 export function getSubjectGpaFromEnrollment(enrollment, gradingScale) {
-  const comp = enrollment.grade_components?.[0]
+  const comp = normalizeGradeComponent(enrollment.grade_components)
   const credits = enrollment.classes?.subjects?.credit_hours || 0
   const ch = typeof credits === 'number' ? credits : parseInt(credits, 10) || 0
-  if (ch <= 0) return { points: null, credits: ch }
-  // Prefer grade_components; fall back to enrollment.grade_points / numeric_grade
-  const numericGrade = comp?.numeric_grade ?? enrollment.numeric_grade
+  if (ch <= 0) return { points: null, credits: ch, letter: null }
+
+  const numericGrade =
+    comp?.numeric_grade ??
+    comp?.final ??
+    enrollment.numeric_grade ??
+    null
   const gpaPoints = comp?.gpa_points ?? enrollment.grade_points
-  const points = numericGrade != null ? numericGradeToGpaPoints(numericGrade, gradingScale) : null
-  const effectivePoints = points != null ? points : (gpaPoints != null ? Number(gpaPoints) : null)
-  return { points: effectivePoints, credits: ch }
+  const letter = comp?.letter_grade ?? enrollment.grade ?? null
+
+  const pointsFromScale =
+    numericGrade != null ? numericGradeToGpaPoints(numericGrade, gradingScale) : null
+  const effectivePoints =
+    pointsFromScale != null ? pointsFromScale : gpaPoints != null ? Number(gpaPoints) : null
+
+  return { points: effectivePoints, credits: ch, letter }
 }
 
 /**

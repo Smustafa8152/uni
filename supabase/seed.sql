@@ -40,14 +40,17 @@ INSERT INTO colleges (
       "probationThreshold": 2
     },
     "gradingScale": [
-      {"letter": "A+", "minPercent": 95, "maxPercent": 100, "points": 4.0, "passing": true},
-      {"letter": "A", "minPercent": 90, "maxPercent": 94, "points": 3.7, "passing": true},
-      {"letter": "B+", "minPercent": 85, "maxPercent": 89, "points": 3.3, "passing": true},
-      {"letter": "B", "minPercent": 80, "maxPercent": 84, "points": 3.0, "passing": true},
-      {"letter": "C+", "minPercent": 75, "maxPercent": 79, "points": 2.7, "passing": true},
-      {"letter": "C", "minPercent": 70, "maxPercent": 74, "points": 2.0, "passing": true},
-      {"letter": "D", "minPercent": 60, "maxPercent": 69, "points": 1.0, "passing": true},
-      {"letter": "F", "minPercent": 0, "maxPercent": 59, "points": 0.0, "passing": false}
+      {"letter": "A+", "minPercent": 90, "maxPercent": 100, "points": 4.3, "passing": true},
+      {"letter": "A", "minPercent": 80, "maxPercent": 89, "points": 4.0, "passing": true},
+      {"letter": "A-", "minPercent": 70, "maxPercent": 79, "points": 3.7, "passing": true},
+      {"letter": "B+", "minPercent": 67, "maxPercent": 69, "points": 3.3, "passing": true},
+      {"letter": "B", "minPercent": 64, "maxPercent": 66, "points": 3.0, "passing": true},
+      {"letter": "B-", "minPercent": 60, "maxPercent": 63, "points": 2.7, "passing": true},
+      {"letter": "C+", "minPercent": 57, "maxPercent": 59, "points": 2.3, "passing": true},
+      {"letter": "C", "minPercent": 54, "maxPercent": 56, "points": 2.0, "passing": true},
+      {"letter": "C-", "minPercent": 50, "maxPercent": 53, "points": 1.7, "passing": true},
+      {"letter": "D", "minPercent": 40, "maxPercent": 49, "points": 1.0, "passing": true},
+      {"letter": "F", "minPercent": 0, "maxPercent": 39, "points": 0.0, "passing": false}
     ],
     "attendance": {
       "required": true,

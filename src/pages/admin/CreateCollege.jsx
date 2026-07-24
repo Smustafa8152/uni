@@ -24,17 +24,9 @@ import {
   Check
 } from 'lucide-react'
 import { sendSmtpTestEmail } from '../../utils/sendSmtpTestEmail'
+import { DEFAULT_GRADING_SCALE, MAX_GPA_SCALE } from '../../utils/getCollegeSettings'
 
-const defaultGradingScale = [
-  { letter: 'A+', minPercent: 95, maxPercent: 100, points: 4.0, passing: true },
-  { letter: 'A', minPercent: 90, maxPercent: 94, points: 3.7, passing: true },
-  { letter: 'B+', minPercent: 85, maxPercent: 89, points: 3.3, passing: true },
-  { letter: 'B', minPercent: 80, maxPercent: 84, points: 3.0, passing: true },
-  { letter: 'C+', minPercent: 75, maxPercent: 79, points: 2.7, passing: true },
-  { letter: 'C', minPercent: 70, maxPercent: 74, points: 2.0, passing: true },
-  { letter: 'D', minPercent: 60, maxPercent: 69, points: 1.0, passing: true },
-  { letter: 'F', minPercent: 0, maxPercent: 59, points: 0.0, passing: false },
-]
+const defaultGradingScale = DEFAULT_GRADING_SCALE
 
 // Helper function to create admin account directly using service role key
 async function createAdminAccountDirectly(collegeId, formData, serviceRoleKey, supabaseUrl) {
@@ -181,7 +173,7 @@ export default function CreateCollege() {
           mission: data.mission || '',
           established_date: data.established_date || '',
           accreditation_info: data.accreditation_info || '',
-          student_id_prefix: data.student_id_prefix || 'STU',
+          student_id_prefix: data.student_id_prefix || '',
           student_id_format: data.student_id_format || '{prefix}{year}{sequence:D4}',
           student_id_starting_number: data.student_id_starting_number || 1,
           instructor_id_prefix: data.instructor_id_prefix || 'INS',
@@ -858,7 +850,7 @@ export default function CreateCollege() {
     // Additional
     established_date: '',
     accreditation_info: '',
-    student_id_prefix: 'STU',
+    student_id_prefix: '',
     student_id_format: '{prefix}{year}{sequence:D4}',
     student_id_starting_number: 1,
     instructor_id_prefix: 'INS',
@@ -873,7 +865,7 @@ export default function CreateCollege() {
     max_with_permission: 21,
     min_gpa_for_overload: 3,
     min_passing_gpa: 2,
-    max_gpa_scale: 4,
+    max_gpa_scale: MAX_GPA_SCALE,
     honor_roll_min_gpa: 3.5,
     probation_threshold: 2,
     grading_scale: defaultGradingScale,
