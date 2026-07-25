@@ -79,6 +79,7 @@ import AdminELibrary from './pages/admin/AdminELibrary'
 import GradeManagement from './pages/grading/GradeManagement'
 import ClassGrades from './pages/grading/ClassGrades'
 import StudentGrades from './pages/grading/StudentGrades'
+import SubjectScores from './pages/grading/SubjectScores'
 import Transcripts from './pages/grading/Transcripts'
 import GradeAnalytics from './pages/grading/GradeAnalytics'
 import StudentMyGrades from './pages/student/StudentMyGrades'
@@ -928,6 +929,16 @@ function App() {
               <ProtectedRoute>
                 <RoleBasedLayout>
                   <StudentGrades />
+                </RoleBasedLayout>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/grading/subject-scores"
+            element={
+              <ProtectedRoute>
+                <RoleBasedLayout>
+                  <SubjectScores />
                 </RoleBasedLayout>
               </ProtectedRoute>
             }
