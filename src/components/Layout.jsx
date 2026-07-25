@@ -211,6 +211,7 @@ const defaultNavigation = [
     submenu: [
       { name: 'Grade Management', translationKey: 'navigation.gradeManagement', href: '/grading' },
       { name: 'Student Grades', translationKey: 'navigation.studentGrades', href: '/grading/students' },
+      { name: 'Subject scores', translationKey: 'navigation.subjectScores', href: '/grading/subject-scores' },
       { name: 'Analytics', translationKey: 'navigation.analytics', href: '/grading/analytics' },
       { name: 'Exam answers', translationKey: 'navigation.examAnswers', href: '/admin/exam-answers' },
       { name: 'Grades export', translationKey: 'navigation.gradesExport', href: '/admin/grades-export' },
@@ -331,6 +332,7 @@ const adminNavigation = [
     submenu: [
       { name: 'Grading Management', translationKey: 'navigation.gradingManagement', href: '/grading' },
       { name: 'Student Grades', translationKey: 'navigation.studentGrades', href: '/grading/students' },
+      { name: 'Subject scores', translationKey: 'navigation.subjectScores', href: '/grading/subject-scores' },
       { name: 'Transcripts', translationKey: 'navigation.transcripts', href: '/grading/transcripts' },
       { name: 'Analytics', translationKey: 'navigation.analytics', href: '/grading/analytics' },
       { name: 'Exam answers', translationKey: 'navigation.examAnswers', href: '/admin/exam-answers' },

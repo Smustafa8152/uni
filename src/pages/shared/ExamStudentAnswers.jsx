@@ -15,6 +15,17 @@ import {
   examLifecycleStatusLabel,
   questionTypeLabel,
 } from '../../utils/formatExamAnswer'
+import {
+  Search,
+  ClipboardList,
+  FileQuestion,
+  Users,
+  Award,
+  Calendar,
+  ChevronRight,
+  BookOpen,
+  RefreshCw,
+} from 'lucide-react'
 
 /**
  * Neat per-exam student answers review.
@@ -42,10 +53,13 @@ export default function ExamStudentAnswers({ mode = 'instructor' }) {
   const [reexamConfirmOpen, setReexamConfirmOpen] = useState(false)
   const [actionError, setActionError] = useState('')
   const [actionOk, setActionOk] = useState('')
+  const [examSearch, setExamSearch] = useState('')
+  const [subjectFilter, setSubjectFilter] = useState('')
 
   const basePath = mode === 'admin' ? '/admin/exam-answers' : '/instructor/exam-answers'
   const homeHref = mode === 'admin' ? '/dashboard' : '/instructor/dashboard'
   const assessmentsHref = mode === 'admin' ? '/examinations' : '/instructor/assessments'
+  const align = isArabic ? 'text-right' : 'text-left'
 
   // Load exam picker list
   useEffect(() => {
@@ -278,132 +292,336 @@ export default function ExamStudentAnswers({ mode = 'instructor' }) {
   const autoGrade = selectedSubmission?.submission_data?.autoGrade || null
   const manualMarks = selectedSubmission?.submission_data?.manualMarks || {}
 
+  const subjectOptions = useMemo(() => {
+    const map = new Map()
+    for (const ex of exams) {
+      const subj = ex.classes?.subjects
+      if (!subj?.code && !subj?.name_en && !subj?.name_ar) continue
+      const key = subj.code || String(subj.name_en || subj.name_ar)
+      if (!map.has(key)) {
+        map.set(key, {
+          key,
+          code: subj.code || '',
+          label: getLocalizedName(subj, isArabic) || subj.code || key,
+        })
+      }
+    }
+    return [...map.values()].sort((a, b) => a.label.localeCompare(b.label, isArabic ? 'ar' : 'en'))
+  }, [exams, isArabic])
+
+  const filteredExams = useMemo(() => {
+    let list = [...exams]
+    if (subjectFilter) {
+      list = list.filter((ex) => {
+        const code = ex.classes?.subjects?.code || ''
+        const name = getLocalizedName(ex.classes?.subjects, isArabic) || ''
+        const key = code || name
+        return key === subjectFilter
+      })
+    }
+    if (examSearch.trim()) {
+      const q = examSearch.trim().toLowerCase()
+      list = list.filter((ex) => {
+        const title = (ex.title || '').toLowerCase()
+        const code = (ex.classes?.subjects?.code || '').toLowerCase()
+        const name = (getLocalizedName(ex.classes?.subjects, isArabic) || '').toLowerCase()
+        const st = examLifecycleStatusLabel(ex.status, t).toLowerCase()
+        return title.includes(q) || code.includes(q) || name.includes(q) || st.includes(q)
+      })
+    }
+    return list
+  }, [exams, subjectFilter, examSearch, isArabic, t])
+
+  const statusPill = (status) => {
+    const label = examLifecycleStatusLabel(status, t)
+    const s = String(status || '').toUpperCase()
+    let cls = 'bg-slate-100 text-slate-700'
+    if (s.includes('OPEN') || s.includes('LIVE') || s.includes('PUB')) cls = 'bg-emerald-50 text-emerald-800'
+    else if (s.includes('DRAFT')) cls = 'bg-amber-50 text-amber-800'
+    else if (s.includes('CLOSE') || s.includes('END') || s.includes('ARCH')) cls = 'bg-slate-100 text-slate-600'
+    return (
+      <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold ${cls}`}>
+        {label}
+      </span>
+    )
+  }
+
   if (loading) {
     return (
-      <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: 200 }}>
-        <div
-          style={{
-            width: 40,
-            height: 40,
-            border: '3px solid var(--bdr, #dde3ef)',
-            borderTopColor: 'var(--p, #1a3a6b)',
-            borderRadius: '50%',
-            animation: 'spin 0.8s linear infinite',
-          }}
-        />
+      <div className="flex items-center justify-center min-h-[240px]" dir={isArabic ? 'rtl' : 'ltr'}>
+        <div className="h-10 w-10 rounded-full border-[3px] border-slate-200 border-t-[#1a3a6b] animate-spin" />
       </div>
     )
   }
 
   return (
-    <div dir={isArabic ? 'rtl' : 'ltr'}>
-      <nav className="bc" style={{ marginBottom: 12 }}>
-        <Link to={homeHref}>{t('common.dashboard', 'Dashboard')}</Link>
-        <span className="bc-sep">›</span>
+    <div className="space-y-6" dir={isArabic ? 'rtl' : 'ltr'}>
+      <nav className={`flex flex-wrap items-center gap-2 text-sm text-slate-500 ${align}`}>
+        <Link to={homeHref} className="hover:text-[#1a3a6b] transition-colors">
+          {t('common.dashboard', 'Dashboard')}
+        </Link>
+        <ChevronRight className={`w-3.5 h-3.5 opacity-50 ${isArabic ? 'rotate-180' : ''}`} />
         {mode === 'instructor' && (
           <>
-            <Link to={assessmentsHref}>{t('instructorPortal.createAssessments', 'Assessments')}</Link>
-            <span className="bc-sep">›</span>
+            <Link to={assessmentsHref} className="hover:text-[#1a3a6b] transition-colors">
+              {t('instructorPortal.createAssessments', 'Assessments')}
+            </Link>
+            <ChevronRight className={`w-3.5 h-3.5 opacity-50 ${isArabic ? 'rotate-180' : ''}`} />
           </>
         )}
-        <span>{t('examAnswers.breadcrumb', 'Exam answers')}</span>
+        <span className="text-slate-800 font-medium">{t('examAnswers.breadcrumb', 'Exam answers')}</span>
       </nav>
 
-      <div className="ph" style={{ marginBottom: 16 }}>
-        <div>
-          <h1 style={{ margin: 0 }}>{t('examAnswers.title', 'Student exam answers')}</h1>
-          <p className="ph-sub" style={{ marginTop: 4 }}>
-            {mode === 'admin'
-              ? t(
-                  'examAnswers.subtitleAdmin',
-                  'Review student answers for any online exam. You can allow a specific student to re-take the exam.',
-                )
-              : t(
-                  'examAnswers.subtitle',
-                  'Review each student’s answers for an online exam — questions, responses, and scores.',
-                )}
-          </p>
+      <div className={`flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between ${isArabic ? 'sm:flex-row-reverse' : ''}`}>
+        <div className={align}>
+          <div className={`flex items-center gap-3 ${isArabic ? 'flex-row-reverse' : ''}`}>
+            <div className="h-11 w-11 rounded-xl bg-[#1a3a6b] text-white flex items-center justify-center shrink-0">
+              <ClipboardList className="w-5 h-5" />
+            </div>
+            <div>
+              <h1 className="text-2xl sm:text-3xl font-bold text-slate-900 m-0">
+                {t('examAnswers.title', 'Student exam answers')}
+              </h1>
+              <p className="text-slate-600 mt-1 text-sm sm:text-base max-w-2xl">
+                {mode === 'admin'
+                  ? t(
+                      'examAnswers.subtitleAdmin',
+                      'Review student answers for any online exam. You can allow a specific student to re-take the exam.',
+                    )
+                  : t(
+                      'examAnswers.subtitle',
+                      'Review each student’s answers for an online exam — questions, responses, and scores.',
+                    )}
+              </p>
+            </div>
+          </div>
         </div>
-        <div className="ph-acts">
-          {mode === 'instructor' && selectedExamId && (
-            <>
-              <Link
-                to={`/instructor/monitor-exam?examId=${selectedExamId}&classId=${exam?.class_id || ''}`}
-                className="btn btn-gh"
-              >
-                {t('instructorPortal.monitorExam', 'Monitor')}
-              </Link>
-              <Link to={`/instructor/grade-exam?examId=${selectedExamId}`} className="btn btn-out">
-                {t('instructorPortal.manualGrading', 'Manual grading')}
-              </Link>
-            </>
+        {mode === 'instructor' && selectedExamId && (
+          <div className={`flex flex-wrap gap-2 shrink-0 ${isArabic ? 'flex-row-reverse' : ''}`}>
+            <Link
+              to={`/instructor/monitor-exam?examId=${selectedExamId}&classId=${exam?.class_id || ''}`}
+              className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-slate-200 bg-white text-sm font-semibold text-slate-700 hover:bg-slate-50"
+            >
+              {t('instructorPortal.monitorExam', 'Monitor')}
+            </Link>
+            <Link
+              to={`/instructor/grade-exam?examId=${selectedExamId}`}
+              className="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-[#1a3a6b] text-white text-sm font-semibold hover:bg-[#152f57]"
+            >
+              {t('instructorPortal.manualGrading', 'Manual grading')}
+            </Link>
+          </div>
+        )}
+      </div>
+
+      {/* Filters */}
+      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-4 sm:p-5">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div>
+            <label className={`block text-sm font-medium text-slate-700 mb-2 ${align}`}>
+              {t('examAnswers.filterSubject', 'Subject')}
+            </label>
+            <select
+              value={subjectFilter}
+              onChange={(e) => setSubjectFilter(e.target.value)}
+              className={`w-full px-3 py-2.5 rounded-xl border border-slate-200 bg-white text-sm focus:ring-2 focus:ring-[#1a3a6b]/30 focus:border-[#1a3a6b] ${align}`}
+            >
+              <option value="">{t('examAnswers.allSubjects', 'All subjects')}</option>
+              {subjectOptions.map((s) => (
+                <option key={s.key} value={s.key}>
+                  {s.code ? `${s.label} (${s.code})` : s.label}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className={`block text-sm font-medium text-slate-700 mb-2 ${align}`}>
+              {t('common.search', 'Search')}
+            </label>
+            <div className="relative">
+              <Search
+                className={`absolute top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none ${isArabic ? 'right-3' : 'left-3'}`}
+              />
+              <input
+                type="text"
+                value={examSearch}
+                onChange={(e) => setExamSearch(e.target.value)}
+                placeholder={t('examAnswers.searchExams', 'Search exams by title or subject…')}
+                className={`w-full py-2.5 rounded-xl border border-slate-200 text-sm focus:ring-2 focus:ring-[#1a3a6b]/30 focus:border-[#1a3a6b] ${isArabic ? 'pr-10 pl-3 text-right' : 'pl-10 pr-3 text-left'}`}
+              />
+            </div>
+          </div>
+          <div>
+            <label className={`block text-sm font-medium text-slate-700 mb-2 ${align}`}>
+              {t('examAnswers.selectExam', 'Select exam')}
+            </label>
+            <select
+              value={selectedExamId || ''}
+              onChange={(e) => selectExam(e.target.value)}
+              className={`w-full px-3 py-2.5 rounded-xl border border-slate-200 bg-white text-sm focus:ring-2 focus:ring-[#1a3a6b]/30 focus:border-[#1a3a6b] ${align}`}
+            >
+              <option value="">— {t('examAnswers.chooseExam', 'Choose an exam')} —</option>
+              {filteredExams.map((ex) => {
+                const code = ex.classes?.subjects?.code || '—'
+                const st = examLifecycleStatusLabel(ex.status, t)
+                return (
+                  <option key={ex.id} value={ex.id}>
+                    {code} — {ex.title} ({st})
+                  </option>
+                )
+              })}
+            </select>
+          </div>
+        </div>
+        <div className={`mt-3 flex flex-wrap gap-3 text-xs text-slate-500 ${isArabic ? 'flex-row-reverse' : ''}`}>
+          <span className="inline-flex items-center gap-1.5">
+            <FileQuestion className="w-3.5 h-3.5" />
+            {t('examAnswers.examCount', { defaultValue: '{{n}} exams', n: filteredExams.length })}
+          </span>
+          {subjectFilter && (
+            <button
+              type="button"
+              onClick={() => setSubjectFilter('')}
+              className="text-[#1a3a6b] font-semibold hover:underline"
+            >
+              {t('examAnswers.clearSubjectFilter', 'Clear subject filter')}
+            </button>
           )}
         </div>
       </div>
 
-      <div className="card" style={{ marginBottom: 16 }}>
-        <div className="fg" style={{ marginBottom: 0, maxWidth: 560 }}>
-          <label className="fl">{t('examAnswers.selectExam', 'Select exam')}</label>
-          <select
-            className="fc"
-            value={selectedExamId || ''}
-            onChange={(e) => selectExam(e.target.value)}
-          >
-            <option value="">— {t('examAnswers.chooseExam', 'Choose an exam')} —</option>
-            {exams.map((ex) => {
-              const code = ex.classes?.subjects?.code || '—'
-              const st = examLifecycleStatusLabel(ex.status, t)
-              return (
-                <option key={ex.id} value={ex.id}>
-                  {code} — {ex.title} ({st})
-                </option>
-              )
-            })}
-          </select>
-        </div>
-        {exams.length === 0 && (
-          <p style={{ marginTop: 12, color: 'var(--muted)', fontSize: 13 }}>
-            {t('examAnswers.noExams', 'No online exams found.')}
-          </p>
-        )}
-      </div>
-
       {!selectedExamId && (
-        <div className="card" style={{ padding: 32, textAlign: 'center', color: 'var(--muted)' }}>
-          {t('examAnswers.pickExamHint', 'Select an exam above to view student answers.')}
+        <div className="space-y-4">
+          {filteredExams.length === 0 ? (
+            <div className="bg-white rounded-2xl border border-dashed border-slate-200 px-6 py-16 text-center">
+              <div className="mx-auto h-14 w-14 rounded-2xl bg-slate-100 flex items-center justify-center mb-4">
+                <BookOpen className="w-7 h-7 text-slate-400" />
+              </div>
+              <h2 className="text-lg font-bold text-slate-800 m-0">
+                {exams.length === 0
+                  ? t('examAnswers.noExams', 'No online exams found.')
+                  : t('examAnswers.noExamsMatch', 'No exams match your filters.')}
+              </h2>
+              <p className="text-slate-500 text-sm mt-2 max-w-md mx-auto">
+                {exams.length === 0
+                  ? t(
+                      'examAnswers.noExamsHint',
+                      'Online exams will appear here once they are created for a class.',
+                    )
+                  : t('examAnswers.tryClearFilters', 'Try clearing search or subject filters.')}
+              </p>
+            </div>
+          ) : (
+            <>
+              <div className={`flex items-center justify-between gap-3 ${isArabic ? 'flex-row-reverse' : ''}`}>
+                <h2 className={`text-base font-bold text-slate-800 m-0 ${align}`}>
+                  {t('examAnswers.pickExamTitle', 'Choose an exam to review')}
+                </h2>
+                <p className="text-xs text-slate-500 m-0">
+                  {t('examAnswers.pickExamHint', 'Select an exam above to view student answers.')}
+                </p>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
+                {filteredExams.map((ex) => {
+                  const code = ex.classes?.subjects?.code || '—'
+                  const name = getLocalizedName(ex.classes?.subjects, isArabic) || ''
+                  const created = ex.created_at ? new Date(ex.created_at).toLocaleDateString() : '—'
+                  return (
+                    <button
+                      key={ex.id}
+                      type="button"
+                      onClick={() => selectExam(ex.id)}
+                      className={`group text-start bg-white rounded-2xl border border-slate-200 shadow-sm p-5 hover:border-[#1a3a6b]/40 hover:shadow-md transition-all ${align}`}
+                    >
+                      <div className={`flex items-start justify-between gap-3 ${isArabic ? 'flex-row-reverse' : ''}`}>
+                        <div className="min-w-0">
+                          <div className="text-xs font-semibold text-[#1a3a6b] tracking-wide uppercase">
+                            {code}
+                          </div>
+                          <div className="mt-1 font-bold text-slate-900 text-[15px] leading-snug line-clamp-2">
+                            {ex.title || '—'}
+                          </div>
+                          {name ? (
+                            <div className="mt-1 text-sm text-slate-500 truncate">{name}</div>
+                          ) : null}
+                        </div>
+                        {statusPill(ex.status)}
+                      </div>
+                      <div
+                        className={`mt-4 pt-3 border-t border-slate-100 flex items-center justify-between gap-2 text-xs text-slate-500 ${isArabic ? 'flex-row-reverse' : ''}`}
+                      >
+                        <span className="inline-flex items-center gap-1.5">
+                          <Award className="w-3.5 h-3.5" />
+                          {ex.total_points ?? 0} {t('examAnswers.points', 'pts')}
+                        </span>
+                        <span className="inline-flex items-center gap-1.5">
+                          <Calendar className="w-3.5 h-3.5" />
+                          {created}
+                        </span>
+                        <span className="inline-flex items-center gap-1 font-semibold text-[#1a3a6b] opacity-0 group-hover:opacity-100 transition-opacity">
+                          {t('examAnswers.open', 'Open')}
+                          <ChevronRight className={`w-3.5 h-3.5 ${isArabic ? 'rotate-180' : ''}`} />
+                        </span>
+                      </div>
+                    </button>
+                  )
+                })}
+              </div>
+            </>
+          )}
         </div>
       )}
 
       {selectedExamId && detailLoading && (
-        <div style={{ display: 'flex', justifyContent: 'center', padding: 40 }}>
-          <div
-            style={{
-              width: 36,
-              height: 36,
-              border: '3px solid var(--bdr)',
-              borderTopColor: 'var(--p)',
-              borderRadius: '50%',
-              animation: 'spin 0.8s linear infinite',
-            }}
-          />
+        <div className="flex items-center justify-center py-16">
+          <div className="h-9 w-9 rounded-full border-[3px] border-slate-200 border-t-[#1a3a6b] animate-spin" />
         </div>
       )}
 
       {selectedExamId && !detailLoading && exam && (
         <>
-          <div className="card" style={{ marginBottom: 16 }}>
-            <div style={{ fontWeight: 800, fontSize: 16, color: 'var(--p)' }}>
-              {subjectCode}
-              {subjectName ? ` — ${subjectName}` : ''} · {exam.title}
+          <div className="bg-gradient-to-br from-[#1a3a6b] to-[#2a5298] rounded-2xl text-white p-5 sm:p-6 shadow-sm">
+            <div className={`flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between ${isArabic ? 'lg:flex-row-reverse' : ''}`}>
+              <div className={align}>
+                <div className="text-white/70 text-xs font-semibold uppercase tracking-wide">
+                  {subjectCode}
+                  {subjectName ? ` · ${subjectName}` : ''}
+                </div>
+                <h2 className="text-xl sm:text-2xl font-bold m-0 mt-1">{exam.title}</h2>
+                <div className="mt-2">{statusPill(exam.status)}</div>
+              </div>
+              <div className={`grid grid-cols-3 gap-3 ${isArabic ? 'text-right' : 'text-left'}`}>
+                <div className="rounded-xl bg-white/10 px-3 py-2.5 backdrop-blur-sm">
+                  <div className="flex items-center gap-1.5 text-white/70 text-[11px] font-medium">
+                    <FileQuestion className="w-3.5 h-3.5" />
+                    {t('examAnswers.questions', 'Questions')}
+                  </div>
+                  <div className="text-xl font-bold mt-0.5">{questions.length}</div>
+                </div>
+                <div className="rounded-xl bg-white/10 px-3 py-2.5 backdrop-blur-sm">
+                  <div className="flex items-center gap-1.5 text-white/70 text-[11px] font-medium">
+                    <Users className="w-3.5 h-3.5" />
+                    {t('examAnswers.attempts', 'Attempts')}
+                  </div>
+                  <div className="text-xl font-bold mt-0.5">{submissions.length}</div>
+                </div>
+                <div className="rounded-xl bg-white/10 px-3 py-2.5 backdrop-blur-sm">
+                  <div className="flex items-center gap-1.5 text-white/70 text-[11px] font-medium">
+                    <Award className="w-3.5 h-3.5" />
+                    {t('examAnswers.points', 'Points')}
+                  </div>
+                  <div className="text-xl font-bold mt-0.5">{exam.total_points || 0}</div>
+                </div>
+              </div>
             </div>
-            <div style={{ fontSize: 13, color: 'var(--muted)', marginTop: 4 }}>
-              {t('examAnswers.meta', {
-                defaultValue: '{{n}} questions · {{s}} attempts · {{pts}} points',
-                n: questions.length,
-                s: submissions.length,
-                pts: exam.total_points || 0,
-              })}
-            </div>
+            <button
+              type="button"
+              onClick={() => selectExam('')}
+              className={`mt-4 inline-flex items-center gap-1.5 text-sm text-white/80 hover:text-white ${isArabic ? 'flex-row-reverse' : ''}`}
+            >
+              <RefreshCw className="w-3.5 h-3.5" />
+              {t('examAnswers.changeExam', 'Choose another exam')}
+            </button>
           </div>
 
           <div
