@@ -46,56 +46,55 @@ export function isExamSubmissionGradable(submission) {
   if (!submission) return false
   if (submission.status === 'EX_SUB' || submission.status === 'EX_GRD') return true
   const data = submission.submission_data
+  // Stuck drafts: finished attempt never flipped off EX_DRF (missing submitted/autoGrade flags)
+  if (
+    submission.status === 'EX_DRF' &&
+    (submission.points_earned != null ||
+      (submission.grade != null && submission.grade !== '') ||
+      submission.submitted_at)
+  ) {
+    return true
+  }
   return !!(data && (data.submitted === true || data.autoGrade))
 }
 
 /**
- * Finalize stuck drafts that have answers but never flipped to EX_SUB (old RLS bug).
- * Grades answers, marks EX_SUB, returns updated submission rows.
+ * Finalize stuck drafts that have answers/scores but never flipped off EX_DRF (old RLS bug).
+ * Returns updated submission rows.
  */
 async function recoverDraftExamSubmissions(subs, examById) {
-  const drafts = (subs || []).filter(
+  const stuck = (subs || []).filter((s) => s.status === 'EX_DRF')
+  if (!stuck.length) return subs || []
+
+  // Already scored but never marked submitted/graded
+  const scoredStuck = stuck.filter(
     (s) =>
-      s.status === 'EX_DRF' &&
-      s.submission_data?.answers &&
-      Object.keys(s.submission_data.answers).length > 0 &&
-      !isExamSubmissionGradable(s),
+      s.points_earned != null ||
+      (s.grade != null && s.grade !== '') ||
+      s.submitted_at ||
+      s.submission_data?.submitted === true ||
+      s.submission_data?.autoGrade,
   )
-  if (!drafts.length) return subs || []
-
-  const examIds = [...new Set(drafts.map((d) => d.exam_id))]
-  const { data: questions } = await supabase
-    .from('subject_exam_questions')
-    .select('id, subject_exam_id, question_type, options, correct_answers, marks')
-    .in('subject_exam_id', examIds)
-
-  const qsByExam = {}
-  ;(questions || []).forEach((q) => {
-    if (!qsByExam[q.subject_exam_id]) qsByExam[q.subject_exam_id] = []
-    qsByExam[q.subject_exam_id].push(q)
-  })
+  const unscoredWithAnswers = stuck.filter(
+    (s) =>
+      !scoredStuck.some((x) => x.id === s.id) &&
+      s.submission_data?.answers &&
+      Object.keys(s.submission_data.answers).length > 0,
+  )
 
   const recovered = []
-  for (const sub of drafts) {
-    const qs = qsByExam[sub.exam_id] || []
-    if (!qs.length) continue
-    const exam = examById[sub.exam_id]
-    const grade = autoGradeExam(qs, sub.submission_data.answers || {})
-    const nowIso = new Date().toISOString()
+  const nowIso = new Date().toISOString()
+
+  for (const sub of scoredStuck) {
+    const hasAuto = !!sub.submission_data?.autoGrade
+    const preferredStatus = hasAuto && sub.submission_data.autoGrade.fullyAutoGraded !== false ? 'EX_GRD' : 'EX_SUB'
     const nextData = {
       ...(sub.submission_data || {}),
       submitted: true,
-      autoGrade: grade,
     }
-    const preferredStatus = grade.fullyAutoGraded ? 'EX_GRD' : 'EX_SUB'
-    const scorePct = exam?.total_points
-      ? Math.round((grade.points_earned / Number(exam.total_points)) * 1000) / 10
-      : grade.percent
     const patch = {
       submission_data: nextData,
       status: preferredStatus,
-      points_earned: grade.points_earned,
-      grade: scorePct,
       submitted_at: sub.submitted_at || nowIso,
       updated_at: nowIso,
     }
@@ -104,11 +103,54 @@ async function recoverDraftExamSubmissions(subs, examById) {
       patch.status = 'EX_SUB'
       ;({ error } = await supabase.from('exam_submissions').update(patch).eq('id', sub.id))
     }
-    if (!error) {
-      recovered.push({ ...sub, ...patch })
+    if (!error) recovered.push({ ...sub, ...patch })
+  }
+
+  if (unscoredWithAnswers.length) {
+    const examIds = [...new Set(unscoredWithAnswers.map((d) => d.exam_id))]
+    const { data: questions } = await supabase
+      .from('subject_exam_questions')
+      .select('id, subject_exam_id, question_type, options, correct_answers, marks')
+      .in('subject_exam_id', examIds)
+
+    const qsByExam = {}
+    ;(questions || []).forEach((q) => {
+      if (!qsByExam[q.subject_exam_id]) qsByExam[q.subject_exam_id] = []
+      qsByExam[q.subject_exam_id].push(q)
+    })
+
+    for (const sub of unscoredWithAnswers) {
+      const qs = qsByExam[sub.exam_id] || []
+      if (!qs.length) continue
+      const exam = examById[sub.exam_id]
+      const grade = autoGradeExam(qs, sub.submission_data.answers || {})
+      const nextData = {
+        ...(sub.submission_data || {}),
+        submitted: true,
+        autoGrade: grade,
+      }
+      const preferredStatus = grade.fullyAutoGraded ? 'EX_GRD' : 'EX_SUB'
+      const scorePct = exam?.total_points
+        ? Math.round((grade.points_earned / Number(exam.total_points)) * 1000) / 10
+        : grade.percent
+      const patch = {
+        submission_data: nextData,
+        status: preferredStatus,
+        points_earned: grade.points_earned,
+        grade: scorePct,
+        submitted_at: sub.submitted_at || nowIso,
+        updated_at: nowIso,
+      }
+      let { error } = await supabase.from('exam_submissions').update(patch).eq('id', sub.id)
+      if (error && preferredStatus === 'EX_GRD') {
+        patch.status = 'EX_SUB'
+        ;({ error } = await supabase.from('exam_submissions').update(patch).eq('id', sub.id))
+      }
+      if (!error) recovered.push({ ...sub, ...patch })
     }
   }
 
+  if (!recovered.length) return subs || []
   const recoveredIds = new Set(recovered.map((r) => r.id))
   return [...(subs || []).filter((s) => !recoveredIds.has(s.id)), ...recovered]
 }
@@ -247,4 +289,57 @@ export async function syncExamSubmissionToGradebookRpc(submissionId) {
     return { ok: false, error }
   }
   return { ok: true }
+}
+
+/**
+ * Recover stuck EX_DRF rows for one exam and push only those into grade_components.
+ * Does not re-sync every already-graded submission (avoids request spam).
+ */
+export async function recoverAndSyncExamSubmissions(examId, submissions) {
+  if (!examId) return { recovered: 0, synced: 0 }
+  const { data: exam } = await supabase
+    .from('subject_exams')
+    .select('id, exam_type, total_points, title')
+    .eq('id', examId)
+    .maybeSingle()
+  if (!exam) return { recovered: 0, synced: 0 }
+
+  const examById = { [exam.id]: exam }
+  let list = submissions
+  if (!list) {
+    const { data } = await supabase
+      .from('exam_submissions')
+      .select(
+        'id, exam_id, student_id, enrollment_id, status, points_earned, grade, submission_data, submitted_at',
+      )
+      .eq('exam_id', examId)
+    list = data || []
+  }
+
+  const stuckIds = new Set(
+    (list || [])
+      .filter(
+        (s) =>
+          s.status === 'EX_DRF' &&
+          (s.points_earned != null ||
+            (s.grade != null && s.grade !== '') ||
+            s.submitted_at ||
+            s.submission_data?.submitted === true ||
+            s.submission_data?.autoGrade ||
+            (s.submission_data?.answers && Object.keys(s.submission_data.answers).length > 0)),
+      )
+      .map((s) => s.id),
+  )
+
+  const updated = await recoverDraftExamSubmissions(list, examById)
+  let recovered = 0
+  let synced = 0
+  for (const sub of updated) {
+    if (!stuckIds.has(sub.id)) continue
+    if (sub.status !== 'EX_DRF') recovered += 1
+    if (!isExamSubmissionGradable(sub)) continue
+    const res = await syncExamSubmissionToGradebookRpc(sub.id)
+    if (res.ok) synced += 1
+  }
+  return { recovered, synced, submissions: updated }
 }

@@ -44,6 +44,56 @@ function TranscriptValueRow({ className = '', numeric = false, children }) {
   )
 }
 
+function normalizeSubjectCode(code) {
+  return String(code || '')
+    .replace(/\t/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toUpperCase()
+}
+
+function enrollmentHasDisplayScore(enrollment) {
+  const comp = normalizeGradeComponent(enrollment?.grade_components)
+  const score = comp?.numeric_grade ?? comp?.final ?? enrollment?.numeric_grade
+  return score != null && score !== '' && !Number.isNaN(Number(score))
+}
+
+function enrollmentSubjectKey(enrollment) {
+  const subjectId = enrollment?.classes?.subjects?.id ?? enrollment?.classes?.subject_id
+  if (subjectId != null) return `id:${subjectId}`
+  const code = normalizeSubjectCode(enrollment?.classes?.subjects?.code)
+  return code ? `code:${code}` : `enr:${enrollment?.id}`
+}
+
+/**
+ * One row per subject per semester: keep graded enrollment over empty duplicates.
+ * Drops withdrawn/dropped shells that inflate credits with empty dashes.
+ */
+function dedupeTranscriptEnrollments(list) {
+  const active = (list || []).filter((e) => {
+    const st = String(e.status || '').toLowerCase()
+    return st === 'enrolled' || st === 'completed' || st === 'passed' || !st
+  })
+
+  const bySemSubject = new Map()
+  for (const e of active) {
+    const key = `${e.semester_id ?? 'x'}::${enrollmentSubjectKey(e)}`
+    const prev = bySemSubject.get(key)
+    if (!prev) {
+      bySemSubject.set(key, e)
+      continue
+    }
+    const prevScored = enrollmentHasDisplayScore(prev)
+    const nextScored = enrollmentHasDisplayScore(e)
+    if (nextScored && !prevScored) {
+      bySemSubject.set(key, e)
+    } else if (nextScored === prevScored && (e.id || 0) > (prev.id || 0)) {
+      bySemSubject.set(key, e)
+    }
+  }
+  return [...bySemSubject.values()]
+}
+
 export default function Transcripts() {
   const { studentId } = useParams()
   const navigate = useNavigate()
@@ -128,6 +178,7 @@ export default function Transcripts() {
           classes(
             id,
             code,
+            subject_id,
             subjects(id, name_en, name_ar, code, credit_hours)
           ),
           semesters(id, name_en, name_ar, code, start_date, end_date),
@@ -172,17 +223,24 @@ export default function Transcripts() {
     alert(t('grading.transcripts.exportSoon'))
   }
 
-  const semesterGroups = useMemo(() => groupBySemester(enrollments), [enrollments])
+  const semesterGroups = useMemo(
+    () => groupBySemester(dedupeTranscriptEnrollments(enrollments)),
+    [enrollments]
+  )
+  const transcriptEnrollments = useMemo(
+    () => dedupeTranscriptEnrollments(enrollments),
+    [enrollments]
+  )
   const cumulativeGpaResult = useMemo(
-    () => calculateGpaWithScale(enrollments, gradingScale),
-    [enrollments, gradingScale]
+    () => calculateGpaWithScale(transcriptEnrollments, gradingScale),
+    [transcriptEnrollments, gradingScale]
   )
   const cumulativeGPA = cumulativeGpaResult.gpa
-  const totalCreditsAttempted = enrollments.reduce(
+  const totalCreditsAttempted = transcriptEnrollments.reduce(
     (sum, e) => sum + (e.classes?.subjects?.credit_hours || 0),
     0
   )
-  const totalCreditsEarned = enrollments
+  const totalCreditsEarned = transcriptEnrollments
     .filter((e) => {
       const { points } = getSubjectGpaFromEnrollment(e, gradingScale)
       return points != null && points > 0
@@ -409,7 +467,7 @@ export default function Transcripts() {
                         <tr key={enrollment.id}>
                           <td className={`${cellClass} whitespace-nowrap`}>
                             <TranscriptValueRow className="text-sm text-gray-900" numeric>
-                              {subj?.code || '—'}
+                              {normalizeSubjectCode(subj?.code) || '—'}
                             </TranscriptValueRow>
                           </td>
                           <td className={cellClass}>{getLocalizedName(subj, isArabicLayout) || '—'}</td>

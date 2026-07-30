@@ -11,7 +11,12 @@ import {
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
 import { useCollege } from '../../contexts/CollegeContext'
-import { Search, GraduationCap } from 'lucide-react'
+import { exportSubjectScoresExcel } from '../../utils/exportSubjectScores'
+import {
+  exportStudentGradesMatrixExcel,
+  loadStudentGradesExportData,
+} from '../../utils/exportStudentGradesMatrix'
+import { Search, GraduationCap, Download } from 'lucide-react'
 
 export default function StudentGrades() {
   const { t, i18n } = useTranslation()
@@ -27,10 +32,13 @@ export default function StudentGrades() {
   const [students, setStudents] = useState([])
   const [searchTerm, setSearchTerm] = useState('')
   const [selectedProgram, setSelectedProgram] = useState('')
+  const [selectedYearId, setSelectedYearId] = useState('')
+  const [academicYears, setAcademicYears] = useState([])
   const [selectedSubjectId, setSelectedSubjectId] = useState('')
   const [loading, setLoading] = useState(false)
   const [subjectsLoading, setSubjectsLoading] = useState(false)
   const [gradesLoading, setGradesLoading] = useState(false)
+  const [exporting, setExporting] = useState(false)
   const [collegeId, setCollegeId] = useState(null)
   const [gradingScale, setGradingScale] = useState([])
   const [subjectOptions, setSubjectOptions] = useState([])
@@ -56,6 +64,37 @@ export default function StudentGrades() {
   useEffect(() => {
     getGradingScaleFromUniversitySettings().then(setGradingScale)
   }, [])
+
+  useEffect(() => {
+    let cancelled = false
+    const loadYears = async () => {
+      try {
+        let query = supabase
+          .from('academic_years')
+          .select('id, name_en, name_ar, code, start_date')
+          .order('start_date', { ascending: false })
+        if (collegeId) {
+          query = query.or(`college_id.eq.${collegeId},is_university_wide.eq.true`)
+        }
+        const { data, error } = await query
+        if (error) throw error
+        if (!cancelled) {
+          setAcademicYears(data || [])
+          setSelectedYearId((prev) => {
+            if (!prev) return prev
+            return (data || []).some((y) => String(y.id) === String(prev)) ? prev : ''
+          })
+        }
+      } catch (err) {
+        console.error('Error fetching academic years:', err)
+        if (!cancelled) setAcademicYears([])
+      }
+    }
+    loadYears()
+    return () => {
+      cancelled = true
+    }
+  }, [collegeId])
 
   // Light subject list; when a program is selected, only that major's subjects
   useEffect(() => {
@@ -165,6 +204,20 @@ export default function StudentGrades() {
       try {
         const subjectId = Number(selectedSubjectId)
 
+        let semesterIds = null
+        if (selectedYearId) {
+          const { data: semRows, error: semErr } = await supabase
+            .from('semesters')
+            .select('id')
+            .eq('academic_year_id', Number(selectedYearId))
+          if (semErr) throw semErr
+          semesterIds = (semRows || []).map((s) => s.id)
+          if (!semesterIds.length) {
+            if (!cancelled) setSubjectGradeByStudent({})
+            return
+          }
+        }
+
         // 1) Classes for this subject (tiny query)
         const { data: classRows, error: classErr } = await supabase
           .from('classes')
@@ -189,12 +242,13 @@ export default function StudentGrades() {
           let from = 0
           const page = 500
           for (;;) {
-            const { data, error } = await supabase
+            let query = supabase
               .from('enrollments')
               .select('id, student_id, semester_id, class_id, numeric_grade, grade_points, grade')
               .eq('status', 'enrolled')
               .in('class_id', chunk)
-              .range(from, from + page - 1)
+            if (semesterIds) query = query.in('semester_id', semesterIds)
+            const { data, error } = await query.range(from, from + page - 1)
             if (error) throw error
             if (!data?.length) break
             enrollments.push(...data)
@@ -251,7 +305,7 @@ export default function StudentGrades() {
     return () => {
       cancelled = true
     }
-  }, [selectedSubjectId])
+  }, [selectedSubjectId, selectedYearId])
 
   const fetchStudents = async () => {
     if (userRole === 'user' && !authCollegeId) return
@@ -401,7 +455,153 @@ export default function StudentGrades() {
     return [student.first_name, student.last_name].filter(Boolean).join(' ').trim() || '—'
   }
 
-  const filterCols = userRole === 'admin' ? 'md:grid-cols-2 lg:grid-cols-4' : 'md:grid-cols-2 lg:grid-cols-3'
+  const selectedYear = useMemo(
+    () => academicYears.find((y) => String(y.id) === String(selectedYearId)) || null,
+    [academicYears, selectedYearId]
+  )
+
+  const selectedMajor = useMemo(
+    () => programOptions.find((m) => String(m.id) === String(selectedProgram)) || null,
+    [programOptions, selectedProgram]
+  )
+
+  const selectedSubject = useMemo(
+    () => subjectOptions.find((s) => String(s.id) === String(selectedSubjectId)) || null,
+    [subjectOptions, selectedSubjectId]
+  )
+
+  const exportMeta = () => {
+    const college =
+      colleges.find((c) => Number(c.id) === Number(collegeId || selectedCollegeId)) || null
+    return {
+      collegeName: college ? getLocalizedName(college, isArabicLayout) : '',
+      yearName: selectedYear
+        ? getLocalizedName(selectedYear, isArabicLayout) || selectedYear.code
+        : '',
+      programName: selectedMajor
+        ? getLocalizedName(selectedMajor, isArabicLayout) || selectedMajor.code
+        : '',
+    }
+  }
+
+  const handleExportMatrix = async (subjectOnly = false) => {
+    if (exporting) return
+    if (subjectOnly && !selectedSubjectId) return
+    if (!subjectOnly && !collegeId && userRole === 'admin') {
+      alert(
+        t('grading.studentGrades.selectCollegeFirst', {
+          defaultValue: 'Select a college before exporting all subjects.',
+        })
+      )
+      return
+    }
+    setExporting(true)
+    try {
+      const sourceStudents = filteredStudents.length ? filteredStudents : students
+      const data = await loadStudentGradesExportData({
+        students: sourceStudents,
+        collegeId,
+        yearId: selectedYearId || null,
+        programId: selectedProgram || null,
+        subjectId: subjectOnly ? selectedSubjectId : null,
+        gradingScale,
+        isArabic: isArabicLayout,
+        getStudentName: displayStudentName,
+      })
+      if (!data.students.length || !data.subjects.length) {
+        alert(
+          t('grading.studentGrades.exportEmpty', {
+            defaultValue: 'No grades found for the selected filters.',
+          })
+        )
+        return
+      }
+      await exportStudentGradesMatrixExcel({
+        ...data,
+        meta: {
+          ...exportMeta(),
+          subjectName: subjectOnly
+            ? getLocalizedName(selectedSubject, isArabicLayout)
+            : '',
+        },
+        isArabic: isArabicLayout,
+        filename: subjectOnly
+          ? `grades-subject-${(selectedSubject?.code || 'subject').replace(/[^\w\-]+/g, '_')}.xlsx`
+          : `grades-all-subjects-${stampSafe()}.xlsx`,
+      })
+    } catch (err) {
+      console.error('Export failed:', err)
+      alert(err?.message || 'Export failed')
+    } finally {
+      setExporting(false)
+    }
+  }
+
+  const handleExportSubjectDetail = async () => {
+    if (exporting || !selectedSubjectId) return
+    setExporting(true)
+    try {
+      const rows = filteredStudents
+        .map((s) => {
+          const g = getSubjectGradeRow(s.id)
+          if (!g) return null
+          return {
+            studentId: formatStudentId(s.student_id),
+            name: displayStudentName(s),
+            program: getLocalizedName(s.majors, isArabicLayout) || '—',
+            semester: '—',
+            score: g.score,
+            letter: g.letter,
+            gpa: g.gpa,
+          }
+        })
+        .filter(Boolean)
+      if (!rows.length) {
+        alert(
+          t('grading.studentGrades.exportEmpty', {
+            defaultValue: 'No grades found for the selected filters.',
+          })
+        )
+        return
+      }
+      const withScore = rows.filter((r) => r.score != null)
+      const avg =
+        withScore.length > 0
+          ? withScore.reduce((sum, r) => sum + r.score, 0) / withScore.length
+          : null
+      await exportSubjectScoresExcel({
+        rows,
+        meta: {
+          ...exportMeta(),
+          subjectName: getLocalizedName(selectedSubject, isArabicLayout) || '',
+          subjectCode: selectedSubject?.code || '',
+          stats: {
+            students: rows.length,
+            graded: withScore.length,
+            avgScore: avg,
+            passRate:
+              withScore.length > 0
+                ? (withScore.filter((r) => r.score >= 50).length / withScore.length) * 100
+                : null,
+          },
+        },
+        isArabic: isArabicLayout,
+      })
+    } catch (err) {
+      console.error('Export failed:', err)
+      alert(err?.message || 'Export failed')
+    } finally {
+      setExporting(false)
+    }
+  }
+
+  const stampSafe = () => {
+    const d = new Date()
+    const p = (n) => String(n).padStart(2, '0')
+    return `${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}`
+  }
+
+  const filterCols = 'md:grid-cols-2 xl:grid-cols-3'
   const busy = loading || (subjectMode && gradesLoading)
 
   return (
@@ -437,6 +637,28 @@ export default function StudentGrades() {
               </select>
             </div>
           )}
+          <div>
+            <label
+              className={`block text-sm font-medium text-gray-700 mb-2 ${isArabicLayout ? 'text-right' : 'text-left'}`}
+            >
+              {t('grading.studentGrades.academicYear', { defaultValue: 'Academic year' })}
+            </label>
+            <select
+              value={selectedYearId}
+              onChange={(e) => setSelectedYearId(e.target.value)}
+              className={`w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent ${isArabicLayout ? 'text-right' : 'text-left'}`}
+            >
+              <option value="">
+                {t('grading.studentGrades.allYears', { defaultValue: 'All years' })}
+              </option>
+              {academicYears.map((year) => (
+                <option key={year.id} value={String(year.id)}>
+                  {getLocalizedName(year, isArabicLayout) || year.code}
+                  {year.code ? ` (${year.code})` : ''}
+                </option>
+              ))}
+            </select>
+          </div>
           <div>
             <label
               className={`block text-sm font-medium text-gray-700 mb-2 ${isArabicLayout ? 'text-right' : 'text-left'}`}
@@ -504,6 +726,58 @@ export default function StudentGrades() {
             })}
           </p>
         )}
+        <div
+          className={`mt-4 flex flex-wrap gap-2 ${isArabicLayout ? 'flex-row-reverse justify-end' : ''}`}
+        >
+          <button
+            type="button"
+            onClick={() => handleExportMatrix(false)}
+            disabled={exporting || loading || !students.length}
+            className={`inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium text-white bg-primary-600 hover:bg-primary-700 disabled:opacity-50 disabled:cursor-not-allowed ${isArabicLayout ? 'flex-row-reverse' : ''}`}
+          >
+            <Download className="w-4 h-4" />
+            {exporting
+              ? t('grading.studentGrades.exporting', { defaultValue: 'Exporting…' })
+              : t('grading.studentGrades.exportAllSubjects', {
+                  defaultValue: 'Export all subjects',
+                })}
+          </button>
+          <button
+            type="button"
+            onClick={() => handleExportMatrix(true)}
+            disabled={exporting || loading || !selectedSubjectId}
+            className={`inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium text-primary-700 bg-primary-50 border border-primary-200 hover:bg-primary-100 disabled:opacity-50 disabled:cursor-not-allowed ${isArabicLayout ? 'flex-row-reverse' : ''}`}
+            title={
+              !selectedSubjectId
+                ? t('grading.studentGrades.selectSubjectFirst', {
+                    defaultValue: 'Select a subject first',
+                  })
+                : undefined
+            }
+          >
+            <Download className="w-4 h-4" />
+            {t('grading.studentGrades.exportSubjectMatrix', {
+              defaultValue: 'Export subject (columns)',
+            })}
+          </button>
+          <button
+            type="button"
+            onClick={handleExportSubjectDetail}
+            disabled={exporting || loading || !selectedSubjectId || !subjectMode}
+            className={`inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium text-gray-700 bg-white border border-gray-300 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed ${isArabicLayout ? 'flex-row-reverse' : ''}`}
+          >
+            <Download className="w-4 h-4" />
+            {t('grading.studentGrades.exportSubjectList', {
+              defaultValue: 'Export subject (list)',
+            })}
+          </button>
+        </div>
+        <p className={`mt-2 text-xs text-gray-500 ${isArabicLayout ? 'text-right' : 'text-left'}`}>
+          {t('grading.studentGrades.exportHint', {
+            defaultValue:
+              'Tip: pick College + Academic year (and optional Program/Subject), then export. “All subjects” builds a coloured sheet with Score / Grade / GPA per subject.',
+          })}
+        </p>
       </div>
 
       <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">

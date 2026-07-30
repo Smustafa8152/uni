@@ -15,6 +15,7 @@ import {
   examLifecycleStatusLabel,
   questionTypeLabel,
 } from '../../utils/formatExamAnswer'
+import { recoverAndSyncExamSubmissions } from '../../utils/syncExamGradesToGradebook'
 import {
   Search,
   ClipboardList,
@@ -169,7 +170,7 @@ export default function ExamStudentAnswers({ mode = 'instructor' }) {
           supabase
             .from('exam_submissions')
             .select(
-              'id, student_id, status, started_at, submitted_at, points_earned, grade, submission_data, students(id, student_id, name_en, name_ar)',
+              'id, exam_id, student_id, enrollment_id, status, started_at, submitted_at, points_earned, grade, submission_data, students(id, student_id, name_en, name_ar)',
             )
             .eq('exam_id', selectedExamId)
             .order('submitted_at', { ascending: false, nullsFirst: false }),
@@ -177,7 +178,20 @@ export default function ExamStudentAnswers({ mode = 'instructor' }) {
 
         if (cancelled) return
         setQuestions(qs || [])
-        const list = subs || []
+        let list = (subs || []).map((s) => ({
+          ...s,
+          exam_id: s.exam_id || selectedExamId,
+        }))
+
+        // Recover stuck EX_DRF (score but never finalized) and push into gradebook
+        try {
+          const sync = await recoverAndSyncExamSubmissions(selectedExamId, list)
+          if (sync.submissions?.length) list = sync.submissions
+        } catch (syncErr) {
+          console.warn('recoverAndSyncExamSubmissions', syncErr)
+        }
+
+        if (cancelled) return
         setSubmissions(list)
         const prefer =
           list.find((s) => s.id === submissionIdParam)?.id ||
@@ -227,11 +241,17 @@ export default function ExamStudentAnswers({ mode = 'instructor' }) {
     const { data: subs } = await supabase
       .from('exam_submissions')
       .select(
-        'id, student_id, status, started_at, submitted_at, points_earned, grade, submission_data, students(id, student_id, name_en, name_ar)',
+        'id, exam_id, student_id, enrollment_id, status, started_at, submitted_at, points_earned, grade, submission_data, students(id, student_id, name_en, name_ar)',
       )
       .eq('exam_id', selectedExamId)
       .order('submitted_at', { ascending: false, nullsFirst: false })
-    const list = subs || []
+    let list = (subs || []).map((s) => ({ ...s, exam_id: s.exam_id || selectedExamId }))
+    try {
+      const sync = await recoverAndSyncExamSubmissions(selectedExamId, list)
+      if (sync.submissions?.length) list = sync.submissions
+    } catch (syncErr) {
+      console.warn('recoverAndSyncExamSubmissions', syncErr)
+    }
     setSubmissions(list)
     const nextId =
       (preferId && list.find((s) => s.id === preferId)?.id) ||
@@ -659,7 +679,13 @@ export default function ExamStudentAnswers({ mode = 'instructor' }) {
                     '—'
                   const isRetake =
                     !!(s.submission_data?.instructor_retake && s.status === 'EX_DRF')
-                  const isDone = s.status === 'EX_GRD' || s.status === 'EX_SUB'
+                  const isDone =
+                    s.status === 'EX_GRD' ||
+                    s.status === 'EX_SUB' ||
+                    (!isRetake &&
+                      (s.points_earned != null ||
+                        (s.grade != null && s.grade !== '') ||
+                        !!s.submitted_at))
                   return (
                     <button
                       key={s.id}

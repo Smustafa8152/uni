@@ -1456,7 +1456,17 @@
       "status": "الحالة",
       "active": "نشط",
       "viewReport": "عرض التقرير",
-      "noStudentsFound": "لم يتم العثور على طلاب"
+      "noStudentsFound": "لم يتم العثور على طلاب",
+      "academicYear": "العام الأكاديمي",
+      "allYears": "جميع الأعوام",
+      "exportAllSubjects": "تصدير جميع المقررات",
+      "exportSubjectMatrix": "تصدير مقرر (أعمدة)",
+      "exportSubjectList": "تصدير مقرر (قائمة)",
+      "exporting": "جاري التصدير…",
+      "exportEmpty": "لا توجد درجات للمرشحات المحددة.",
+      "selectSubjectFirst": "اختر مقرراً أولاً",
+      "selectCollegeFirst": "اختر كلية قبل تصدير جميع المقررات.",
+      "exportHint": "نصيحة: اختر الكلية والعام الأكاديمي (والبرنامج/المقرر اختيارياً) ثم صدّر. «جميع المقررات» يُنشئ جدولاً ملوّناً بدرجة وتقدير ومعدل لكل مقرر."
     },
     "subjectScores": {
       "title": "درجات المقرر",
