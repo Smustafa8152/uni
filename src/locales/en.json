@@ -1453,7 +1453,17 @@
       "status": "Status",
       "active": "Active",
       "viewReport": "View Report",
-      "noStudentsFound": "No students found"
+      "noStudentsFound": "No students found",
+      "academicYear": "Academic year",
+      "allYears": "All years",
+      "exportAllSubjects": "Export all subjects",
+      "exportSubjectMatrix": "Export subject (columns)",
+      "exportSubjectList": "Export subject (list)",
+      "exporting": "Exporting…",
+      "exportEmpty": "No grades found for the selected filters.",
+      "selectSubjectFirst": "Select a subject first",
+      "selectCollegeFirst": "Select a college before exporting all subjects.",
+      "exportHint": "Tip: pick College + Academic year (and optional Program/Subject), then export. “All subjects” builds a coloured sheet with Score / Grade / GPA per subject."
     },
     "subjectScores": {
       "title": "Subject scores",

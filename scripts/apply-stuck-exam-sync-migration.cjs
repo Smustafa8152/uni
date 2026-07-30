@@ -1,0 +1,29 @@
+require('dotenv').config()
+const { Client } = require('pg')
+const fs = require('fs')
+const path = require('path')
+
+const url = process.env.VITE_SUPABASE_URL || ''
+const ref = url.match(/https?:\/\/([^.]+)\.supabase\.co/)?.[1]
+const password = process.env.SUPABASE_DB_PASSWORD
+if (!password || !ref) {
+  console.error('missing db creds')
+  process.exit(1)
+}
+const sql = fs.readFileSync(
+  path.join(__dirname, '../supabase/migrations/20260730220000_sync_stuck_exam_drafts_to_gradebook.sql'),
+  'utf8',
+)
+;(async () => {
+  const c = new Client({
+    connectionString: `postgresql://postgres:${encodeURIComponent(password)}@db.${ref}.supabase.co:5432/postgres`,
+    ssl: { rejectUnauthorized: false },
+  })
+  await c.connect()
+  await c.query(sql)
+  console.log('migration applied')
+  await c.end()
+})().catch((e) => {
+  console.error(e)
+  process.exit(1)
+})
