@@ -9,10 +9,24 @@ import { mergeAssessmentSettings, RESULT_VISIBILITY, canShowReviewField } from '
 import { autoGradeExam, studentAnswerIsAnswered } from '../../utils/autoGradeExam'
 import {
   resolveExamAvailabilityWindow,
+  resolveExamDurationMinutes,
   isExamEnterableForStudent,
   isExamSubmissionComplete,
   canStudentAttemptExam,
 } from '../../utils/subjectExamDateTime'
+
+/** Keep retake history / window keys that StudentExamRoom must not wipe on autosave. */
+function retainedSubmissionMeta(prevData, { clearRetake = false } = {}) {
+  const prev = prevData && typeof prevData === 'object' ? prevData : {}
+  const out = {}
+  if (Array.isArray(prev.previous_attempts)) out.previous_attempts = prev.previous_attempts
+  if (prev.attempt_count != null) out.attempt_count = prev.attempt_count
+  if (!clearRetake) {
+    if (prev.retake_window) out.retake_window = prev.retake_window
+    if (prev.instructor_retake) out.instructor_retake = prev.instructor_retake
+  }
+  return out
+}
 import { syncExamSubmissionToGradebookRpc } from '../../utils/syncExamGradesToGradebook'
 
 const UI = {
@@ -146,15 +160,15 @@ export default function StudentExamRoom() {
         setOptionOrder(prevData.optionOrder || {})
         setQIndex(Number(prevData.qIndex || 0) || 0)
 
-        const { start, end } = resolveExamAvailabilityWindow(ex)
-        const durationSec = Number(ex.duration_minutes || 0) * 60
+        const { start, end } = resolveExamAvailabilityWindow(ex, sub)
+        const durationSec = resolveExamDurationMinutes(ex, sub) * 60
 
         const now = Date.now()
         const endMs = end?.getTime()
         const startMs = start?.getTime()
 
-        // Block entry until the availability window is open
-        if (!isExamEnterableForStudent(ex, new Date(now))) {
+        // Block entry until the availability / retake window is open
+        if (!isExamEnterableForStudent(ex, new Date(now), sub)) {
           if (startMs && now < startMs) {
             setStartsInSec(Math.max(0, Math.floor((startMs - now) / 1000)))
             setRemainingSec(0)
@@ -204,6 +218,7 @@ export default function StudentExamRoom() {
             setSubmission((prev) => (prev ? { ...prev, started_at: startedIso } : prev))
           } else {
             const initialPayload = {
+              ...retainedSubmissionMeta(prevData),
               answers: prevData.answers || {},
               flagged: prevData.flagged || {},
               qIndex: Number(prevData.qIndex || 0) || 0,
@@ -309,7 +324,7 @@ export default function StudentExamRoom() {
     if (remainingSec !== 0) return
     if (!hadPositiveTimeRef.current || autoSubmitTriedRef.current) return
     if (submission?.status === 'EX_SUB' || submission?.status === 'EX_GRD') return
-    if (!isExamEnterableForStudent(exam) && !submission?.started_at) return
+    if (!isExamEnterableForStudent(exam, new Date(), submission) && !submission?.started_at) return
     autoSubmitTriedRef.current = true
     ;(async () => {
       try {
@@ -319,7 +334,7 @@ export default function StudentExamRoom() {
       }
     })()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [remainingSec, exam?.id, loading, startsInSec])
+  }, [remainingSec, exam?.id, loading, startsInSec, submission])
 
   const courseCode = exam?.classes?.subjects?.code || '—'
   const courseName = getLocalizedName(exam?.classes?.subjects, isArabic) || '—'
@@ -339,7 +354,12 @@ export default function StudentExamRoom() {
     savingRef.current = true
     setAutosaveState('saving')
     try {
+      const prevData =
+        submission?.submission_data && typeof submission.submission_data === 'object'
+          ? submission.submission_data
+          : {}
       const payload = {
+        ...retainedSubmissionMeta(prevData),
         answers,
         flagged,
         qIndex,
@@ -411,7 +431,12 @@ export default function StudentExamRoom() {
 
       const grade = autoGradeExam(questions, answers)
       const nowIso = new Date().toISOString()
+      const prevData =
+        submission?.submission_data && typeof submission.submission_data === 'object'
+          ? submission.submission_data
+          : {}
       const payload = {
+        ...retainedSubmissionMeta(prevData, { clearRetake: true }),
         answers,
         flagged,
         qIndex,
@@ -419,7 +444,7 @@ export default function StudentExamRoom() {
         submitted: true,
         attempt_count: Math.max(
           1,
-          Number(submission?.submission_data?.attempt_count || 0) + 1,
+          Number(prevData.attempt_count || 0) + 1,
         ),
         autoGrade: grade,
       }

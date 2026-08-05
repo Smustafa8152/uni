@@ -9,6 +9,7 @@ import {
   isExamSubmissionComplete,
   canStudentAttemptExam,
   resolveExamAvailabilityWindow,
+  resolveExamDurationMinutes,
   parseLocalDateOnly,
 } from '../../utils/subjectExamDateTime'
 
@@ -60,9 +61,9 @@ function pct(n, d) {
   return Math.round((Number(n || 0) / dd) * 100)
 }
 
-function msUntil(exam) {
+function msUntil(exam, submission = null) {
   try {
-    const { start } = resolveExamAvailabilityWindow(exam)
+    const { start } = resolveExamAvailabilityWindow(exam, submission)
     if (!start) return null
     return start.getTime() - Date.now()
   } catch {
@@ -308,14 +309,16 @@ export default function StudentELearningExams() {
           const code = ex?.classes?.subjects?.code || '—'
           const courseName = getLocalizedName(ex?.classes?.subjects, isArabic) || '—'
           const title = (isArabic ? ex.title_ar : ex.title) || ex.title || '—'
-          const window = resolveExamAvailabilityWindow(ex)
+          const window = resolveExamAvailabilityWindow(ex, ex.submission)
           const displayDate = window.start || ex.scheduled_date
           const displayStart = window.start || ex.start_time
           const displayEnd = window.end || ex.end_time
-          const soonMs = msUntil(ex)
+          const durationMins = resolveExamDurationMinutes(ex, ex.submission)
+          const soonMs = msUntil(ex, ex.submission)
           const alreadySubmitted = isExamSubmissionComplete(ex.submission)
           const canEnter = canStudentAttemptExam(ex, ex.submission)
           const canViewResult = alreadySubmitted && !canEnter
+          const isRetakeWindow = window.source === 'retake'
 
           const accent = canEnter ? UI.info : alreadySubmitted ? UI.ok : soonMs != null && soonMs > 0 ? UI.warn : UI.muted
           const accentBg = canEnter ? UI.infoBg : alreadySubmitted ? UI.okBg : soonMs != null && soonMs > 0 ? UI.warnBg : UI.bg
@@ -329,6 +332,7 @@ export default function StudentELearningExams() {
                 <div className="flex-1 min-w-[260px]">
                   <div className="text-xs font-extrabold uppercase tracking-wide" style={{ color: accent }}>
                     {code} — {courseName}
+                    {isRetakeWindow ? ` · ${t('studentPortal.elearning.reexamWindow', 'Re-exam window')}` : ''}
                   </div>
                   <div className="text-lg font-extrabold" style={{ color: UI.txt }}>
                     {title}
@@ -336,7 +340,7 @@ export default function StudentELearningExams() {
                   <div className="flex flex-wrap gap-4 text-sm mt-2" style={{ color: UI.muted }}>
                     <span>📅 {fmtDate(displayDate, isArabic)}</span>
                     <span>🕐 {fmtTime(displayStart)} – {fmtTime(displayEnd)}</span>
-                    <span>⏱️ {ex.duration_minutes || 0} {t('studentPortal.elearning.minutes', 'minutes')}</span>
+                    <span>⏱️ {durationMins || 0} {t('studentPortal.elearning.minutes', 'minutes')}</span>
                     <span>📊 {ex.total_points || 0} {t('studentPortal.elearning.points', 'points')}</span>
                   </div>
 

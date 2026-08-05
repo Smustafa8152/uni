@@ -54,10 +54,21 @@ export function combineLocalDateTime(dateStr, timeStr) {
 
 /**
  * Resolve absolute availability window.
- * Prefer ISO timestamps stored in assessment_settings (supports multi-day windows).
- * Fall back to scheduled_date + start/end_time (end moves to next day if <= start).
+ * Prefer per-submission retake_window (instructor-allowed re-exam), then assessment_settings ISO,
+ * then scheduled_date + start/end_time.
  */
-export function resolveExamAvailabilityWindow(exam) {
+export function resolveExamAvailabilityWindow(exam, submission = null) {
+  const retake = submission?.submission_data?.retake_window
+  if (retake && (retake.start_at || retake.end_at)) {
+    const start = retake.start_at ? new Date(retake.start_at) : null
+    const end = retake.end_at ? new Date(retake.end_at) : null
+    return {
+      start: start && !Number.isNaN(start.getTime()) ? start : null,
+      end: end && !Number.isNaN(end.getTime()) ? end : null,
+      source: 'retake',
+    }
+  }
+
   const settings = exam?.assessment_settings && typeof exam.assessment_settings === 'object'
     ? exam.assessment_settings
     : {}
@@ -68,12 +79,13 @@ export function resolveExamAvailabilityWindow(exam) {
     return {
       start: start && !Number.isNaN(start.getTime()) ? start : null,
       end: end && !Number.isNaN(end.getTime()) ? end : null,
+      source: 'exam',
     }
   }
 
-  if (!exam?.scheduled_date || !exam?.start_time) return { start: null, end: null }
+  if (!exam?.scheduled_date || !exam?.start_time) return { start: null, end: null, source: 'exam' }
   const start = combineLocalDateTime(exam.scheduled_date, exam.start_time)
-  if (!start) return { start: null, end: null }
+  if (!start) return { start: null, end: null, source: 'exam' }
 
   let end = exam.end_time ? combineLocalDateTime(exam.scheduled_date, exam.end_time) : null
   if (end && end <= start) {
@@ -83,7 +95,16 @@ export function resolveExamAvailabilityWindow(exam) {
     const hours = Number(settings.availability_hours) || DEFAULT_AVAILABILITY_HOURS
     end = new Date(start.getTime() + hours * 60 * 60 * 1000)
   }
-  return { start, end }
+  return { start, end, source: 'exam' }
+}
+
+/** Attempt duration in minutes — retake override wins over exam default. */
+export function resolveExamDurationMinutes(exam, submission = null) {
+  const retakeMins = Number(submission?.submission_data?.retake_window?.duration_minutes)
+  if (Number.isFinite(retakeMins) && retakeMins > 0) return retakeMins
+  const examMins = Number(exam?.duration_minutes)
+  if (Number.isFinite(examMins) && examMins > 0) return examMins
+  return 0
 }
 
 /**
@@ -114,11 +135,6 @@ export function examRowToDatetimeLocalValues(scheduled_date, start_time, end_tim
 }
 
 /**
- * Map datetime-local strings + attempt duration to DB fields.
- * Availability end defaults to start + 24 hours (not attempt duration).
- * Also returns assessment_settings window patch.
- */
-/**
  * Parse `<input type="datetime-local" />` value as local wall-clock time.
  * Avoid relying on Date parsing quirks across browsers.
  */
@@ -141,6 +157,11 @@ export function parseDatetimeLocal(value) {
   return Number.isNaN(d.getTime()) ? null : d
 }
 
+/**
+ * Map datetime-local strings + attempt duration to DB fields.
+ * Availability end defaults to start + 24 hours (not attempt duration).
+ * Also returns assessment_settings window patch.
+ */
 export function datetimeLocalsToExamPayload(startLocal, endLocal, durationMinutes, availabilityHours = DEFAULT_AVAILABILITY_HOURS) {
   const hours = Math.max(1, Number(availabilityHours) || DEFAULT_AVAILABILITY_HOURS)
   let start = parseDatetimeLocal(startLocal) || new Date()
@@ -188,27 +209,33 @@ export function resolvePublishStatus(start, end, now = new Date()) {
 }
 
 /**
- * True when "now" is inside the exam availability window.
+ * True when "now" is inside the exam availability window (or student retake window).
  * Missing start → treat as already started; missing end → no close yet.
  */
-export function isExamWithinAvailabilityWindow(exam, now = new Date()) {
-  const { start, end } = resolveExamAvailabilityWindow(exam)
+export function isExamWithinAvailabilityWindow(exam, now = new Date(), submission = null) {
+  const { start, end } = resolveExamAvailabilityWindow(exam, submission)
   const t = now instanceof Date ? now.getTime() : new Date(now).getTime()
   if (start && t < start.getTime()) return false
   if (end && t > end.getTime()) return false
-  // No resolvable window → only EX_OPN is considered open (legacy rows)
+  // No resolvable window → only EX_OPN is considered open (legacy rows),
+  // unless a retake window was expected but empty (fall through to exam status).
   if (!start && !end) return exam?.status === EXAM_STATUS.PUBLISHED
   return true
 }
 
 /**
- * Student may enter when status is scheduled/open AND current time is in the availability window.
- * Scheduled exams open automatically at start time (no manual "Open" required).
+ * Student may enter when:
+ * - scheduled/open AND inside exam window, OR
+ * - instructor set an active retake_window on their submission (even if exam closed).
  */
-export function isExamEnterableForStudent(exam, now = new Date()) {
+export function isExamEnterableForStudent(exam, now = new Date(), submission = null) {
   if (!exam) return false
+  const { source } = resolveExamAvailabilityWindow(exam, submission)
+  if (source === 'retake' && isExamWithinAvailabilityWindow(exam, now, submission)) {
+    return true
+  }
   if (exam.status !== EXAM_STATUS.SCHEDULED && exam.status !== EXAM_STATUS.PUBLISHED) return false
-  return isExamWithinAvailabilityWindow(exam, now)
+  return isExamWithinAvailabilityWindow(exam, now, submission)
 }
 
 /** True when the student's attempt is already finalized (cannot keep answering). */
@@ -225,7 +252,7 @@ export function isExamSubmissionComplete(submission) {
  * Instructor/admin re-exam resets the row to EX_DRF (see reset_exam_submission_for_retake).
  */
 export function canStudentAttemptExam(exam, submission, now = new Date()) {
-  if (!isExamEnterableForStudent(exam, now)) return false
+  if (!isExamEnterableForStudent(exam, now, submission)) return false
   if (!isExamSubmissionComplete(submission)) return true
 
   const settings =
@@ -239,6 +266,5 @@ export function canStudentAttemptExam(exam, submission, now = new Date()) {
       Number(submission?.attempt_count) ||
       1,
   )
-  // Unique (exam_id, student_id) → one row; retakes only when max_attempts > used
   return used < maxAttempts
 }

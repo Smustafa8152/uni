@@ -6624,8 +6624,22 @@
     "notStartedYet": "Not started yet",
     "reexamConfirm": "Allow {{name}} to re-take this exam? Their current answers and score will be cleared (a copy is kept in history). The synced gradebook cell for this exam type will also be cleared.",
     "reexamDone": "Re-exam allowed. The student can open the exam again and start a new attempt.",
+    "reexamBulkDone": "Re-exam allowed for {{n}} student(s). They can enter only during the window you set.",
     "reexamPending": "Re-exam allowed — waiting for student",
-    "reexamShort": "Re-exam"
+    "reexamShort": "Re-exam",
+    "selectAll": "Select all",
+    "bulkAllowReexam": "Allow re-exam ({{n}})",
+    "noEnrolled": "No enrolled students for this class.",
+    "noAttemptShort": "No attempt",
+    "timedWindow": "Timed",
+    "windowStart": "Window start",
+    "windowEnd": "Window end",
+    "attemptDuration": "Attempt duration (minutes)",
+    "reexamWindowInvalid": "Please set a valid start and end time (end must be after start).",
+    "reexamBulkConfirm": "Allow {{n}} selected students to re-take this exam during the window below. Current answers are archived; the latest attempt will drive the gradebook.",
+    "retakeWindowLabel": "Window",
+    "minutesShort": "min",
+    "attemptHistory": "Previous attempts"
   },
   "adminGradesExport": {
     "breadcrumb": "Grades export",
