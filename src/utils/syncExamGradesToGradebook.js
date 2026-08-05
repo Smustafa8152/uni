@@ -157,7 +157,7 @@ async function recoverDraftExamSubmissions(subs, examById) {
 
 /**
  * Fetch submitted exam attempts for a class and build enrollmentId → { column: score } map.
- * When multiple exams map to the same column, keep the highest score.
+ * When multiple exams map to the same column, keep the latest submission (by submitted_at).
  */
 export async function fetchExamScoresByEnrollment(classId) {
   const { data: exams, error: exErr } = await supabase
@@ -179,6 +179,7 @@ export async function fetchExamScoresByEnrollment(classId) {
   const subs = await recoverDraftExamSubmissions(subsRaw || [], examById)
 
   const byEnrollment = {}
+  const latestAt = {}
   for (const sub of subs || []) {
     if (!isExamSubmissionGradable(sub)) continue
     const exam = examById[sub.exam_id]
@@ -190,14 +191,19 @@ export async function fetchExamScoresByEnrollment(classId) {
     const enrId = sub.enrollment_id
     if (!enrId) continue
     if (!byEnrollment[enrId]) byEnrollment[enrId] = {}
-    const prev = byEnrollment[enrId][col]
-    if (prev == null || score > prev) byEnrollment[enrId][col] = score
+    if (!latestAt[enrId]) latestAt[enrId] = {}
+    const at = sub.submitted_at ? new Date(sub.submitted_at).getTime() : 0
+    const prevAt = latestAt[enrId][col]
+    if (prevAt == null || at >= prevAt) {
+      byEnrollment[enrId][col] = score
+      latestAt[enrId][col] = at
+    }
   }
   return { byEnrollment, exams }
 }
 
 /**
- * Merge online-exam scores into gradebook draft rows (fill empty cells only).
+ * Merge online-exam scores into gradebook draft rows (replace cells with latest exam score).
  * Returns { nextDrafts, dirtyEnrollmentIds }.
  */
 export function mergeExamScoresIntoDrafts(draftGrades, examScoresByEnrollment, gradeConfig = []) {
@@ -211,7 +217,7 @@ export function mergeExamScoresIntoDrafts(draftGrades, examScoresByEnrollment, g
     const updated = { ...row }
     Object.entries(scores).forEach(([col, score]) => {
       const current = updated[col]
-      if (current == null || current === '') {
+      if (current == null || current === '' || Number(current) !== Number(score)) {
         updated[col] = score
         changed = true
       }

@@ -16,6 +16,7 @@ import {
   questionTypeLabel,
 } from '../../utils/formatExamAnswer'
 import { recoverAndSyncExamSubmissions } from '../../utils/syncExamGradesToGradebook'
+import { parseDatetimeLocal } from '../../utils/subjectExamDateTime'
 import {
   Search,
   ClipboardList,
@@ -27,6 +28,67 @@ import {
   BookOpen,
   RefreshCw,
 } from 'lucide-react'
+
+function rowKey(s) {
+  if (s?.id != null) return `sub-${s.id}`
+  if (s?.student_id != null) return `stu-${s.student_id}`
+  return ''
+}
+
+function toDatetimeLocal(d = new Date()) {
+  const pad = (n) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
+}
+
+async function mergeEnrolledStudentsWithSubmissions(examId, classId, subs) {
+  const { data: enrs, error } = await supabase
+    .from('enrollments')
+    .select('id, student_id, students(id, student_id, name_en, name_ar)')
+    .eq('class_id', classId)
+    .eq('status', 'enrolled')
+  if (error) throw error
+
+  const byStudent = new Map((subs || []).map((s) => [s.student_id, s]))
+  const seen = new Set()
+  const merged = []
+
+  for (const enr of enrs || []) {
+    seen.add(enr.student_id)
+    const existing = byStudent.get(enr.student_id)
+    if (existing) {
+      merged.push({
+        ...existing,
+        enrollment_id: existing.enrollment_id || enr.id,
+        students: existing.students || enr.students,
+      })
+    } else {
+      merged.push({
+        id: null,
+        exam_id: examId,
+        student_id: enr.student_id,
+        enrollment_id: enr.id,
+        status: null,
+        started_at: null,
+        submitted_at: null,
+        points_earned: null,
+        grade: null,
+        submission_data: null,
+        students: enr.students,
+      })
+    }
+  }
+
+  for (const s of subs || []) {
+    if (!seen.has(s.student_id)) merged.push(s)
+  }
+
+  merged.sort((a, b) => {
+    const an = (a.students?.name_en || a.students?.student_id || '').toLowerCase()
+    const bn = (b.students?.name_en || b.students?.student_id || '').toLowerCase()
+    return an.localeCompare(bn)
+  })
+  return merged
+}
 
 /**
  * Neat per-exam student answers review.
@@ -52,6 +114,10 @@ export default function ExamStudentAnswers({ mode = 'instructor' }) {
   const [detailLoading, setDetailLoading] = useState(false)
   const [reexamBusy, setReexamBusy] = useState(false)
   const [reexamConfirmOpen, setReexamConfirmOpen] = useState(false)
+  const [selectedRowKeys, setSelectedRowKeys] = useState(() => new Set())
+  const [reexamWindowStart, setReexamWindowStart] = useState('')
+  const [reexamWindowEnd, setReexamWindowEnd] = useState('')
+  const [reexamDuration, setReexamDuration] = useState(90)
   const [actionError, setActionError] = useState('')
   const [actionOk, setActionOk] = useState('')
   const [examSearch, setExamSearch] = useState('')
@@ -122,23 +188,25 @@ export default function ExamStudentAnswers({ mode = 'instructor' }) {
       setQuestions([])
       setSubmissions([])
       setSelectedSubmissionId(null)
+      setSelectedRowKeys(new Set())
       return
     }
     let cancelled = false
     ;(async () => {
       setDetailLoading(true)
       try {
+        let ex = null
         if (mode === 'instructor') {
           const instructor = await getActiveInstructorByEmail(user.email)
           if (!instructor) return
-          const { data: ex } = await supabase
+          const { data } = await supabase
             .from('subject_exams')
             .select(
-              'id, title, exam_type, status, total_points, class_id, assessment_settings, classes(id, section, instructor_id, subjects(code, name_en, name_ar))',
+              'id, title, exam_type, status, total_points, class_id, duration_minutes, assessment_settings, classes(id, section, instructor_id, subjects(code, name_en, name_ar))',
             )
             .eq('id', selectedExamId)
             .maybeSingle()
-          if (!ex || ex.classes?.instructor_id !== instructor.id) {
+          if (!data || data.classes?.instructor_id !== instructor.id) {
             if (!cancelled) {
               setExam(null)
               setQuestions([])
@@ -146,18 +214,22 @@ export default function ExamStudentAnswers({ mode = 'instructor' }) {
             }
             return
           }
-          if (!cancelled) setExam(ex)
+          ex = data
         } else {
-          const { data: ex } = await supabase
+          const { data } = await supabase
             .from('subject_exams')
             .select(
-              'id, title, exam_type, status, total_points, class_id, assessment_settings, classes(id, section, subjects(code, name_en, name_ar))',
+              'id, title, exam_type, status, total_points, class_id, duration_minutes, assessment_settings, classes(id, section, subjects(code, name_en, name_ar))',
             )
             .eq('id', selectedExamId)
             .maybeSingle()
-          if (!cancelled) setExam(ex || null)
-          if (!ex) return
+          ex = data || null
+          if (!ex) {
+            if (!cancelled) setExam(null)
+            return
+          }
         }
+        if (!cancelled) setExam(ex)
 
         const [{ data: qs }, { data: subs }] = await Promise.all([
           supabase
@@ -183,7 +255,6 @@ export default function ExamStudentAnswers({ mode = 'instructor' }) {
           exam_id: s.exam_id || selectedExamId,
         }))
 
-        // Recover stuck EX_DRF (score but never finalized) and push into gradebook
         try {
           const sync = await recoverAndSyncExamSubmissions(selectedExamId, list)
           if (sync.submissions?.length) list = sync.submissions
@@ -191,14 +262,19 @@ export default function ExamStudentAnswers({ mode = 'instructor' }) {
           console.warn('recoverAndSyncExamSubmissions', syncErr)
         }
 
+        if (ex.class_id) {
+          list = await mergeEnrolledStudentsWithSubmissions(selectedExamId, ex.class_id, list)
+        }
+
         if (cancelled) return
         setSubmissions(list)
+        setSelectedRowKeys(new Set())
         const prefer =
-          list.find((s) => s.id === submissionIdParam)?.id ||
-          list.find((s) => s.status === 'EX_SUB' || s.status === 'EX_GRD')?.id ||
-          list[0]?.id ||
+          list.find((s) => s.id === submissionIdParam) ||
+          list.find((s) => s.status === 'EX_SUB' || s.status === 'EX_GRD') ||
+          list[0] ||
           null
-        setSelectedSubmissionId(prefer)
+        setSelectedSubmissionId(prefer ? rowKey(prefer) : null)
       } catch (e) {
         console.error(e)
       } finally {
@@ -211,33 +287,64 @@ export default function ExamStudentAnswers({ mode = 'instructor' }) {
   }, [selectedExamId, mode, user?.email, submissionIdParam])
 
   const selectedSubmission = useMemo(
-    () => submissions.find((s) => s.id === selectedSubmissionId) || null,
+    () => submissions.find((s) => rowKey(s) === selectedSubmissionId) || null,
     [submissions, selectedSubmissionId],
   )
+
+  const allRowKeys = useMemo(() => submissions.map((s) => rowKey(s)).filter(Boolean), [submissions])
+  const allSelected = allRowKeys.length > 0 && allRowKeys.every((k) => selectedRowKeys.has(k))
 
   const selectExam = (id) => {
     const next = id ? Number(id) : null
     setSelectedExamId(next)
     setSelectedSubmissionId(null)
+    setSelectedRowKeys(new Set())
     const params = new URLSearchParams()
     if (next) params.set('examId', String(next))
     setSearchParams(params)
   }
 
-  const selectSubmission = (id) => {
-    setSelectedSubmissionId(id)
+  const selectSubmission = (row) => {
+    const key = typeof row === 'object' ? rowKey(row) : row
+    const found = typeof row === 'object' ? row : submissions.find((s) => rowKey(s) === row)
+    setSelectedSubmissionId(key)
     setActionError('')
     setActionOk('')
     setReexamConfirmOpen(false)
     const params = new URLSearchParams(searchParams)
     if (selectedExamId) params.set('examId', String(selectedExamId))
-    if (id) params.set('submissionId', String(id))
+    if (found?.id) params.set('submissionId', String(found.id))
     else params.delete('submissionId')
     setSearchParams(params)
   }
 
-  const reloadSubmissions = async (preferId = null) => {
-    if (!selectedExamId) return
+  const toggleRowSelected = (key, checked) => {
+    setSelectedRowKeys((prev) => {
+      const next = new Set(prev)
+      if (checked) next.add(key)
+      else next.delete(key)
+      return next
+    })
+  }
+
+  const toggleSelectAll = (checked) => {
+    setSelectedRowKeys(checked ? new Set(allRowKeys) : new Set())
+  }
+
+  const openReexamModal = (keys = null) => {
+    setActionError('')
+    setActionOk('')
+    if (keys) setSelectedRowKeys(new Set(keys))
+    const now = new Date()
+    const end = new Date(now.getTime() + 24 * 60 * 60 * 1000)
+    setReexamWindowStart(toDatetimeLocal(now))
+    setReexamWindowEnd(toDatetimeLocal(end))
+    setReexamDuration(Math.max(1, Number(exam?.duration_minutes) || 90))
+    setReexamConfirmOpen(true)
+  }
+
+  const reloadSubmissions = async (preferKey = null) => {
+    if (!selectedExamId || !exam?.class_id) return
     const { data: subs } = await supabase
       .from('exam_submissions')
       .select(
@@ -252,13 +359,14 @@ export default function ExamStudentAnswers({ mode = 'instructor' }) {
     } catch (syncErr) {
       console.warn('recoverAndSyncExamSubmissions', syncErr)
     }
+    list = await mergeEnrolledStudentsWithSubmissions(selectedExamId, exam.class_id, list)
     setSubmissions(list)
-    const nextId =
-      (preferId && list.find((s) => s.id === preferId)?.id) ||
-      list.find((s) => s.id === selectedSubmissionId)?.id ||
-      list[0]?.id ||
+    const next =
+      (preferKey && list.find((s) => rowKey(s) === preferKey)) ||
+      list.find((s) => rowKey(s) === selectedSubmissionId) ||
+      list[0] ||
       null
-    setSelectedSubmissionId(nextId)
+    setSelectedSubmissionId(next ? rowKey(next) : null)
   }
 
   const selectedStudentName =
@@ -270,23 +378,51 @@ export default function ExamStudentAnswers({ mode = 'instructor' }) {
   const reexamPending =
     !!(selectedSubmission?.submission_data?.instructor_retake && selectedSubmission?.status === 'EX_DRF')
 
+  const previousAttempts = Array.isArray(selectedSubmission?.submission_data?.previous_attempts)
+    ? selectedSubmission.submission_data.previous_attempts
+    : []
+
   const confirmAllowReexam = async () => {
-    if (!selectedSubmission?.id) return
+    const keys = selectedRowKeys.size
+      ? [...selectedRowKeys]
+      : selectedSubmission
+        ? [rowKey(selectedSubmission)]
+        : []
+    const students = submissions.filter((s) => keys.includes(rowKey(s)))
+    const studentIds = [...new Set(students.map((s) => s.student_id).filter(Boolean))]
+    if (!selectedExamId || !studentIds.length) return
+
+    const start = parseDatetimeLocal(reexamWindowStart)
+    const end = parseDatetimeLocal(reexamWindowEnd)
+    if (!start || !end || end <= start) {
+      setActionError(
+        t('examAnswers.reexamWindowInvalid', 'Please set a valid start and end time (end must be after start).'),
+      )
+      return
+    }
+    const duration = Math.max(1, Number(reexamDuration) || Number(exam?.duration_minutes) || 90)
+
     setReexamBusy(true)
     setActionError('')
     setActionOk('')
     try {
-      const { error } = await supabase.rpc('reset_exam_submission_for_retake', {
-        p_submission_id: selectedSubmission.id,
+      const { data, error } = await supabase.rpc('reset_exam_students_for_retake', {
+        p_exam_id: selectedExamId,
+        p_student_ids: studentIds,
+        p_window_start_at: start.toISOString(),
+        p_window_end_at: end.toISOString(),
+        p_duration_minutes: duration,
       })
       if (error) throw error
-      await reloadSubmissions(selectedSubmission.id)
+      await reloadSubmissions(selectedSubmission ? rowKey(selectedSubmission) : null)
       setReexamConfirmOpen(false)
+      setSelectedRowKeys(new Set())
       setActionOk(
-        t(
-          'examAnswers.reexamDone',
-          'Re-exam allowed. The student can open the exam again and start a new attempt.',
-        ),
+        t('examAnswers.reexamBulkDone', {
+          defaultValue:
+            'Re-exam allowed for {{n}} student(s). They can enter only during the window you set.',
+          n: data ?? studentIds.length,
+        }),
       )
     } catch (e) {
       console.error(e)
@@ -661,24 +797,64 @@ export default function ExamStudentAnswers({ mode = 'instructor' }) {
                   borderBottom: '1px solid var(--bdr)',
                   fontWeight: 800,
                   fontSize: 13,
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: 10,
                 }}
               >
-                {t('examAnswers.students', 'Students')} ({submissions.length})
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+                  <span>
+                    {t('examAnswers.students', 'Students')} ({submissions.length})
+                  </span>
+                  <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontWeight: 600, fontSize: 12, cursor: 'pointer' }}>
+                    <input
+                      type="checkbox"
+                      checked={allSelected}
+                      onChange={(e) => toggleSelectAll(e.target.checked)}
+                    />
+                    {t('examAnswers.selectAll', 'Select all')}
+                  </label>
+                </div>
+                {selectedRowKeys.size > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => openReexamModal()}
+                    style={{
+                      appearance: 'none',
+                      border: 'none',
+                      background: '#1a3a6b',
+                      color: '#fff',
+                      fontWeight: 800,
+                      fontSize: 12,
+                      padding: '8px 10px',
+                      borderRadius: 8,
+                      cursor: 'pointer',
+                    }}
+                  >
+                    {t('examAnswers.bulkAllowReexam', {
+                      defaultValue: 'Allow re-exam ({{n}})',
+                      n: selectedRowKeys.size,
+                    })}
+                  </button>
+                )}
               </div>
               <div style={{ maxHeight: '70vh', overflowY: 'auto', background: '#fff' }}>
                 {submissions.length === 0 && (
                   <div style={{ padding: 20, textAlign: 'center', color: '#6b7a99', fontSize: 13 }}>
-                    {t('examAnswers.noAttempts', 'No student attempts for this exam yet.')}
+                    {t('examAnswers.noEnrolled', 'No enrolled students for this class.')}
                   </div>
                 )}
                 {submissions.map((s) => {
-                  const active = s.id === selectedSubmissionId
+                  const key = rowKey(s)
+                  const active = key === selectedSubmissionId
                   const name =
                     (isArabic ? s.students?.name_ar : s.students?.name_en) ||
                     s.students?.name_en ||
                     '—'
                   const isRetake =
                     !!(s.submission_data?.instructor_retake && s.status === 'EX_DRF')
+                  const hasWindow = !!(s.submission_data?.retake_window?.start_at || s.submission_data?.retake_window?.end_at)
+                  const noAttempt = !s.id
                   const isDone =
                     s.status === 'EX_GRD' ||
                     s.status === 'EX_SUB' ||
@@ -687,25 +863,47 @@ export default function ExamStudentAnswers({ mode = 'instructor' }) {
                         (s.grade != null && s.grade !== '') ||
                         !!s.submitted_at))
                   return (
-                    <button
-                      key={s.id}
-                      type="button"
-                      onClick={() => selectSubmission(s.id)}
-                      aria-current={active ? 'true' : undefined}
+                    <div
+                      key={key}
                       style={{
-                        display: 'block',
-                        width: '100%',
-                        textAlign: 'start',
-                        padding: '12px 14px',
-                        border: 'none',
+                        display: 'flex',
+                        alignItems: 'stretch',
                         borderBottom: '1px solid #e8edf5',
                         borderInlineStart: active ? '4px solid #1a3a6b' : '4px solid transparent',
                         background: active ? '#e8eef8' : '#ffffff',
-                        color: '#1e2a3a',
-                        cursor: 'pointer',
                         boxShadow: active ? 'inset 0 0 0 1px #c5d4eb' : 'none',
                       }}
                     >
+                      <label
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          padding: '0 8px 0 10px',
+                          cursor: 'pointer',
+                        }}
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={selectedRowKeys.has(key)}
+                          onChange={(e) => toggleRowSelected(key, e.target.checked)}
+                        />
+                      </label>
+                      <button
+                        type="button"
+                        onClick={() => selectSubmission(s)}
+                        aria-current={active ? 'true' : undefined}
+                        style={{
+                          display: 'block',
+                          flex: 1,
+                          textAlign: 'start',
+                          padding: '12px 14px 12px 4px',
+                          border: 'none',
+                          background: 'transparent',
+                          color: '#1e2a3a',
+                          cursor: 'pointer',
+                        }}
+                      >
                       <div
                         style={{
                           fontWeight: active ? 800 : 700,
@@ -734,21 +932,38 @@ export default function ExamStudentAnswers({ mode = 'instructor' }) {
                             fontSize: 10,
                             padding: '2px 7px',
                             borderRadius: 999,
-                            background: isRetake ? '#fef3c7' : isDone ? '#e6f7ef' : '#f1f5f9',
-                            color: isRetake ? '#92400e' : isDone ? '#166534' : '#475569',
+                            background: isRetake ? '#fef3c7' : noAttempt ? '#f1f5f9' : isDone ? '#e6f7ef' : '#f1f5f9',
+                            color: isRetake ? '#92400e' : noAttempt ? '#64748b' : isDone ? '#166534' : '#475569',
                           }}
                         >
                           {isRetake
                             ? t('examAnswers.reexamShort', 'Re-exam')
-                            : submissionStatusLabel(s.status, t)}
+                            : noAttempt
+                              ? t('examAnswers.noAttemptShort', 'No attempt')
+                              : submissionStatusLabel(s.status, t)}
                         </span>
+                        {hasWindow && (
+                          <span
+                            style={{
+                              fontWeight: 700,
+                              fontSize: 10,
+                              padding: '2px 7px',
+                              borderRadius: 999,
+                              background: '#dbeafe',
+                              color: '#1d4ed8',
+                            }}
+                          >
+                            {t('examAnswers.timedWindow', 'Timed')}
+                          </span>
+                        )}
                         {s.points_earned != null && (
                           <span style={{ fontWeight: 700, color: '#1e2a3a' }}>
                             {s.points_earned}/{exam.total_points}
                           </span>
                         )}
                       </div>
-                    </button>
+                      </button>
+                    </div>
                   )
                 })}
               </div>
@@ -851,22 +1066,31 @@ export default function ExamStudentAnswers({ mode = 'instructor' }) {
                         {reexamPending
                           ? t(
                               'examAnswers.reexamPanelPendingHint',
-                              'This student may open the exam again and start a new attempt.',
+                              'This student may open the exam again during the timed window.',
                             )
                           : t(
                               'examAnswers.reexamPanelHint',
-                              'Reset this student’s attempt so they can take the exam again. Previous answers are kept in history.',
+                              'Set a start/end window and duration, then allow this student (or a selection) to re-take the exam. Previous answers stay in history.',
                             )}
                       </div>
+                      {selectedSubmission?.submission_data?.retake_window?.start_at && (
+                        <div style={{ fontSize: 11, color: '#1d4ed8', marginTop: 6, fontWeight: 600 }}>
+                          {t('examAnswers.retakeWindowLabel', 'Window')}:{' '}
+                          {new Date(selectedSubmission.submission_data.retake_window.start_at).toLocaleString()}
+                          {' → '}
+                          {selectedSubmission.submission_data.retake_window.end_at
+                            ? new Date(selectedSubmission.submission_data.retake_window.end_at).toLocaleString()
+                            : '—'}
+                          {selectedSubmission.submission_data.retake_window.duration_minutes
+                            ? ` · ${selectedSubmission.submission_data.retake_window.duration_minutes} ${t('examAnswers.minutesShort', 'min')}`
+                            : ''}
+                        </div>
+                      )}
                     </div>
                     <button
                       type="button"
-                      disabled={reexamBusy}
-                      onClick={() => {
-                        setActionError('')
-                        setActionOk('')
-                        setReexamConfirmOpen(true)
-                      }}
+                      disabled={reexamBusy || !selectedSubmission?.student_id}
+                      onClick={() => openReexamModal([rowKey(selectedSubmission)])}
                       style={{
                         appearance: 'none',
                         border: 'none',
@@ -886,6 +1110,48 @@ export default function ExamStudentAnswers({ mode = 'instructor' }) {
                         : t('examAnswers.allowReexam', 'Allow re-exam')}
                     </button>
                   </div>
+
+                  {previousAttempts.length > 0 && (
+                    <div
+                      style={{
+                        marginBottom: 16,
+                        padding: '12px 14px',
+                        borderRadius: 12,
+                        border: '1px solid #e2e8f0',
+                        background: '#f8fafc',
+                      }}
+                    >
+                      <div style={{ fontWeight: 800, fontSize: 13, marginBottom: 8 }}>
+                        {t('examAnswers.attemptHistory', 'Previous attempts')} ({previousAttempts.length})
+                      </div>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                        {[...previousAttempts].reverse().map((a, i) => (
+                          <div
+                            key={i}
+                            style={{ fontSize: 12, color: '#475569', display: 'flex', flexWrap: 'wrap', gap: 8 }}
+                          >
+                            <span style={{ fontWeight: 700 }}>
+                              #{previousAttempts.length - i}
+                            </span>
+                            <span>
+                              {a.submitted_at
+                                ? new Date(a.submitted_at).toLocaleString()
+                                : a.archived_at
+                                  ? new Date(a.archived_at).toLocaleString()
+                                  : '—'}
+                            </span>
+                            <span>
+                              {a.points_earned != null
+                                ? `${a.points_earned}/${exam.total_points}`
+                                : '—'}
+                              {a.grade != null ? ` (${a.grade}%)` : ''}
+                            </span>
+                            <span>{submissionStatusLabel(a.status, t)}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
 
                   {actionError && (
                     <div className="alert alert-err" style={{ marginBottom: 12 }} role="alert">
@@ -1123,15 +1389,69 @@ export default function ExamStudentAnswers({ mode = 'instructor' }) {
                 id="reexam-confirm-title"
                 style={{ fontWeight: 800, fontSize: 18, color: '#1a3a6b', marginBottom: 10 }}
               >
-                {t('examAnswers.reexamModalTitle', 'Allow re-exam?')}
+                {t('examAnswers.reexamModalTitle', 'Allow timed re-exam')}
               </div>
-              <p style={{ fontSize: 14, color: '#6b7a99', margin: '0 0 20px', lineHeight: 1.55 }}>
-                {t('examAnswers.reexamConfirm', {
-                  defaultValue:
-                    'Allow {{name}} to re-take this exam? Their current answers and score will be cleared (a copy is kept in history). The synced gradebook cell for this exam type will also be cleared.',
-                  name: selectedStudentName || '—',
-                })}
+              <p style={{ fontSize: 14, color: '#6b7a99', margin: '0 0 16px', lineHeight: 1.55 }}>
+                {selectedRowKeys.size > 1
+                  ? t('examAnswers.reexamBulkConfirm', {
+                      defaultValue:
+                        'Allow {{n}} selected students to re-take this exam during the window below. Current answers are archived; the latest attempt will drive the gradebook.',
+                      n: selectedRowKeys.size,
+                    })
+                  : t('examAnswers.reexamConfirm', {
+                      defaultValue:
+                        'Allow {{name}} to re-take this exam during the window below? Current answers and score will be cleared (kept in history). The gradebook cell for this exam type will be cleared until they submit again.',
+                      name: selectedStudentName || '—',
+                    })}
               </p>
+              <div style={{ display: 'grid', gap: 12, marginBottom: 16 }}>
+                <label style={{ display: 'grid', gap: 4, fontSize: 12, fontWeight: 700, color: '#334155' }}>
+                  {t('examAnswers.windowStart', 'Window start')}
+                  <input
+                    type="datetime-local"
+                    value={reexamWindowStart}
+                    onChange={(e) => setReexamWindowStart(e.target.value)}
+                    style={{
+                      padding: '8px 10px',
+                      borderRadius: 8,
+                      border: '1px solid #dde3ef',
+                      fontSize: 14,
+                      fontWeight: 500,
+                    }}
+                  />
+                </label>
+                <label style={{ display: 'grid', gap: 4, fontSize: 12, fontWeight: 700, color: '#334155' }}>
+                  {t('examAnswers.windowEnd', 'Window end')}
+                  <input
+                    type="datetime-local"
+                    value={reexamWindowEnd}
+                    onChange={(e) => setReexamWindowEnd(e.target.value)}
+                    style={{
+                      padding: '8px 10px',
+                      borderRadius: 8,
+                      border: '1px solid #dde3ef',
+                      fontSize: 14,
+                      fontWeight: 500,
+                    }}
+                  />
+                </label>
+                <label style={{ display: 'grid', gap: 4, fontSize: 12, fontWeight: 700, color: '#334155' }}>
+                  {t('examAnswers.attemptDuration', 'Attempt duration (minutes)')}
+                  <input
+                    type="number"
+                    min={1}
+                    value={reexamDuration}
+                    onChange={(e) => setReexamDuration(e.target.value)}
+                    style={{
+                      padding: '8px 10px',
+                      borderRadius: 8,
+                      border: '1px solid #dde3ef',
+                      fontSize: 14,
+                      fontWeight: 500,
+                    }}
+                  />
+                </label>
+              </div>
               {actionError && (
                 <div
                   role="alert"

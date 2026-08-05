@@ -520,7 +520,7 @@ export default function StudentSubjectView() {
       return { label: 'Results Released', color: 'bg-green-100 text-green-800', canView: true }
     }
     if (exam.status === 'EX_CLS') return { label: 'Closed', color: 'bg-gray-100 text-gray-800', canView: false }
-    if (isExamEnterableForStudent(exam)) {
+    if (isExamEnterableForStudent(exam, new Date(), exam.submission)) {
       return { label: 'Open', color: 'bg-blue-100 text-blue-800', canView: canPerformAction('SS_EXAM') }
     }
     if (exam.status === 'EX_OPN' || exam.status === 'EX_SCH') {
