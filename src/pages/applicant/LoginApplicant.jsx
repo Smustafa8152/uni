@@ -3,6 +3,7 @@ import { Link, useNavigate, useLocation } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { useLanguage } from '../../contexts/LanguageContext'
 import { useAuth } from '../../contexts/AuthContext'
+import { resolvePortalAccountByEmail } from '../../utils/resolvePortalAccountByEmail'
 import { Mail, Lock, Eye, EyeOff, ArrowLeft, AlertCircle, Loader2 } from 'lucide-react'
 import LanguageToggle from '../../components/LanguageToggle'
 
@@ -19,6 +20,7 @@ export default function LoginApplicant() {
   const [showPassword, setShowPassword] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+  const [errorKind, setErrorKind] = useState('')
 
   useEffect(() => {
     if (!authLoading && user && userRole === 'applicant') {
@@ -29,10 +31,34 @@ export default function LoginApplicant() {
   const handleSubmit = async (e) => {
     e.preventDefault()
     setError('')
+    setErrorKind('')
     setLoading(true)
     try {
-      const { error: signErr } = await signIn(email.trim(), password, 'applicant')
-      if (signErr) throw signErr
+      const em = email.trim().toLowerCase()
+      const kind = await resolvePortalAccountByEmail(em)
+      if (kind === 'instructor') {
+        setErrorKind('instructor')
+        throw new Error(
+          t(
+            'applicantLogin.emailIsInstructor',
+            'This email belongs to an instructor account. Please use Instructor Portal sign-in.',
+          ),
+        )
+      }
+
+      const { error: signErr } = await signIn(em, password, 'applicant')
+      if (signErr) {
+        if (signErr.code === 'ROLE_INSTRUCTOR' || /instructor|teacher/i.test(signErr.message || '')) {
+          setErrorKind('instructor')
+          throw new Error(
+            t(
+              'applicantLogin.emailIsInstructor',
+              'This email belongs to an instructor account. Please use Instructor Portal sign-in.',
+            ),
+          )
+        }
+        throw signErr
+      }
       navigate(from, { replace: true })
     } catch (err) {
       setError(err.message || t('applicantLogin.failed'))
@@ -134,8 +160,18 @@ export default function LoginApplicant() {
                 {error && (
                   <div className="mt-6 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
                     <div className={`flex gap-2 ${isRTL ? 'flex-row-reverse' : ''}`}>
-                      <AlertCircle className="h-5 w-5 mt-0.5" />
-                      <div className="leading-5">{error}</div>
+                      <AlertCircle className="h-5 w-5 mt-0.5 shrink-0" />
+                      <div className="leading-5 space-y-2">
+                        <div>{error}</div>
+                        {errorKind === 'instructor' && (
+                          <Link
+                            to="/login/instructor"
+                            className="inline-flex font-extrabold text-red-800 underline underline-offset-2 hover:text-red-900"
+                          >
+                            {t('applicantLogin.goToInstructorLogin', 'Go to Instructor Portal sign-in')}
+                          </Link>
+                        )}
+                      </div>
                     </div>
                   </div>
                 )}

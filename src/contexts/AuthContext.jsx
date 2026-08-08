@@ -419,30 +419,40 @@ export const AuthProvider = ({ children }) => {
         if (userError || !userData) {
           // Allow instructor login even if `public.users` row is missing:
           // verify against `instructors` table instead of blocking sign-in.
-          if (expectedRole === 'instructor') {
-            let inst = null
-            for (const candidate of getEmailLookupCandidates(sessionEmail)) {
-              const res = await supabase
-                .from('instructors')
-                .select('id, college_id, department_id, email')
-                .eq('status', 'active')
-                .ilike('email', candidate)
-                .maybeSingle()
-              if (res.data) {
-                inst = res.data
-                break
+          let inst = null
+          for (const candidate of getEmailLookupCandidates(sessionEmail)) {
+            const res = await supabase
+              .from('instructors')
+              .select('id, college_id, department_id, email')
+              .eq('status', 'active')
+              .ilike('email', candidate)
+              .maybeSingle()
+            if (res.data) {
+              inst = res.data
+              break
+            }
+          }
+
+          if (expectedRole === 'instructor' && inst) {
+            if (data.session) {
+              data.session.user.user_metadata = {
+                ...data.session.user.user_metadata,
+                role: 'instructor',
+                college_id: inst.college_id ?? null,
               }
             }
+            return { data, error: null }
+          }
 
-            if (inst) {
-              if (data.session) {
-                data.session.user.user_metadata = {
-                  ...data.session.user.user_metadata,
-                  role: 'instructor',
-                  college_id: inst.college_id ?? null,
-                }
-              }
-              return { data, error: null }
+          if (expectedRole === 'applicant' && inst) {
+            await supabase.auth.signOut()
+            return {
+              data: null,
+              error: {
+                code: 'ROLE_INSTRUCTOR',
+                message:
+                  'This email belongs to an instructor account. Please sign in through the Instructor Portal, not the Applicant Portal.',
+              },
             }
           }
 
@@ -463,9 +473,29 @@ export const AuthProvider = ({ children }) => {
           // Pre-enrollment applicant portal
         } else if (expectedRole !== userRole) {
           await supabase.auth.signOut()
-          return { 
-            data: null, 
-            error: { message: `Access denied. This login is for ${expectedRole}s only.` } 
+          if (expectedRole === 'applicant' && userRole === 'instructor') {
+            return {
+              data: null,
+              error: {
+                code: 'ROLE_INSTRUCTOR',
+                message:
+                  'This email belongs to an instructor account. Please sign in through the Instructor Portal, not the Applicant Portal.',
+              },
+            }
+          }
+          if (expectedRole === 'instructor' && userRole === 'applicant') {
+            return {
+              data: null,
+              error: {
+                code: 'ROLE_APPLICANT',
+                message:
+                  'This email belongs to an applicant account. Please use Applicant Portal sign-in, not the Instructor Portal.',
+              },
+            }
+          }
+          return {
+            data: null,
+            error: { message: `Access denied. This login is for ${expectedRole}s only.` },
           }
         }
 

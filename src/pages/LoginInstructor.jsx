@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
+import { resolvePortalAccountByEmail } from '../utils/resolvePortalAccountByEmail'
 import { Mail, Lock, Eye, EyeOff, ArrowLeft, AlertCircle } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import LanguageToggle from '../components/LanguageToggle'
@@ -11,6 +12,7 @@ export default function LoginInstructor() {
   const [password, setPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
   const [error, setError] = useState('')
+  const [errorKind, setErrorKind] = useState('')
   const [loading, setLoading] = useState(false)
   const { signIn, user, userRole, loading: authLoading } = useAuth()
   const navigate = useNavigate()
@@ -37,11 +39,44 @@ export default function LoginInstructor() {
   const handleSubmit = async (e) => {
     e.preventDefault()
     setError('')
+    setErrorKind('')
     setLoading(true)
 
     try {
-      const { data, error: signInError } = await signIn(email, password, 'instructor')
-      if (signInError) throw signInError
+      const em = email.trim().toLowerCase()
+      const kind = await resolvePortalAccountByEmail(em)
+      if (kind === 'applicant') {
+        setErrorKind('applicant')
+        throw new Error(
+          t(
+            'instructorLogin.emailIsApplicant',
+            'This email belongs to an applicant account. Please use Applicant Portal sign-in, not the Instructor Portal.',
+          ),
+        )
+      }
+      if (kind === 'student') {
+        setErrorKind('student')
+        throw new Error(
+          t(
+            'instructorLogin.emailIsStudent',
+            'This email belongs to a student account. Please use Student Portal sign-in.',
+          ),
+        )
+      }
+
+      const { data, error: signInError } = await signIn(em, password, 'instructor')
+      if (signInError) {
+        if (signInError.code === 'ROLE_APPLICANT' || /applicant/i.test(signInError.message || '')) {
+          setErrorKind('applicant')
+          throw new Error(
+            t(
+              'instructorLogin.emailIsApplicant',
+              'This email belongs to an applicant account. Please use Applicant Portal sign-in, not the Instructor Portal.',
+            ),
+          )
+        }
+        throw signInError
+      }
       navigate('/instructor/dashboard')
     } catch (err) {
       setError(err.message || t('instructorLogin.failedToSignIn'))
@@ -129,8 +164,26 @@ export default function LoginInstructor() {
                 {error && (
                   <div className="mt-6 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
                     <div className="flex gap-2">
-                      <AlertCircle className="h-5 w-5 mt-0.5" />
-                      <div className="leading-5">{error}</div>
+                      <AlertCircle className="h-5 w-5 mt-0.5 shrink-0" />
+                      <div className="leading-5 space-y-2">
+                        <div>{error}</div>
+                        {errorKind === 'applicant' && (
+                          <Link
+                            to="/login/applicant"
+                            className="inline-flex font-extrabold text-red-800 underline underline-offset-2 hover:text-red-900"
+                          >
+                            {t('instructorLogin.goToApplicantLogin', 'Go to Applicant Portal sign-in')}
+                          </Link>
+                        )}
+                        {errorKind === 'student' && (
+                          <Link
+                            to="/login/student"
+                            className="inline-flex font-extrabold text-red-800 underline underline-offset-2 hover:text-red-900"
+                          >
+                            {t('instructorLogin.goToStudentLogin', 'Go to Student Portal sign-in')}
+                          </Link>
+                        )}
+                      </div>
                     </div>
                   </div>
                 )}

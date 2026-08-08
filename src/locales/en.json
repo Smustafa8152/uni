@@ -458,7 +458,9 @@
     "completeFailed": "Could not finish registration.",
     "confirmEmailBlocked": "Account created, but sign-in needs email confirmation in Supabase. Disable Confirm email under Authentication → Providers → Email, or sign in from Applicant login after confirming.",
     "alreadyRegistered": "This email is already registered. Please sign in instead.",
-    "alreadyRegisteredWrongPassword": "This email is already registered. Check your password, or use Applicant sign in."
+    "alreadyRegisteredWrongPassword": "This email is already registered. Check your password, or use Applicant sign in.",
+    "emailIsInstructor": "This email belongs to an instructor (teacher) account. Instructors cannot create an applicant account. Please use Instructor Portal sign-in instead.",
+    "goToInstructorLogin": "Go to Instructor Portal sign-in"
   },
   "applicantLogin": {
     "title": "Applicant sign in",
@@ -468,7 +470,9 @@
     "submit": "Sign in",
     "failed": "Sign in failed. Check your email and password.",
     "noAccount": "New applicant?",
-    "createAccount": "Create account"
+    "createAccount": "Create account",
+    "emailIsInstructor": "This email belongs to an instructor account. Please use Instructor Portal sign-in.",
+    "goToInstructorLogin": "Go to Instructor Portal sign-in"
   },
   "login": {
     "superAdmin": "Super Admin",
@@ -6596,7 +6600,11 @@
     "forgotPassword": "Forgot password?",
     "signingIn": "Signing in…",
     "signIn": "Sign in",
-    "failedToSignIn": "Failed to sign in"
+    "failedToSignIn": "Failed to sign in",
+    "emailIsApplicant": "This email belongs to an applicant account. Please use Applicant Portal sign-in, not the Instructor Portal.",
+    "emailIsStudent": "This email belongs to a student account. Please use Student Portal sign-in.",
+    "goToApplicantLogin": "Go to Applicant Portal sign-in",
+    "goToStudentLogin": "Go to Student Portal sign-in"
   },
   "examAnswers": {
     "breadcrumb": "Exam answers",
