@@ -28,8 +28,12 @@ import {
 
 // Same document types as in register form; uploadable on track page if not filled at registration
 const UPLOADABLE_DOCUMENT_TYPES = [
-  { key: 'id_photo', labelKey: 'track.documents.idPhoto', accept: 'image/jpeg,image/png,image/webp,application/pdf' },
+  { key: 'id_photo', labelKey: 'track.documents.idCardPassport', accept: 'image/jpeg,image/png,image/webp,application/pdf' },
+  { key: 'certificate', labelKey: 'track.documents.certificate', accept: 'image/jpeg,image/png,application/pdf' },
   { key: 'transcript', labelKey: 'track.documents.transcript', accept: 'image/jpeg,image/png,application/pdf' },
+  { key: 'medical_certificate', labelKey: 'track.documents.medicalCertificate', accept: 'image/jpeg,image/png,application/pdf' },
+  { key: 'recommendation_letter_1', labelKey: 'track.documents.recommendationLetter1', accept: 'image/jpeg,image/png,application/pdf' },
+  { key: 'recommendation_letter_2', labelKey: 'track.documents.recommendationLetter2', accept: 'image/jpeg,image/png,application/pdf' },
 ]
 const MAX_FILE_SIZE_MB = 10
 
@@ -542,8 +546,12 @@ export default function ApplicationStatus() {
     return [
       { key: 'application', label: t('track.documents.applicationForm', 'Application form'), done: true, uploadable: false },
       { key: 'docVerification', label: t('track.documents.documentVerification', 'Documents verification'), done: pastDoc || allUploadableDone, uploadable: false },
-      { key: 'id_photo', label: t('track.documents.idPhoto', 'ID photo'), done: idPhotoDone, uploadable: true },
-      { key: 'transcript', label: t('track.documents.transcript', 'Transcript / Grades'), done: transcriptDone, uploadable: true },
+      ...UPLOADABLE_DOCUMENT_TYPES.map((d) => ({
+        key: d.key,
+        label: t(d.labelKey, d.key),
+        done: hasDoc(d.key) || (d.key === 'medical_certificate' && hasDoc('medication_certificate')),
+        uploadable: true,
+      })),
     ]
   }
 

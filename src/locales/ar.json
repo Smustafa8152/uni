@@ -650,7 +650,13 @@
     },
     "documents": {
       "idPhoto": "صورة الهوية",
+      "idCardPassport": "بطاقة الهوية / جواز السفر",
+      "certificate": "الشهادة",
       "transcript": "كشف الدرجات",
+      "medicalCertificate": "الشهادة الطبية",
+      "medicationCertificate": "الشهادة الطبية",
+      "recommendationLetter1": "خطاب التوصية 1",
+      "recommendationLetter2": "خطاب التوصية 2",
       "scholarshipLetter": "خطاب المنحة / الدافع",
       "scholarshipFinancial": "بيان مالي (منحة)",
       "scholarshipRecommendation": "توصية (منحة)"
@@ -2515,8 +2521,13 @@
         "genderOther": "آخر"
       },
       "documentTypes": {
-        "id_photo": "صورة الهوية",
+        "id_photo": "بطاقة الهوية / جواز السفر",
+        "certificate": "الشهادة",
         "transcript": "كشف الدرجات",
+        "medical_certificate": "الشهادة الطبية",
+        "medication_certificate": "الشهادة الطبية",
+        "recommendation_letter_1": "خطاب التوصية 1",
+        "recommendation_letter_2": "خطاب التوصية 2",
         "scholarship_letter": "خطاب الدافع / التغطية (منحة)",
         "scholarship_financial": "بيان مالي (منحة)",
         "scholarship_recommendation": "خطاب توصية (منحة)"
@@ -4324,7 +4335,13 @@
       "applicationForm": "نموذج التقديم",
       "documentVerification": "التحقق من المستندات",
       "idPhoto": "صورة الهوية",
-      "transcript": "كشف الدرجات"
+      "idCardPassport": "بطاقة الهوية / جواز السفر",
+      "certificate": "الشهادة",
+      "transcript": "كشف الدرجات",
+      "medicalCertificate": "الشهادة الطبية",
+      "medicationCertificate": "الشهادة الطبية",
+      "recommendationLetter1": "خطاب التوصية 1",
+      "recommendationLetter2": "خطاب التوصية 2"
     },
     "uploadMissingDocument": "رفع الوثيقة الناقصة",
     "documentUploadError": "فشل الرفع. يرجى المحاولة مرة أخرى.",
@@ -6309,7 +6326,13 @@
       "title": "المستندات العامة",
       "intro": "يمكنك الرفع الآن أو لاحقاً من صفحة حالة الطلب بعد الإرسال.",
       "idPhoto": "صورة الهوية",
-      "transcript": "كشف الدرجات / السجل الأكاديمي"
+      "idCardPassport": "بطاقة الهوية / جواز السفر",
+      "certificate": "الشهادة",
+      "transcript": "كشف الدرجات / السجل الأكاديمي",
+      "medicalCertificate": "الشهادة الطبية",
+      "medicationCertificate": "الشهادة الطبية",
+      "recommendationLetter1": "خطاب التوصية 1",
+      "recommendationLetter2": "خطاب التوصية 2"
     },
     "errors": {
       "selectCollegeFirst": "يرجى اختيار كلية أولاً",
@@ -6329,9 +6352,9 @@
       "other": "آخر"
     },
     "placeholders": {
-      "firstName": "أدخل الاسم الأول",
-      "middleName": "أدخل الاسم الأوسط (اختياري)",
-      "lastName": "أدخل اسم العائلة",
+      "firstName": "أدخل الاسم الأول بالإنجليزية",
+      "middleName": "أدخل الاسم الأوسط بالإنجليزية (اختياري)",
+      "lastName": "أدخل اسم العائلة بالإنجليزية",
       "firstNameAr": "محمد",
       "middleNameAr": "أحمد",
       "lastNameAr": "الخالدي",
@@ -6369,9 +6392,9 @@
       "certificateType": "مثال: شهادة ثانوية عامة"
     },
     "fields": {
-      "firstName": "الاسم الأول *",
-      "middleName": "اسم الأب / الأوسط",
-      "lastName": "اسم العائلة *",
+      "firstName": "الاسم الأول (إنجليزي) *",
+      "middleName": "الاسم الأوسط (إنجليزي)",
+      "lastName": "اسم العائلة (إنجليزي) *",
       "firstNameAr": "الاسم الأول (عربي)",
       "middleNameAr": "الاسم الأوسط (عربي)",
       "lastNameAr": "اسم العائلة (عربي)",
@@ -6411,9 +6434,13 @@
       "personalStatement": "البيان الشخصي",
       "personalStatementPh": "تحدث عن نفسك، أهدافك، ولماذا ترغب بالدراسة لدينا…",
       "medicalTitle": "معلومات طبية (اختياري)",
-      "medicalConditions": "الحالات الطبية",
-      "allergies": "الحساسية",
-      "medications": "الأدوية",
+      "medicalYesNoHint": "يرجى الإجابة بنعم أو لا لكل سؤال.",
+      "medicalConditions": "هل لديك أي حالات طبية؟",
+      "allergies": "هل لديك أي حساسية؟",
+      "medications": "هل تتناول أي أدوية؟",
+      "medicationCertHint": "إذا كنت تتناول أدوية أو لديك حالة طبية، ارفع الشهادة الطبية مع المستندات الأخرى في الخطوة الأخيرة.",
+      "yes": "نعم",
+      "no": "لا",
       "notes": "ملاحظات إضافية",
       "notesPh": "أي معلومات إضافية ترغب بإضافتها…",
       "transferStudent": "طالب تحويل",

@@ -52,8 +52,13 @@ const TABS = [
 ]
 
 const STUDENT_DOCUMENT_LABELS = {
-  id_photo: 'viewStudent.documents.idPhoto',
+  id_photo: 'viewStudent.documents.idCardPassport',
+  certificate: 'viewStudent.documents.certificate',
   transcript: 'viewStudent.documents.transcript',
+  medical_certificate: 'viewStudent.documents.medicalCertificate',
+  medication_certificate: 'viewStudent.documents.medicalCertificate',
+  recommendation_letter_1: 'viewStudent.documents.recommendationLetter1',
+  recommendation_letter_2: 'viewStudent.documents.recommendationLetter2',
   scholarship_letter: 'viewStudent.documents.scholarshipLetter',
   scholarship_financial: 'viewStudent.documents.scholarshipFinancial',
   scholarship_recommendation: 'viewStudent.documents.scholarshipRecommendation',

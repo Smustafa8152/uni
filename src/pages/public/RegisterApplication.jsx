@@ -13,7 +13,11 @@ import { ArrowLeft, ArrowRight, Save, User, Phone, AlertCircle, GraduationCap, F
 
 const CORE_DOCUMENT_SPECS = [
   { key: 'id_photo', accept: 'image/jpeg,image/png,image/webp,application/pdf' },
+  { key: 'certificate', accept: 'image/jpeg,image/png,application/pdf' },
   { key: 'transcript', accept: 'image/jpeg,image/png,application/pdf' },
+  { key: 'medical_certificate', accept: 'image/jpeg,image/png,application/pdf' },
+  { key: 'recommendation_letter_1', accept: 'image/jpeg,image/png,application/pdf' },
+  { key: 'recommendation_letter_2', accept: 'image/jpeg,image/png,application/pdf' },
 ]
 const SCHOLARSHIP_DOCUMENT_SPECS = [
   { key: 'scholarship_letter', accept: 'image/jpeg,image/png,application/pdf' },
@@ -21,6 +25,53 @@ const SCHOLARSHIP_DOCUMENT_SPECS = [
   { key: 'scholarship_recommendation', accept: 'image/jpeg,image/png,application/pdf' },
 ]
 const ALL_DOCUMENT_SPECS = [...CORE_DOCUMENT_SPECS, ...SCHOLARSHIP_DOCUMENT_SPECS]
+
+const CORE_DOCUMENT_LABEL_KEYS = {
+  id_photo: 'idCardPassport',
+  certificate: 'certificate',
+  transcript: 'transcript',
+  medical_certificate: 'medicalCertificate',
+  recommendation_letter_1: 'recommendationLetter1',
+  recommendation_letter_2: 'recommendationLetter2',
+}
+
+const PAST_SEMESTER_STATUSES = new Set([
+  'completed',
+  'archived',
+  'closed',
+  'cancelled',
+  'ended',
+])
+
+function isUpcomingSemester(semester, today = new Date()) {
+  if (!semester) return false
+  const status = String(semester.status || '').toLowerCase()
+  if (PAST_SEMESTER_STATUSES.has(status)) return false
+
+  const day = new Date(today)
+  day.setHours(0, 0, 0, 0)
+
+  if (semester.end_date) {
+    const end = new Date(semester.end_date)
+    if (!Number.isNaN(end.getTime())) {
+      end.setHours(0, 0, 0, 0)
+      return end >= day
+    }
+  }
+  if (semester.start_date) {
+    const start = new Date(semester.start_date)
+    if (!Number.isNaN(start.getTime())) {
+      start.setHours(0, 0, 0, 0)
+      return start >= day
+    }
+  }
+  // Keep current / registration-open when dates are missing
+  return ['active', 'registration_open', 'in_progress', 'scheduled', 'planned', 'draft'].includes(status)
+}
+
+function coreDocumentLabelKey(key) {
+  return CORE_DOCUMENT_LABEL_KEYS[key] || key
+}
 
 export default function RegisterApplication({ portal = false }) {
   const { t } = useTranslation()
@@ -32,12 +83,11 @@ export default function RegisterApplication({ portal = false }) {
       { id: 2, nameKey: 'registerApplication.steps.contact', icon: Phone },
       { id: 3, nameKey: 'registerApplication.steps.emergency', icon: AlertCircle },
       { id: 4, nameKey: 'registerApplication.steps.academic', icon: GraduationCap },
-      { id: 5, nameKey: 'registerApplication.steps.tests', icon: FileText },
-      { id: 6, nameKey: 'registerApplication.steps.transfer', icon: BookOpen },
-      { id: 7, nameKey: 'registerApplication.steps.additional', icon: FileText },
-      { id: 8, nameKey: 'registerApplication.steps.scholarship', icon: Award },
-      { id: 9, nameKey: 'registerApplication.steps.scholarshipDocs', icon: Upload },
-      { id: 10, nameKey: 'registerApplication.steps.documents', icon: Upload },
+      { id: 5, nameKey: 'registerApplication.steps.transfer', icon: BookOpen },
+      { id: 6, nameKey: 'registerApplication.steps.additional', icon: FileText },
+      { id: 7, nameKey: 'registerApplication.steps.scholarship', icon: Award },
+      { id: 8, nameKey: 'registerApplication.steps.scholarshipDocs', icon: Upload },
+      { id: 9, nameKey: 'registerApplication.steps.documents', icon: Upload },
     ],
     [t]
   )
@@ -312,12 +362,18 @@ export default function RegisterApplication({ portal = false }) {
     try {
       const { data, error } = await supabase
         .from('semesters')
-        .select('id, name_en, name_ar, code, start_date, end_date, academic_year_id')
+        .select('id, name_en, name_ar, code, start_date, end_date, academic_year_id, status, is_current')
         .or(`college_id.eq.${selectedCollegeId},is_university_wide.eq.true`)
-        .order('start_date', { ascending: false })
+        .order('start_date', { ascending: true })
 
       if (error) throw error
-      setSemesters(data || [])
+      const upcoming = (data || []).filter((s) => isUpcomingSemester(s))
+      setSemesters(upcoming)
+      setFormData((prev) => {
+        if (!prev.semester_id) return prev
+        const stillValid = upcoming.some((s) => String(s.id) === String(prev.semester_id))
+        return stillValid ? prev : { ...prev, semester_id: '' }
+      })
     } catch (err) {
       console.error('Error fetching semesters:', err)
     }
@@ -378,12 +434,7 @@ export default function RegisterApplication({ portal = false }) {
           if (g.error) return `${t('registerApplication.errors.gpaPrefix')}: ${g.error}`
         }
         break
-      case 5: {
-        const i = parseDecimalField(formData.ielts_score, { scale: 1, min: 0, max: 9 })
-        if (i.error) return `${t('registerApplication.errors.ieltsPrefix')}: ${i.error}`
-        break
-      }
-      case 8: {
+      case 7: {
         if (!formData.scholarship_request) break
         const st = String(formData.scholarship_type || '').trim()
         if (!st) return t('registerApplication.errors.scholarshipTypeRequired')
@@ -391,7 +442,7 @@ export default function RegisterApplication({ portal = false }) {
         if (sp.error) return `${t('registerApplication.errors.scholarshipPctPrefix')}: ${sp.error}`
         break
       }
-      case 9: {
+      case 8: {
         if (!formData.scholarship_request) break
         const hasSchDoc = SCHOLARSHIP_DOCUMENT_SPECS.some((s) => documentFiles[s.key])
         if (!hasSchDoc) return t('registerApplication.scholarship.requireOneDoc')
@@ -450,8 +501,26 @@ export default function RegisterApplication({ portal = false }) {
       const scholarshipRequest = formData.scholarship_request || formData.has_scholarship || false
       const gpaValue = formData.gpa || formData.high_school_gpa || ''
       const gpaParsed = parseDecimalField(gpaValue, { scale: 2, min: 0, max: 4 }).value
-      const ieltsParsed = parseDecimalField(formData.ielts_score, { scale: 1, min: 0, max: 9 }).value
       const scholarshipParsed = parseDecimalField(formData.scholarship_percentage, { scale: 2, min: 0, max: 100 }).value
+
+      const medicalLines = []
+      if (formData.medical_conditions === 'yes' || formData.medical_conditions === 'no') {
+        medicalLines.push(`Medical conditions: ${formData.medical_conditions}`)
+      }
+      if (formData.allergies === 'yes' || formData.allergies === 'no') {
+        medicalLines.push(`Allergies: ${formData.allergies}`)
+      }
+      if (formData.medications === 'yes' || formData.medications === 'no') {
+        medicalLines.push(`Medications: ${formData.medications}`)
+      }
+      const statementParts = [formData.personal_statement?.trim() || '']
+      if (medicalLines.length) {
+        statementParts.push(['Medical information:', ...medicalLines].join('\n'))
+      }
+      if (formData.notes?.trim()) {
+        statementParts.push(formData.notes.trim())
+      }
+      const personalStatementCombined = statementParts.filter(Boolean).join('\n\n') || null
 
       // Insert application - only select essential fields to reduce query time
       const { data: application, error } = await supabase
@@ -487,16 +556,16 @@ export default function RegisterApplication({ portal = false }) {
           graduation_year: formData.graduation_year ? parseInt(formData.graduation_year) : null,
           gpa: gpaParsed,
           certificate_type: formData.certificate_type?.trim() || null,
-          toefl_score: formData.toefl_score ? parseInt(formData.toefl_score) : null,
-          ielts_score: ieltsParsed,
-          sat_score: formData.sat_score ? parseInt(formData.sat_score) : null,
-          gmat_score: formData.gmat_score ? parseInt(formData.gmat_score) : null,
-          gre_score: formData.gre_score ? parseInt(formData.gre_score) : null,
+          toefl_score: null,
+          ielts_score: null,
+          sat_score: null,
+          gmat_score: null,
+          gre_score: null,
           is_transfer_student: formData.is_transfer_student,
           previous_university: formData.previous_university?.trim() || null,
           previous_degree: formData.previous_degree?.trim() || null,
           transfer_credits: formData.transfer_credits ? parseInt(formData.transfer_credits) : null,
-          personal_statement: formData.personal_statement?.trim() || null,
+          personal_statement: personalStatementCombined,
           scholarship_request: scholarshipRequest,
           scholarship_type: scholarshipRequest ? formData.scholarship_type?.trim() || null : null,
           scholarship_percentage: scholarshipRequest ? scholarshipParsed : null,
@@ -1061,27 +1130,6 @@ export default function RegisterApplication({ portal = false }) {
                     <option value="widowed">{t('registerApplication.fields.maritalWidowed')}</option>
                   </select>
                 </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    {t('registerApplication.fields.bloodType')}
-                  </label>
-                  <select
-                    name="blood_type"
-                    value={formData.blood_type}
-                    onChange={handleChange}
-                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
-                  >
-                    <option value="">{t('registerApplication.fields.bloodPlaceholder')}</option>
-                    <option value="A+">A+</option>
-                    <option value="A-">A-</option>
-                    <option value="B+">B+</option>
-                    <option value="B-">B-</option>
-                    <option value="AB+">AB+</option>
-                    <option value="AB-">AB-</option>
-                    <option value="O+">O+</option>
-                    <option value="O-">O-</option>
-                  </select>
-                </div>
                 <div className="flex items-center pt-6">
                   <input
                     type="checkbox"
@@ -1478,100 +1526,8 @@ export default function RegisterApplication({ portal = false }) {
             </div>
           )}
 
-          {/* Step 5: Test Scores */}
+          {/* Step 5: Transfer Information */}
           {currentStep === 5 && (
-            <div className="space-y-6">
-              <h2 className="text-xl font-bold text-gray-900 mb-6">{t('registerApplication.steps.tests')}</h2>
-              <p className="text-gray-600 mb-6">{t('registerApplication.fields.testScoresIntro')}</p>
-              
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    {t('registerApplication.fields.toefl')}
-                  </label>
-                  <input
-                    type="number"
-                    name="toefl_score"
-                    value={formData.toefl_score}
-                    onChange={handleChange}
-                    placeholder={t('registerApplication.placeholders.toefl')}
-                    min="0"
-                    max="120"
-                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
-                  />
-                  <p className="text-xs text-gray-500 mt-1">{t('registerApplication.fields.max120')}</p>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    {t('registerApplication.fields.ielts')}
-                  </label>
-                  <input
-                    type="number"
-                    name="ielts_score"
-                    value={formData.ielts_score}
-                    onChange={handleChange}
-                    placeholder={t('registerApplication.placeholders.ielts')}
-                    min="0"
-                    max="9"
-                    step="0.5"
-                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
-                  />
-                  <p className="text-xs text-gray-500 mt-1">{t('registerApplication.fields.max9')}</p>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    {t('registerApplication.fields.sat')}
-                  </label>
-                  <input
-                    type="number"
-                    name="sat_score"
-                    value={formData.sat_score}
-                    onChange={handleChange}
-                    placeholder={t('registerApplication.placeholders.sat')}
-                    min="400"
-                    max="1600"
-                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
-                  />
-                  <p className="text-xs text-gray-500 mt-1">{t('registerApplication.fields.max1600')}</p>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    {t('registerApplication.fields.gmat')}
-                  </label>
-                  <input
-                    type="number"
-                    name="gmat_score"
-                    value={formData.gmat_score}
-                    onChange={handleChange}
-                    placeholder={t('registerApplication.placeholders.gmat')}
-                    min="200"
-                    max="800"
-                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
-                  />
-                  <p className="text-xs text-gray-500 mt-1">{t('registerApplication.fields.max800')}</p>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    {t('registerApplication.fields.gre')}
-                  </label>
-                  <input
-                    type="number"
-                    name="gre_score"
-                    value={formData.gre_score}
-                    onChange={handleChange}
-                    placeholder={t('registerApplication.placeholders.gre')}
-                    min="260"
-                    max="340"
-                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
-                  />
-                  <p className="text-xs text-gray-500 mt-1">{t('registerApplication.fields.max340')}</p>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* Step 6: Transfer Information */}
-          {currentStep === 6 && (
             <div className="space-y-6">
               <h2 className="text-xl font-bold text-gray-900 mb-6">{t('registerApplication.steps.transfer')}</h2>
               
@@ -1633,8 +1589,8 @@ export default function RegisterApplication({ portal = false }) {
             </div>
           )}
 
-          {/* Step 7: Additional Information */}
-          {currentStep === 7 && (
+          {/* Step 6: Additional Information */}
+          {currentStep === 6 && (
             <div className="space-y-6">
               <h2 className="text-xl font-bold text-gray-900 mb-6">{t('registerApplication.steps.additional')}</h2>
               
@@ -1654,47 +1610,50 @@ export default function RegisterApplication({ portal = false }) {
                 </div>
 
                 <div className="border-t pt-6">
-                  <h3 className="text-lg font-semibold text-gray-900 mb-4">{t('registerApplication.fields.medicalTitle')}</h3>
+                  <h3 className="text-lg font-semibold text-gray-900 mb-2">{t('registerApplication.fields.medicalTitle')}</h3>
+                  <p className="text-sm text-gray-600 mb-4">{t('registerApplication.fields.medicalYesNoHint')}</p>
                   <div className="space-y-4">
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">
-                        {t('registerApplication.fields.medicalConditions')}
-                      </label>
-                      <textarea
-                        name="medical_conditions"
-                        value={formData.medical_conditions}
-                        onChange={handleChange}
-                        rows={3}
-                        placeholder={t('registerApplication.placeholders.medicalConditions')}
-                        className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent resize-none"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">
-                        {t('registerApplication.fields.allergies')}
-                      </label>
-                      <textarea
-                        name="allergies"
-                        value={formData.allergies}
-                        onChange={handleChange}
-                        rows={3}
-                        placeholder={t('registerApplication.placeholders.allergies')}
-                        className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent resize-none"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">
-                        {t('registerApplication.fields.medications')}
-                      </label>
-                      <textarea
-                        name="medications"
-                        value={formData.medications}
-                        onChange={handleChange}
-                        rows={3}
-                        placeholder={t('registerApplication.placeholders.medications')}
-                        className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent resize-none"
-                      />
-                    </div>
+                    {[
+                      { name: 'medical_conditions', labelKey: 'medicalConditions' },
+                      { name: 'allergies', labelKey: 'allergies' },
+                      { name: 'medications', labelKey: 'medications' },
+                    ].map(({ name, labelKey }) => (
+                      <div key={name}>
+                        <div className="block text-sm font-medium text-gray-700 mb-2">
+                          {t(`registerApplication.fields.${labelKey}`)}
+                        </div>
+                        <div className="flex flex-wrap gap-4">
+                          <label className="inline-flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
+                            <input
+                              type="radio"
+                              name={name}
+                              value="yes"
+                              checked={formData[name] === 'yes'}
+                              onChange={handleChange}
+                              className="border-gray-300 text-primary-600 focus:ring-primary-500"
+                            />
+                            {t('registerApplication.fields.yes', 'Yes')}
+                          </label>
+                          <label className="inline-flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
+                            <input
+                              type="radio"
+                              name={name}
+                              value="no"
+                              checked={formData[name] === 'no'}
+                              onChange={handleChange}
+                              className="border-gray-300 text-primary-600 focus:ring-primary-500"
+                            />
+                            {t('registerApplication.fields.no', 'No')}
+                          </label>
+                        </div>
+                      </div>
+                    ))}
+                    <p className="text-xs text-gray-500">
+                      {t(
+                        'registerApplication.fields.medicationCertHint',
+                        'If you take medication or have a medical condition, upload your medical certificate with your other documents in the final step.',
+                      )}
+                    </p>
                   </div>
                 </div>
 
@@ -1717,8 +1676,8 @@ export default function RegisterApplication({ portal = false }) {
             </div>
           )}
 
-          {/* Step 8: Scholarship details */}
-          {currentStep === 8 && (
+          {/* Step 7: Scholarship details */}
+          {currentStep === 7 && (
             <div className="space-y-6">
               <h2 className="text-xl font-bold text-gray-900 mb-2">{t('registerApplication.scholarship.title')}</h2>
               <p className="text-sm text-gray-600 mb-6">{t('registerApplication.scholarship.intro')}</p>
@@ -1782,8 +1741,8 @@ export default function RegisterApplication({ portal = false }) {
             </div>
           )}
 
-          {/* Step 9: Scholarship documents */}
-          {currentStep === 9 && (
+          {/* Step 8: Scholarship documents */}
+          {currentStep === 8 && (
             <div className="space-y-6">
               <h2 className="text-xl font-bold text-gray-900 mb-2">{t('registerApplication.scholarship.docTitle')}</h2>
               {!formData.scholarship_request ? (
@@ -1815,15 +1774,15 @@ export default function RegisterApplication({ portal = false }) {
             </div>
           )}
 
-          {/* Step 10: General documents */}
-          {currentStep === 10 && (
+          {/* Step 9: General documents */}
+          {currentStep === 9 && (
             <div className="space-y-6">
               <h2 className="text-xl font-bold text-gray-900 mb-2">{t('registerApplication.documents.title')}</h2>
               <p className="text-sm text-gray-600 mb-6">{t('registerApplication.documents.intro')}</p>
               {CORE_DOCUMENT_SPECS.map(({ key, accept }) => (
                 <div key={key} className="border border-gray-200 rounded-xl p-4">
                   <label className="block text-sm font-medium text-gray-700 mb-2">
-                    {key === 'id_photo' ? t('registerApplication.documents.idPhoto') : t('registerApplication.documents.transcript')}
+                    {t(`registerApplication.documents.${coreDocumentLabelKey(key)}`)}
                   </label>
                   <input
                     type="file"
