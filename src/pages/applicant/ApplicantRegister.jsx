@@ -5,6 +5,7 @@ import { useLanguage } from '../../contexts/LanguageContext'
 import { supabase } from '../../lib/supabase'
 import { syncApplicantProfile } from '../../utils/syncApplicantProfile'
 import { useAuth } from '../../contexts/AuthContext'
+import { resolvePortalAccountByEmail } from '../../utils/resolvePortalAccountByEmail'
 import { Mail, Lock, Eye, EyeOff, ArrowLeft, AlertCircle, Loader2 } from 'lucide-react'
 import LanguageToggle from '../../components/LanguageToggle'
 
@@ -27,6 +28,7 @@ export default function ApplicantRegister() {
   const [showPassword, setShowPassword] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+  const [errorKind, setErrorKind] = useState('') // '', 'instructor'
 
   const finishSession = async (name) => {
     await syncApplicantProfile({ name: name || undefined })
@@ -34,9 +36,16 @@ export default function ApplicantRegister() {
     navigate('/portal', { replace: true })
   }
 
+  const instructorSignupMessage = () =>
+    t(
+      'applicantRegister.emailIsInstructor',
+      'This email belongs to an instructor (teacher) account. Instructors cannot create an applicant account. Please use Instructor Portal sign-in instead.',
+    )
+
   const handleSubmit = async (e) => {
     e.preventDefault()
     setError('')
+    setErrorKind('')
     const em = email.trim().toLowerCase()
     if (!em || !em.includes('@')) {
       setError(t('applicantRegister.invalidEmail'))
@@ -53,6 +62,12 @@ export default function ApplicantRegister() {
 
     setLoading(true)
     try {
+      const accountKind = await resolvePortalAccountByEmail(em)
+      if (accountKind === 'instructor') {
+        setErrorKind('instructor')
+        throw new Error(instructorSignupMessage())
+      }
+
       const name = displayName.trim() || undefined
       const { data: signUpData, error: signUpErr } = await supabase.auth.signUp({
         email: em,
@@ -72,11 +87,27 @@ export default function ApplicantRegister() {
         (signUpData?.user && Array.isArray(signUpData.user.identities) && signUpData.user.identities.length === 0)
 
       if (alreadyExists) {
+        // Re-check: auth user may exist as instructor even if public lookup was blocked earlier
+        const kindAgain = await resolvePortalAccountByEmail(em)
+        if (kindAgain === 'instructor') {
+          setErrorKind('instructor')
+          throw new Error(instructorSignupMessage())
+        }
+
         const { error: signInErr } = await signIn(em, password, 'applicant')
         if (!signInErr) {
           await finishSession(name)
           return
         }
+
+        if (
+          signInErr?.code === 'ROLE_INSTRUCTOR' ||
+          /instructor|teacher/i.test(signInErr.message || '')
+        ) {
+          setErrorKind('instructor')
+          throw new Error(instructorSignupMessage())
+        }
+
         // Wrong password or other sign-in issue — still tell them the account exists
         const wrongPassword = /invalid login|invalid credentials|wrong password/i.test(
           signInErr.message || '',
@@ -104,6 +135,13 @@ export default function ApplicantRegister() {
       // Project may require email confirm; still try password login (works when confirm is off / auto-confirmed)
       const { error: signInErr } = await signIn(em, password, 'applicant')
       if (signInErr) {
+        if (
+          signInErr?.code === 'ROLE_INSTRUCTOR' ||
+          /instructor|teacher/i.test(signInErr.message || '')
+        ) {
+          setErrorKind('instructor')
+          throw new Error(instructorSignupMessage())
+        }
         throw new Error(
           t(
             'applicantRegister.confirmEmailBlocked',
@@ -179,7 +217,17 @@ export default function ApplicantRegister() {
                   <div className="mt-6 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
                     <div className={`flex gap-2 ${isRTL ? 'flex-row-reverse' : ''}`}>
                       <AlertCircle className="h-5 w-5 mt-0.5 shrink-0" />
-                      <div className="leading-5">{error}</div>
+                      <div className="leading-5 space-y-2">
+                        <div>{error}</div>
+                        {errorKind === 'instructor' && (
+                          <Link
+                            to="/login/instructor"
+                            className="inline-flex font-extrabold text-red-800 underline underline-offset-2 hover:text-red-900"
+                          >
+                            {t('applicantRegister.goToInstructorLogin', 'Go to Instructor Portal sign-in')}
+                          </Link>
+                        )}
+                      </div>
                     </div>
                   </div>
                 )}

@@ -458,7 +458,9 @@
     "completeFailed": "Could not finish registration.",
     "confirmEmailBlocked": "Account created, but sign-in needs email confirmation in Supabase. Disable Confirm email under Authentication → Providers → Email, or sign in from Applicant login after confirming.",
     "alreadyRegistered": "This email is already registered. Please sign in instead.",
-    "alreadyRegisteredWrongPassword": "This email is already registered. Check your password, or use Applicant sign in."
+    "alreadyRegisteredWrongPassword": "This email is already registered. Check your password, or use Applicant sign in.",
+    "emailIsInstructor": "This email belongs to an instructor (teacher) account. Instructors cannot create an applicant account. Please use Instructor Portal sign-in instead.",
+    "goToInstructorLogin": "Go to Instructor Portal sign-in"
   },
   "applicantLogin": {
     "title": "Applicant sign in",
@@ -468,7 +470,9 @@
     "submit": "Sign in",
     "failed": "Sign in failed. Check your email and password.",
     "noAccount": "New applicant?",
-    "createAccount": "Create account"
+    "createAccount": "Create account",
+    "emailIsInstructor": "This email belongs to an instructor account. Please use Instructor Portal sign-in.",
+    "goToInstructorLogin": "Go to Instructor Portal sign-in"
   },
   "login": {
     "superAdmin": "Super Admin",
@@ -648,7 +652,13 @@
     },
     "documents": {
       "idPhoto": "ID photo",
+      "idCardPassport": "ID card / Passport",
+      "certificate": "Certificate",
       "transcript": "Transcript / Grades",
+      "medicalCertificate": "Medical certificate",
+      "medicationCertificate": "Medical certificate",
+      "recommendationLetter1": "Recommendation letter 1",
+      "recommendationLetter2": "Recommendation letter 2",
       "scholarshipLetter": "Scholarship letter / motivation",
       "scholarshipFinancial": "Financial statement (scholarship)",
       "scholarshipRecommendation": "Recommendation (scholarship)"
@@ -1725,8 +1735,13 @@
         "scholarshipDetails": "Scholarship statement"
       },
       "documentTypes": {
-        "id_photo": "ID photo",
+        "id_photo": "ID photo / Passport",
+        "certificate": "Certificate",
         "transcript": "Transcript / grades",
+        "medical_certificate": "Medical certificate",
+        "medication_certificate": "Medical certificate",
+        "recommendation_letter_1": "Recommendation letter 1",
+        "recommendation_letter_2": "Recommendation letter 2",
         "scholarship_letter": "Scholarship motivation / cover letter",
         "scholarship_financial": "Financial statement (scholarship)",
         "scholarship_recommendation": "Recommendation letter (scholarship)"
@@ -4406,7 +4421,13 @@
       "applicationForm": "Application form",
       "documentVerification": "Documents verification",
       "idPhoto": "ID photo",
-      "transcript": "Transcript / Grades"
+      "idCardPassport": "ID card / Passport",
+      "certificate": "Certificate",
+      "transcript": "Transcript / Grades",
+      "medicalCertificate": "Medical certificate",
+      "medicationCertificate": "Medical certificate",
+      "recommendationLetter1": "Recommendation letter 1",
+      "recommendationLetter2": "Recommendation letter 2"
     },
     "uploadMissingDocument": "Upload the missing document",
     "documentUploadError": "Upload failed. Please try again.",
@@ -6391,7 +6412,13 @@
       "title": "General documents",
       "intro": "You can upload these now or later from your application status page after submitting.",
       "idPhoto": "ID photo",
-      "transcript": "Transcript / grades"
+      "idCardPassport": "ID card / Passport",
+      "certificate": "Certificate",
+      "transcript": "Transcript / grades",
+      "medicalCertificate": "Medical certificate",
+      "medicationCertificate": "Medical certificate",
+      "recommendationLetter1": "Recommendation letter 1",
+      "recommendationLetter2": "Recommendation letter 2"
     },
     "errors": {
       "selectCollegeFirst": "Please select a college first",
@@ -6411,9 +6438,9 @@
       "other": "Other"
     },
     "placeholders": {
-      "firstName": "Enter first name",
-      "middleName": "Enter middle name (optional)",
-      "lastName": "Enter last name",
+      "firstName": "Enter first name in English",
+      "middleName": "Enter middle name in English (optional)",
+      "lastName": "Enter last name in English",
       "firstNameAr": "محمد",
       "middleNameAr": "أحمد",
       "lastNameAr": "الخالدي",
@@ -6451,9 +6478,9 @@
       "certificateType": "e.g. High school diploma"
     },
     "fields": {
-      "firstName": "First name *",
-      "middleName": "Middle name",
-      "lastName": "Last name *",
+      "firstName": "First name (English) *",
+      "middleName": "Middle name (English)",
+      "lastName": "Last name (English) *",
       "firstNameAr": "First name (Arabic)",
       "middleNameAr": "Middle name (Arabic)",
       "lastNameAr": "Last name (Arabic)",
@@ -6493,9 +6520,13 @@
       "personalStatement": "Personal statement",
       "personalStatementPh": "Tell us about yourself, your goals, and why you want to study at this university…",
       "medicalTitle": "Medical information (optional)",
-      "medicalConditions": "Medical conditions",
-      "allergies": "Allergies",
-      "medications": "Medications",
+      "medicalYesNoHint": "Please answer Yes or No for each question.",
+      "medicalConditions": "Do you have any medical conditions?",
+      "allergies": "Do you have any allergies?",
+      "medications": "Do you take any medications?",
+      "medicationCertHint": "If you take medication or have a medical condition, upload your medical certificate with your other documents in the final step.",
+      "yes": "Yes",
+      "no": "No",
       "notes": "Additional notes",
       "notesPh": "Any additional information you would like to provide…",
       "transferStudent": "I am a transfer student",
@@ -6569,7 +6600,11 @@
     "forgotPassword": "Forgot password?",
     "signingIn": "Signing in…",
     "signIn": "Sign in",
-    "failedToSignIn": "Failed to sign in"
+    "failedToSignIn": "Failed to sign in",
+    "emailIsApplicant": "This email belongs to an applicant account. Please use Applicant Portal sign-in, not the Instructor Portal.",
+    "emailIsStudent": "This email belongs to a student account. Please use Student Portal sign-in.",
+    "goToApplicantLogin": "Go to Applicant Portal sign-in",
+    "goToStudentLogin": "Go to Student Portal sign-in"
   },
   "examAnswers": {
     "breadcrumb": "Exam answers",
