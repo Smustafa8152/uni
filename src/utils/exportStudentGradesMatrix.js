@@ -3,7 +3,14 @@ import { supabase } from '../lib/supabase'
 import {
   getSubjectGpaFromEnrollment,
   normalizeGradeComponent,
+  numericGradeToGpaPoints,
 } from './getCollegeSettings'
+import { getLetterFromPercent } from './instructorGradeSheet'
+import {
+  fetchExamScoresByClassIds,
+  overlayExamScoresOnGradeComponent,
+  examScoresForEnrollment,
+} from './syncExamGradesToGradebook'
 
 const BORDER = {
   top: { style: 'thin', color: { argb: 'FF94A3B8' } },
@@ -123,6 +130,10 @@ export async function exportStudentGradesMatrixExcel({
         score: 'الدرجة',
         grade: 'التقدير',
         gpa: 'معدل المقرر',
+        overall: 'المعدل الفصلي الإجمالي',
+        overallScore: 'الإجمالي',
+        overallGrade: 'التقدير',
+        overallGpa: 'المعدل',
         college: 'الكلية',
         year: 'العام الأكاديمي',
         program: 'البرنامج',
@@ -140,6 +151,10 @@ export async function exportStudentGradesMatrixExcel({
         score: 'Score',
         grade: 'Grade',
         gpa: 'Course GPA',
+        overall: 'Semester overall',
+        overallScore: 'Overall',
+        overallGrade: 'Grade',
+        overallGpa: 'GPA',
         college: 'College',
         year: 'Academic year',
         program: 'Program',
@@ -156,7 +171,8 @@ export async function exportStudentGradesMatrixExcel({
   })
 
   const subjectList = subjects || []
-  const colCount = 2 + subjectList.length * 3
+  const overallStart = 3 + subjectList.length * 3
+  const colCount = 2 + subjectList.length * 3 + 3
 
   // Title
   ws.mergeCells(1, 1, 1, Math.max(colCount, 2))
@@ -238,6 +254,27 @@ export async function exportStudentGradesMatrixExcel({
       })
     })
   })
+
+  const overallPalette = { header: C.navy, sub: 'FFD6E4F0' }
+  ws.mergeCells(4, overallStart, 4, overallStart + 2)
+  setCell(ws.getCell(4, overallStart), labels.overall, {
+    fillArgb: overallPalette.header,
+    bold: true,
+    color: C.white,
+    size: 11,
+  })
+  for (let c = overallStart; c <= overallStart + 2; c++) {
+    ws.getCell(4, c).border = BORDER
+    ws.getCell(4, c).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: overallPalette.header } }
+  }
+  ;[labels.overallScore, labels.overallGrade, labels.overallGpa].forEach((lab, j) => {
+    setCell(ws.getCell(5, overallStart + j), lab, {
+      fillArgb: overallPalette.sub,
+      bold: true,
+      color: C.text,
+      size: 10,
+    })
+  })
   ws.getRow(4).height = 26
   ws.getRow(5).height = 20
 
@@ -279,6 +316,26 @@ export async function exportStudentGradesMatrixExcel({
         numFmt: g.gpa != null ? '0.00' : undefined,
       })
     })
+
+    const overall = gradesByStudent?.[stu.id]?.__overall || {}
+    const oScore = overall.score != null ? Number(overall.score) : null
+    const oFill = oScore != null ? scoreFill(oScore) : zebra
+    setCell(ws.getCell(r, overallStart), oScore != null ? oScore : '—', {
+      fillArgb: oFill,
+      bold: true,
+      color: scoreColor(oScore),
+      size: 11,
+    })
+    setCell(ws.getCell(r, overallStart + 1), overall.letter || '—', {
+      fillArgb: oFill,
+      bold: true,
+      size: 11,
+    })
+    setCell(ws.getCell(r, overallStart + 2), overall.gpa != null ? Number(overall.gpa) : '—', {
+      fillArgb: oFill,
+      size: 11,
+      numFmt: overall.gpa != null ? '0.00' : undefined,
+    })
     ws.getRow(r).height = 18
   })
 
@@ -300,6 +357,9 @@ export async function exportStudentGradesMatrixExcel({
     ws.getColumn(start + 1).width = 10
     ws.getColumn(start + 2).width = 12
   }
+  ws.getColumn(overallStart).width = 12
+  ws.getColumn(overallStart + 1).width = 10
+  ws.getColumn(overallStart + 2).width = 12
 
   const out =
     filename ||
@@ -394,10 +454,25 @@ export async function loadStudentGradesExportData({
     const chunk = enrollmentIds.slice(i, i + 200)
     const { data: gcs, error: gcErr } = await supabase
       .from('grade_components')
-      .select('enrollment_id, numeric_grade, final, gpa_points, letter_grade')
+      .select('*')
       .in('enrollment_id', chunk)
     if (gcErr) throw gcErr
     for (const gc of gcs || []) gcByEnrollment.set(gc.enrollment_id, gc)
+  }
+
+  let examData = { byEnrollment: {}, byStudentClass: {}, latestAt: {}, latestAtSC: {} }
+  try {
+  try {
+    const classIdsForExams = [...new Set(enrollments.map((e) => e.class_id).filter(Boolean))]
+    const subjectIdsForExams = [
+      ...new Set((classRows || []).map((c) => c.subject_id).filter(Boolean)),
+    ]
+    examData = await fetchExamScoresByClassIds(classIdsForExams, { subjectIds: subjectIdsForExams })
+  } catch (examErr) {
+    console.warn('loadStudentGradesExportData exam overlay', examErr)
+  }
+  } catch (examErr) {
+    console.warn('loadStudentGradesExportData exam overlay', examErr)
   }
 
   // subjectId → best enrollment per student
@@ -408,6 +483,7 @@ export async function loadStudentGradesExportData({
     const cls = classById.get(e.class_id)
     const subj = cls?.subjects
     if (!subj?.id) continue
+    const credits = Number(subj.credit_hours) > 0 ? Number(subj.credit_hours) : 1
     subjectMap.set(subj.id, {
       id: subj.id,
       code: cleanCode(subj.code),
@@ -416,33 +492,62 @@ export async function loadStudentGradesExportData({
         : subj.name_en || subj.name_ar || cleanCode(subj.code),
       name_en: subj.name_en,
       name_ar: subj.name_ar,
+      creditHours: credits,
     })
+
+    const gcRaw = gcByEnrollment.get(e.id) || null
+    const { scores, examAt, latestPercent } = examScoresForEnrollment(examData, {
+      ...e,
+      subject_id: cls.subject_id,
+    })
+    const gc = overlayExamScoresOnGradeComponent(gcRaw, scores, gradingScale)
 
     const enrollment = {
       ...e,
       classes: cls
         ? { id: cls.id, subject_id: cls.subject_id, subjects: subj }
         : null,
-      grade_components: gcByEnrollment.get(e.id) || null,
+      grade_components: gc,
     }
     const comp = normalizeGradeComponent(enrollment.grade_components)
     const { points, letter } = getSubjectGpaFromEnrollment(enrollment, gradingScale)
-    const scoreRaw = comp?.numeric_grade ?? comp?.final ?? enrollment.numeric_grade ?? null
+    const examVals = Object.values(scores || {})
+      .map(Number)
+      .filter((n) => !Number.isNaN(n))
+    // One online exam (typical): exported score is the latest attempt %, not the stale gradebook cell.
+    const useExamPercent = latestPercent != null && examVals.length <= 1
+    const scoreRaw = useExamPercent
+      ? latestPercent
+      : comp?.numeric_grade ?? comp?.final ?? enrollment.numeric_grade ?? null
     const score =
       scoreRaw != null && scoreRaw !== '' && !Number.isNaN(Number(scoreRaw))
         ? Number(scoreRaw)
         : null
     const cell = {
       score,
-      letter: comp?.letter_grade || letter || enrollment.grade || null,
-      gpa: points,
+      letter: useExamPercent
+        ? getLetterFromPercent(score, gradingScale) || letter
+        : comp?.letter_grade || letter || enrollment.grade || null,
+      gpa: useExamPercent
+        ? numericGradeToGpaPoints(score, gradingScale)
+        : points,
+      credits,
       semester_id: e.semester_id || 0,
+      examAt: examAt || 0,
     }
 
     if (!gradesByStudent[e.student_id]) gradesByStudent[e.student_id] = {}
     const prev = gradesByStudent[e.student_id][subj.id]
-    if (!prev || (cell.semester_id || 0) > (prev.semester_id || 0) || (cell.score != null && prev.score == null)) {
+    if (!prev) {
       gradesByStudent[e.student_id][subj.id] = cell
+    } else if ((cell.semester_id || 0) > (prev.semester_id || 0)) {
+      gradesByStudent[e.student_id][subj.id] = cell
+    } else if ((cell.semester_id || 0) === (prev.semester_id || 0)) {
+      if ((cell.examAt || 0) > (prev.examAt || 0)) {
+        gradesByStudent[e.student_id][subj.id] = cell
+      } else if (!(prev.examAt || 0) && cell.score != null && prev.score == null) {
+        gradesByStudent[e.student_id][subj.id] = cell
+      }
     }
   }
 
@@ -454,6 +559,35 @@ export async function loadStudentGradesExportData({
     const sid = Number(subjectId)
     subjectsOut = subjectsOut.filter((s) => s.id === sid)
   }
+
+  Object.entries(gradesByStudent).forEach(([studentId, bySubject]) => {
+    let scoreWeight = 0
+    let scoreCredits = 0
+    let gpaWeight = 0
+    let gpaCredits = 0
+    subjectsOut.forEach((subj) => {
+      const cell = bySubject[subj.id]
+      if (!cell) return
+      const credits = Number(cell.credits || subj.creditHours || 1) || 1
+      if (cell.score != null && !Number.isNaN(Number(cell.score))) {
+        scoreWeight += Number(cell.score) * credits
+        scoreCredits += credits
+      }
+      if (cell.gpa != null && !Number.isNaN(Number(cell.gpa))) {
+        gpaWeight += Number(cell.gpa) * credits
+        gpaCredits += credits
+      }
+    })
+    const overallScore =
+      scoreCredits > 0 ? Math.round((scoreWeight / scoreCredits) * 100) / 100 : null
+    const overallGpa =
+      gpaCredits > 0 ? Math.round((gpaWeight / gpaCredits) * 100) / 100 : null
+    gradesByStudent[studentId].__overall = {
+      score: overallScore,
+      letter: overallScore != null ? getLetterFromPercent(overallScore, gradingScale) : null,
+      gpa: overallGpa,
+    }
+  })
 
   // Only students who have at least one grade when exporting, or all filtered students
   const exportStudents = studentList

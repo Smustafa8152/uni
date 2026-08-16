@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, Fragment } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useLanguage } from '../../contexts/LanguageContext'
 import { getLocalizedName } from '../../utils/localizedName'
@@ -6,10 +6,13 @@ import {
   getGradingScaleFromUniversitySettings,
   getSubjectGpaFromEnrollment,
   calculateGpaWithScale,
+  normalizeGradeComponent,
 } from '../../utils/getCollegeSettings'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
 import { GraduationCap, FileText, Calendar, Info } from 'lucide-react'
+import { overlayExamScoresOnGradeComponent, examTypeToGradeColumn, examSubmissionScoreOutOf100 } from '../../utils/syncExamGradesToGradebook'
+import { canStudentSeeExamScore } from '../../utils/subjectExamDateTime'
 
 const PORTAL_BG = '#1a3a6b'
 const TOTAL_HOURS_DEFAULT = 120
@@ -106,7 +109,66 @@ export default function StudentMyGrades() {
         .order('semester_id', { ascending: false })
 
       if (enrollmentsError) throw enrollmentsError
-      setEnrollments(enrollmentsData || [])
+
+      const list = enrollmentsData || []
+      const enrollmentIds = list.map((e) => e.id)
+      const classIds = [...new Set(list.map((e) => e.classes?.id).filter(Boolean))]
+
+      const gcByEnrollment = {}
+      for (let i = 0; i < enrollmentIds.length; i += 200) {
+        const chunk = enrollmentIds.slice(i, i + 200)
+        const { data: gcs } = await supabase.from('grade_components').select('*').in('enrollment_id', chunk)
+        ;(gcs || []).forEach((g) => {
+          gcByEnrollment[g.enrollment_id] = g
+        })
+      }
+
+      const examsByClass = {}
+      if (classIds.length) {
+        const { data: exams } = await supabase
+          .from('subject_exams')
+          .select('id, class_id, title, title_ar, exam_type, status, total_points, assessment_settings, scheduled_date, start_time, end_time')
+          .in('class_id', classIds)
+          .in('status', ['EX_SCH', 'EX_OPN', 'EX_CLS', 'EX_REL'])
+        const examIds = (exams || []).map((ex) => ex.id)
+        let subs = []
+        if (examIds.length) {
+          const { data: subRows } = await supabase
+            .from('exam_submissions')
+            .select('id, exam_id, enrollment_id, status, points_earned, grade, submitted_at, submission_data')
+            .eq('student_id', studentData.id)
+            .in('exam_id', examIds)
+          subs = subRows || []
+        }
+        const subByExam = Object.fromEntries(subs.map((s) => [s.exam_id, s]))
+        ;(exams || []).forEach((ex) => {
+          if (!examsByClass[ex.class_id]) examsByClass[ex.class_id] = []
+          examsByClass[ex.class_id].push({ ...ex, submission: subByExam[ex.id] || null })
+        })
+      }
+
+      const scale = await getGradingScaleFromUniversitySettings()
+      setEnrollments(
+        list.map((e) => {
+          const classExams = examsByClass[e.classes?.id] || []
+          const scores = {}
+          classExams.forEach((ex) => {
+            if (!canStudentSeeExamScore(ex, ex.submission)) return
+            const col = examTypeToGradeColumn(ex.exam_type)
+            const score = examSubmissionScoreOutOf100(ex.submission, ex)
+            if (score != null) scores[col] = score
+          })
+          return {
+            ...e,
+            grade_components: overlayExamScoresOnGradeComponent(
+              gcByEnrollment[e.id] || null,
+              scores,
+              scale,
+            ),
+            exams: classExams,
+          }
+        }),
+      )
     } catch (err) {
       console.error('Error fetching student grades:', err)
     } finally {
@@ -222,7 +284,10 @@ export default function StudentMyGrades() {
           <div className="px-4 py-3 bg-sky-50 border-b border-sky-100 flex items-start gap-2">
             <Info className="w-5 h-5 text-sky-600 flex-shrink-0 mt-0.5" />
             <p className="text-sm text-sky-800">
-              {t('studentPortal.gradesPublishedAfter', 'Grades will be published after the end of the semester according to university policy.')}
+              {t(
+                'studentPortal.examScoresVisible',
+                'Exam scores appear here after you submit. Official semester GPA is confirmed at the end of the term.',
+              )}
             </p>
           </div>
           <div className="overflow-x-auto" dir={isRTL ? 'rtl' : 'ltr'}>
@@ -238,16 +303,55 @@ export default function StudentMyGrades() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-200">
-                {currentSemesterEnrollments.map((e) => (
-                  <tr key={e.id} className="hover:bg-slate-50">
-                    <td className={`px-4 py-3 text-sm text-slate-500 ${isRTL ? 'text-right' : 'text-left'}`}>—</td>
-                    <td className={`px-4 py-3 text-sm text-slate-500 ${isRTL ? 'text-right' : 'text-left'}`}>—</td>
-                    <td className={`px-4 py-3 text-sm text-slate-500 ${isRTL ? 'text-right' : 'text-left'}`}>—</td>
-                    <td className={`px-4 py-3 text-sm text-slate-900 ${isRTL ? 'text-right' : 'text-left'}`}>{e.classes?.subjects?.credit_hours ?? '—'}</td>
-                    <td className={`px-4 py-3 text-sm text-slate-900 ${isRTL ? 'text-right' : 'text-left'}`}>{getLocalizedName(e.classes?.subjects, isRTL) || '—'}</td>
-                    <td className={`px-4 py-3 text-sm text-slate-900 ${isRTL ? 'text-right' : 'text-left'}`}>{e.classes?.subjects?.code || '—'}</td>
-                  </tr>
-                ))}
+                {currentSemesterEnrollments.map((e) => {
+                  const { points, credits, letter } = getSubjectGpaFromEnrollment(e, gradingScale)
+                  const comp = normalizeGradeComponent(e.grade_components)
+                  const numericRaw = comp?.numeric_grade ?? e.numeric_grade
+                  const numericGrade =
+                    numericRaw != null && numericRaw !== '' && !Number.isNaN(Number(numericRaw))
+                      ? Math.round(Number(numericRaw) * 100) / 100
+                      : null
+                  const letterGrade = letter || comp?.letter_grade || e.grade || null
+                  const pts = points != null && credits > 0 ? (points * credits).toFixed(2) : '—'
+                  const visibleExams = (e.exams || []).filter((ex) =>
+                    canStudentSeeExamScore(ex, ex.submission),
+                  )
+                  return (
+                    <Fragment key={e.id}>
+                      <tr className="hover:bg-slate-50">
+                        <td className={`px-4 py-3 text-sm text-slate-900 ${isRTL ? 'text-right' : 'text-left'}`}>{pts}</td>
+                        <td className={`px-4 py-3 text-sm ${getLetterGradeColor(letterGrade)} ${isRTL ? 'text-right' : 'text-left'}`}>
+                          {letterGrade || '—'}
+                        </td>
+                        <td className={`px-4 py-3 text-sm text-slate-900 ${isRTL ? 'text-right' : 'text-left'}`}>
+                          {numericGrade != null ? numericGrade : '—'}
+                        </td>
+                        <td className={`px-4 py-3 text-sm text-slate-900 ${isRTL ? 'text-right' : 'text-left'}`}>{e.classes?.subjects?.credit_hours ?? '—'}</td>
+                        <td className={`px-4 py-3 text-sm text-slate-900 ${isRTL ? 'text-right' : 'text-left'}`}>{getLocalizedName(e.classes?.subjects, isRTL) || '—'}</td>
+                        <td className={`px-4 py-3 text-sm text-slate-900 ${isRTL ? 'text-right' : 'text-left'}`}>{e.classes?.subjects?.code || '—'}</td>
+                      </tr>
+                      {visibleExams.map((ex) => (
+                        <tr key={`exam-${e.id}-${ex.id}`} className="bg-slate-50/80">
+                          <td className={`px-4 py-2 text-xs text-slate-500 ${isRTL ? 'text-right' : 'text-left'}`} colSpan={2}>
+                            {t('studentPortal.elearning.exam', 'Exam')}:{' '}
+                            {isRTL ? ex.title_ar || ex.title : ex.title}
+                          </td>
+                          <td className={`px-4 py-2 text-xs font-semibold text-slate-800 ${isRTL ? 'text-right' : 'text-left'}`}>
+                            {ex.submission?.points_earned != null
+                              ? `${ex.submission.points_earned}/${ex.total_points || 0}`
+                              : '—'}
+                            {ex.submission?.grade != null && ex.submission.grade !== ''
+                              ? ` (${ex.submission.grade}%)`
+                              : ''}
+                          </td>
+                          <td className={`px-4 py-2 text-xs text-slate-500 ${isRTL ? 'text-right' : 'text-left'}`} colSpan={3}>
+                            {ex.exam_type || ''}
+                          </td>
+                        </tr>
+                      ))}
+                    </Fragment>
+                  )
+                })}
               </tbody>
             </table>
           </div>
@@ -287,9 +391,14 @@ export default function StudentMyGrades() {
                   </thead>
                   <tbody className="divide-y divide-slate-200">
                     {list.map((e) => {
-                      const { points, credits } = getSubjectGpaFromEnrollment(e, gradingScale)
-                      const letterGrade = e.grade || '—'
-                      const numericGrade = e.numeric_grade != null ? Math.round(Number(e.numeric_grade)) : '—'
+                      const { points, credits, letter } = getSubjectGpaFromEnrollment(e, gradingScale)
+                      const comp = normalizeGradeComponent(e.grade_components)
+                      const letterGrade = letter || comp?.letter_grade || e.grade || '—'
+                      const numericRaw = comp?.numeric_grade ?? e.numeric_grade
+                      const numericGrade =
+                        numericRaw != null && numericRaw !== '' && !Number.isNaN(Number(numericRaw))
+                          ? Math.round(Number(numericRaw))
+                          : '—'
                       const pts = points != null && credits > 0 ? (points * credits).toFixed(2) : '—'
                       return (
                         <tr key={e.id} className="hover:bg-slate-50">

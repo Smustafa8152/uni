@@ -6,46 +6,55 @@ import {
 import {
   calculateNumericGradeFromConfig,
   getLetterFromPercent,
+  LEGACY_GRADE_COLUMNS,
 } from './instructorGradeSheet'
 import { deriveRecordStatus } from './gradeAssessmentGroups'
 import { autoGradeExam } from './autoGradeExam'
 
 /** Map subject_exams.exam_type → grade_components column */
 export function examTypeToGradeColumn(examType) {
-  const t = String(examType || '').toLowerCase()
+  const t = String(examType || '').toLowerCase().trim()
   if (t === 'midterm') return 'midterm'
   if (t === 'final') return 'final'
-  if (t === 'short_quiz' || t === 'practice_quiz') return 'quizzes'
-  if (t === 'assignment') return 'assignments'
-  if (t === 'oral') return 'class_participation'
+  if (t === 'short_quiz' || t === 'practice_quiz' || t === 'quiz' || t === 'quizzes') return 'quizzes'
+  if (t === 'assignment' || t === 'assignments') return 'assignments'
+  if (t === 'oral' || t === 'participation' || t === 'class_participation') return 'class_participation'
+  if (t === 'project') return 'project'
+  if (t === 'lab') return 'lab'
   return 'other'
 }
 
-/** Score as 0–100 for a gradebook cell */
+/** Score as 0–100 for a gradebook cell. Prefer points/total so a re-exam cannot keep a stale `grade` %. */
 export function examSubmissionScoreOutOf100(submission, exam) {
-  if (submission?.grade != null && submission.grade !== '') {
-    const g = Number(submission.grade)
-    if (!Number.isNaN(g)) return Math.min(100, Math.max(0, Math.round(g * 10) / 10))
-  }
   const earned = Number(submission?.points_earned)
   const total = Number(exam?.total_points || submission?.submission_data?.autoGrade?.total_points || 0)
   if (!Number.isNaN(earned) && total > 0) {
     return Math.min(100, Math.max(0, Math.round((earned / total) * 1000) / 10))
   }
   const auto = submission?.submission_data?.autoGrade
-  if (auto?.percent != null) {
-    return Math.min(100, Math.max(0, Math.round(Number(auto.percent) * 10) / 10))
+  if (auto?.points_earned != null && Number(auto.total_points) > 0) {
+    return Math.min(
+      100,
+      Math.max(0, Math.round((Number(auto.points_earned) / Number(auto.total_points)) * 1000) / 10),
+    )
   }
-  if (auto?.points_earned != null && auto?.total_points > 0) {
-    return Math.min(100, Math.max(0, Math.round((Number(auto.points_earned) / Number(auto.total_points)) * 1000) / 10))
+  if (auto?.percent != null && auto.percent !== '') {
+    const p = Number(auto.percent)
+    if (!Number.isNaN(p)) return Math.min(100, Math.max(0, Math.round(p * 10) / 10))
+  }
+  if (submission?.grade != null && submission.grade !== '') {
+    const g = Number(submission.grade)
+    if (!Number.isNaN(g)) return Math.min(100, Math.max(0, Math.round(g * 10) / 10))
   }
   return null
 }
 
 export function isExamSubmissionGradable(submission) {
   if (!submission) return false
-  if (submission.status === 'EX_SUB' || submission.status === 'EX_GRD') return true
   const data = submission.submission_data
+  // Pending instructor re-exam: current row is empty; do not reuse archived attempt scores.
+  if (submission.status === 'EX_DRF' && data?.instructor_retake) return false
+  if (submission.status === 'EX_SUB' || submission.status === 'EX_GRD') return true
   // Stuck drafts: finished attempt never flipped off EX_DRF (missing submitted/autoGrade flags)
   if (
     submission.status === 'EX_DRF' &&
@@ -63,7 +72,9 @@ export function isExamSubmissionGradable(submission) {
  * Returns updated submission rows.
  */
 async function recoverDraftExamSubmissions(subs, examById) {
-  const stuck = (subs || []).filter((s) => s.status === 'EX_DRF')
+  const stuck = (subs || []).filter(
+    (s) => s.status === 'EX_DRF' && !s.submission_data?.instructor_retake,
+  )
   if (!stuck.length) return subs || []
 
   // Already scored but never marked submitted/graded
@@ -155,31 +166,38 @@ async function recoverDraftExamSubmissions(subs, examById) {
   return [...(subs || []).filter((s) => !recoveredIds.has(s.id)), ...recovered]
 }
 
-/**
- * Fetch submitted exam attempts for a class and build enrollmentId → { column: score } map.
- * When multiple exams map to the same column, keep the latest submission (by submitted_at).
- */
-export async function fetchExamScoresByEnrollment(classId) {
-  const { data: exams, error: exErr } = await supabase
-    .from('subject_exams')
-    .select('id, class_id, exam_type, total_points, title')
-    .eq('class_id', classId)
-  if (exErr) throw exErr
-  if (!exams?.length) return { byEnrollment: {}, exams: [] }
+function scKey(studentId, classId) {
+  return `${Number(studentId)}::${Number(classId)}`
+}
 
-  const examIds = exams.map((e) => e.id)
-  const examById = Object.fromEntries(exams.map((e) => [e.id, e]))
+function subjKey(studentId, subjectId) {
+  return `${Number(studentId)}::subj::${Number(subjectId)}`
+}
 
-  const { data: subsRaw, error: sErr } = await supabase
-    .from('exam_submissions')
-    .select('id, exam_id, student_id, enrollment_id, status, points_earned, grade, submission_data, submitted_at')
-    .in('exam_id', examIds)
-  if (sErr) throw sErr
-
-  const subs = await recoverDraftExamSubmissions(subsRaw || [], examById)
-
+function collectLatestExamScores(subs, examById) {
   const byEnrollment = {}
+  const byStudentClass = {}
+  const byStudentSubject = {}
   const latestAt = {}
+  const latestAtSC = {}
+  const latestAtSubj = {}
+  const latestOverall = {}
+  const latestOverallSC = {}
+  const latestOverallSubj = {}
+
+  const put = (bucket, atBucket, overallBucket, key, col, score, at) => {
+    if (key == null || key === '' || String(key).includes('NaN')) return
+    if (!bucket[key]) bucket[key] = {}
+    if (!atBucket[key]) atBucket[key] = {}
+    if (atBucket[key][col] == null || at >= atBucket[key][col]) {
+      bucket[key][col] = score
+      atBucket[key][col] = at
+    }
+    if (!overallBucket[key] || at >= overallBucket[key].at) {
+      overallBucket[key] = { score, at }
+    }
+  }
+
   for (const sub of subs || []) {
     if (!isExamSubmissionGradable(sub)) continue
     const exam = examById[sub.exam_id]
@@ -188,18 +206,228 @@ export async function fetchExamScoresByEnrollment(classId) {
     if (!GRADE_COMPONENT_DB_COLUMNS.includes(col)) continue
     const score = examSubmissionScoreOutOf100(sub, exam)
     if (score == null) continue
-    const enrId = sub.enrollment_id
-    if (!enrId) continue
-    if (!byEnrollment[enrId]) byEnrollment[enrId] = {}
-    if (!latestAt[enrId]) latestAt[enrId] = {}
     const at = sub.submitted_at ? new Date(sub.submitted_at).getTime() : 0
-    const prevAt = latestAt[enrId][col]
-    if (prevAt == null || at >= prevAt) {
-      byEnrollment[enrId][col] = score
-      latestAt[enrId][col] = at
+
+    const enrId = sub.enrollment_id != null && sub.enrollment_id !== ''
+      ? Number(sub.enrollment_id)
+      : null
+    if (Number.isFinite(enrId)) {
+      put(byEnrollment, latestAt, latestOverall, enrId, col, score, at)
+    }
+    if (sub.student_id && exam.class_id) {
+      put(byStudentClass, latestAtSC, latestOverallSC, scKey(sub.student_id, exam.class_id), col, score, at)
+    }
+    if (sub.student_id && exam.subject_id) {
+      put(
+        byStudentSubject,
+        latestAtSubj,
+        latestOverallSubj,
+        subjKey(sub.student_id, exam.subject_id),
+        col,
+        score,
+        at,
+      )
     }
   }
-  return { byEnrollment, exams }
+  return {
+    byEnrollment,
+    byStudentClass,
+    byStudentSubject,
+    latestAt,
+    latestAtSC,
+    latestAtSubj,
+    latestOverall,
+    latestOverallSC,
+    latestOverallSubj,
+  }
+}
+
+const LEGACY_FIELDS = new Set(LEGACY_GRADE_COLUMNS.map((c) => c.field))
+
+/**
+ * Replace exam cells with latest attempt scores and recompute overall numeric/letter/GPA.
+ * Stored grade_components.numeric_grade often lags behind a re-exam.
+ */
+export function overlayExamScoresOnGradeComponent(gcRaw, examScores, gradingScale) {
+  if (!examScores || !Object.keys(examScores).length) return gcRaw
+  const patched = { ...(gcRaw || {}) }
+  const examPercents = []
+  Object.entries(examScores).forEach(([col, score]) => {
+    patched[col] = score
+    const n = Number(score)
+    if (!Number.isNaN(n)) examPercents.push(n)
+  })
+
+  let numeric = calculateNumericGradeFromConfig(patched, LEGACY_GRADE_COLUMNS)
+  const examOnLegacy = Object.keys(examScores).some((col) => LEGACY_FIELDS.has(col))
+  // Exam types that map to other/project/lab are ignored by the default 5-column weights,
+  // so the stored first-attempt percent would otherwise stay as the course score.
+  if (!examOnLegacy && examPercents.length) {
+    numeric =
+      examPercents.length === 1
+        ? examPercents[0]
+        : examPercents.reduce((a, b) => a + b, 0) / examPercents.length
+  }
+
+  if (numeric != null) {
+    patched.numeric_grade = Math.round(numeric * 100) / 100
+    patched.letter_grade = getLetterFromPercent(patched.numeric_grade, gradingScale)
+    patched.gpa_points = numericGradeToGpaPoints(patched.numeric_grade, gradingScale)
+  }
+  return patched
+}
+
+export function examScoresForEnrollment(examData, enrollment) {
+  const byEnrollment = examData?.byEnrollment || {}
+  const byStudentClass = examData?.byStudentClass || {}
+  const byStudentSubject = examData?.byStudentSubject || {}
+  const latestAt = examData?.latestAt || {}
+  const latestAtSC = examData?.latestAtSC || {}
+  const latestAtSubj = examData?.latestAtSubj || {}
+  const latestOverall = examData?.latestOverall || {}
+  const latestOverallSC = examData?.latestOverallSC || {}
+  const latestOverallSubj = examData?.latestOverallSubj || {}
+
+  const id = enrollment?.id
+  const numId = Number(id)
+  const sc = enrollment?.student_id != null && enrollment?.class_id != null
+    ? scKey(enrollment.student_id, enrollment.class_id)
+    : null
+  const subjectId = enrollment?.subject_id ?? enrollment?.classes?.subject_id
+  const sk =
+    enrollment?.student_id != null && subjectId != null
+      ? subjKey(enrollment.student_id, subjectId)
+      : null
+
+  const scores =
+    (Number.isFinite(numId) ? byEnrollment[numId] : null) ||
+    byEnrollment[id] ||
+    byEnrollment[String(id)] ||
+    (sc ? byStudentClass[sc] : null) ||
+    (sk ? byStudentSubject[sk] : null) ||
+    {}
+
+  const overall =
+    (Number.isFinite(numId) ? latestOverall[numId] : null) ||
+    latestOverall[id] ||
+    (sc ? latestOverallSC[sc] : null) ||
+    (sk ? latestOverallSubj[sk] : null) ||
+    null
+
+  const atMap =
+    (Number.isFinite(numId) ? latestAt[numId] : null) ||
+    latestAt[id] ||
+    (sc ? latestAtSC[sc] : null) ||
+    (sk ? latestAtSubj[sk] : null) ||
+    {}
+  const times = Object.values(atMap || {}).map(Number).filter((n) => Number.isFinite(n))
+  const examAt = overall?.at || (times.length ? Math.max(...times) : 0)
+  const latestPercent = overall?.score != null ? Number(overall.score) : null
+  return { scores, examAt, latestPercent }
+}
+
+async function resolveMissingEnrollmentIds(subs, examById) {
+  const missing = (subs || []).filter(
+    (s) => (s.enrollment_id == null || s.enrollment_id === '') && s.student_id && examById[s.exam_id]?.class_id,
+  )
+  if (!missing.length) return subs || []
+
+  const studentIds = [...new Set(missing.map((s) => s.student_id))]
+  const classIds = [...new Set(missing.map((s) => examById[s.exam_id].class_id))]
+  const enrs = []
+  for (let i = 0; i < studentIds.length; i += 80) {
+    const chunk = studentIds.slice(i, i + 80)
+    const { data, error } = await supabase
+      .from('enrollments')
+      .select('id, student_id, class_id')
+      .in('student_id', chunk)
+      .in('class_id', classIds)
+      .eq('status', 'enrolled')
+    if (error) throw error
+    enrs.push(...(data || []))
+  }
+  const map = {}
+  enrs.forEach((e) => {
+    map[`${e.student_id}::${e.class_id}`] = e.id
+  })
+  return (subs || []).map((s) => {
+    if (s.enrollment_id != null && s.enrollment_id !== '') return s
+    const cid = examById[s.exam_id]?.class_id
+    const enrId = map[`${s.student_id}::${cid}`]
+    return enrId ? { ...s, enrollment_id: enrId } : s
+  })
+}
+
+/**
+ * Fetch submitted exam attempts for classes and build enrollmentId → { column: score } map.
+ * Latest attempt (by submitted_at) wins — including after a re-exam.
+ */
+export async function fetchExamScoresByClassIds(classIds, extra = {}) {
+  const ids = [...new Set((classIds || []).map((id) => Number(id)).filter((id) => Number.isFinite(id)))]
+  const subjectIds = [...new Set((extra.subjectIds || []).map((id) => Number(id)).filter((id) => Number.isFinite(id)))]
+  if (!ids.length && !subjectIds.length) return { byEnrollment: {}, exams: [] }
+
+  const exams = []
+  const seenExam = new Set()
+  const addExams = (rows) => {
+    for (const row of rows || []) {
+      if (row?.id == null || seenExam.has(row.id)) continue
+      seenExam.add(row.id)
+      exams.push(row)
+    }
+  }
+
+  for (let i = 0; i < ids.length; i += 80) {
+    const chunk = ids.slice(i, i + 80)
+    const { data, error } = await supabase
+      .from('subject_exams')
+      .select('id, class_id, subject_id, exam_type, total_points, title')
+      .in('class_id', chunk)
+    if (error) throw error
+    addExams(data)
+  }
+  for (let i = 0; i < subjectIds.length; i += 80) {
+    const chunk = subjectIds.slice(i, i + 80)
+    const { data, error } = await supabase
+      .from('subject_exams')
+      .select('id, class_id, subject_id, exam_type, total_points, title')
+      .in('subject_id', chunk)
+    if (error) throw error
+    addExams(data)
+  }
+  if (!exams.length) return { byEnrollment: {}, exams: [] }
+
+  const examIds = exams.map((e) => e.id)
+  const examById = Object.fromEntries(exams.map((e) => [e.id, e]))
+
+  const subsRaw = []
+  for (let i = 0; i < examIds.length; i += 80) {
+    const chunk = examIds.slice(i, i + 80)
+    const { data, error } = await supabase
+      .from('exam_submissions')
+      .select('id, exam_id, student_id, enrollment_id, status, points_earned, grade, submission_data, submitted_at')
+      .in('exam_id', chunk)
+    if (error) throw error
+    subsRaw.push(...(data || []))
+  }
+
+  let recovered = subsRaw
+  try {
+    recovered = await recoverDraftExamSubmissions(subsRaw, examById)
+  } catch (err) {
+    console.warn('recoverDraftExamSubmissions', err)
+  }
+  const subs = await resolveMissingEnrollmentIds(recovered, examById)
+  const collected = collectLatestExamScores(subs, examById)
+  return { ...collected, exams }
+}
+
+/**
+ * Fetch submitted exam attempts for a class and build enrollmentId → { column: score } map.
+ * When multiple exams map to the same column, keep the latest submission (by submitted_at).
+ */
+export async function fetchExamScoresByEnrollment(classId) {
+  return fetchExamScoresByClassIds(classId ? [classId] : [])
 }
 
 /**

@@ -5,8 +5,7 @@ import { useLanguage } from '../../contexts/LanguageContext'
 import { useAuth } from '../../contexts/AuthContext'
 import { supabase } from '../../lib/supabase'
 import { getLocalizedName } from '../../utils/localizedName'
-import { mergeAssessmentSettings, RESULT_VISIBILITY, canShowReviewField } from '../../utils/assessmentSettings'
-import { isExamSubmissionComplete } from '../../utils/subjectExamDateTime'
+import { isExamSubmissionComplete, canStudentSeeExamScore } from '../../utils/subjectExamDateTime'
 
 const UI = {
   p: '#1a3a6b',
@@ -54,7 +53,7 @@ export default function StudentExamSubmitted() {
 
         const { data: ex } = await supabase
           .from('subject_exams')
-          .select('id, class_id, title, title_ar, scheduled_date, start_time, total_points, assessment_settings, classes(id, subjects(id, code, name_en, name_ar))')
+          .select('id, class_id, title, title_ar, scheduled_date, start_time, end_time, duration_minutes, total_points, assessment_settings, status, classes(id, subjects(id, code, name_en, name_ar))')
           .eq('id', Number(examId))
           .single()
         setExam(ex)
@@ -90,11 +89,7 @@ export default function StudentExamSubmitted() {
   const courseName = getLocalizedName(exam?.classes?.subjects, isArabic) || '—'
   const title = (isArabic ? exam?.title_ar : exam?.title) || exam?.title || '—'
   const answered = submission?.submission_data?.answers ? Object.keys(submission.submission_data.answers).length : 0
-  const settings = mergeAssessmentSettings(exam?.assessment_settings)
-  const showScore =
-    settings.result_visibility === RESULT_VISIBILITY.IMMEDIATE &&
-    canShowReviewField(settings, 'immediately_after', 'marks') &&
-    submission?.points_earned != null
+  const showScore = canStudentSeeExamScore(exam, submission)
   const durationMin =
     submission?.started_at && submission?.submitted_at
       ? Math.round((new Date(submission.submitted_at) - new Date(submission.started_at)) / 60000)

@@ -136,6 +136,19 @@ export default function InstructorGradebook({ embedded = false, embedClassId = n
   const weightsTotal = useMemo(() => totalConfigWeight(editableColumns), [editableColumns])
   const weightsOk = Math.abs(weightsTotal - 100) < 0.01
 
+  const overlayLatestExamScores = useCallback(async (grades) => {
+    if (!selectedClassId) return grades
+    try {
+      const { byEnrollment } = await fetchExamScoresByEnrollment(selectedClassId)
+      const cfg = gradeConfig.length ? gradeConfig : LEGACY_GRADE_COLUMNS
+      const { nextDrafts } = mergeExamScoresIntoDrafts(grades, byEnrollment, cfg)
+      return nextDrafts
+    } catch (err) {
+      console.warn('overlayLatestExamScores', err)
+      return grades
+    }
+  }, [selectedClassId, gradeConfig])
+
   useEffect(() => {
     if (user?.email) {
       getActiveInstructorByEmail(user.email).then((data) => data && setInstructor(data))
@@ -266,35 +279,9 @@ export default function InstructorGradebook({ embedded = false, embedClassId = n
                 gradeConfig: merged.length ? merged : LEGACY_GRADE_COLUMNS,
                 instructorId: instructor?.id,
               })
-              // Refresh persisted rows
-              const { data: refreshed } = await supabase
-                .from('grade_components')
-                .select('*')
-                .in(
-                  'enrollment_id',
-                  enrolls.map((e) => e.id),
-                )
-              if (refreshed) {
-                const map2 = {}
-                refreshed.forEach((g) => {
-                  map2[g.enrollment_id] = g
-                })
-                setGradesMap(map2)
-                const base2 = { ...nextDrafts }
-                enrolls.forEach((e) => {
-                  if (map2[e.id]) {
-                    base2[e.id] = {
-                      ...base2[e.id],
-                      ...map2[e.id],
-                      enrollment_id: e.id,
-                      class_id: selectedClassId,
-                      student_id: e.student_id,
-                    }
-                  }
-                })
-                setDraftGrades(base2)
-              }
             }
+            // Keep latest exam overlay in the UI even if DB still has an older GREATEST score.
+            setDraftGrades(nextDrafts)
           } catch (syncErr) {
             console.error('Exam→gradebook sync', syncErr)
             setDraftGrades(base)
@@ -1002,10 +989,11 @@ export default function InstructorGradebook({ embedded = false, embedClassId = n
                 type="button"
                 className="gs-btn-export"
                 title={t('instructorPortal.exportExcel', 'Export Excel')}
-                onClick={() =>
+                onClick={async () => {
+                  const latestGrades = await overlayLatestExamScores(draftGrades)
                   exportGradeSheetExcel({
                     enrollments,
-                    draftGrades,
+                    draftGrades: latestGrades,
                     gradeConfig: gradeConfig.length ? gradeConfig : editableColumns,
                     gradingScale,
                     displayStudentName,
@@ -1022,7 +1010,7 @@ export default function InstructorGradebook({ embedded = false, embedClassId = n
                     allGroupsApproved,
                     studyType: t('instructorPortal.regularStudy', 'Regular study'),
                   })
-                }
+                }}
               >
                 📊 Excel
               </button>
@@ -1030,10 +1018,11 @@ export default function InstructorGradebook({ embedded = false, embedClassId = n
                 type="button"
                 className="gs-btn-export"
                 title={t('instructorPortal.exportPdf', 'Export PDF')}
-                onClick={() =>
+                onClick={async () => {
+                  const latestGrades = await overlayLatestExamScores(draftGrades)
                   exportGradeSheetPdf({
                     enrollments,
-                    draftGrades,
+                    draftGrades: latestGrades,
                     gradeConfig: gradeConfig.length ? gradeConfig : editableColumns,
                     gradingScale,
                     displayStudentName,
@@ -1042,7 +1031,7 @@ export default function InstructorGradebook({ embedded = false, embedClassId = n
                     semesterLabel,
                     isArabic,
                   })
-                }
+                }}
               >
                 📄 PDF
               </button>
