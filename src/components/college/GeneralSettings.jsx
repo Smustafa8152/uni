@@ -1,5 +1,7 @@
 import { useTranslation } from 'react-i18next'
 import { useLanguage } from '../../contexts/LanguageContext'
+import MenuPermissionsPicker from '../admin/MenuPermissionsPicker'
+import { defaultMenuPermissions } from '../../utils/menuPermissions'
 import {
   STUDENT_ID_FORMAT_PRESETS,
   INSTRUCTOR_ID_FORMAT_PRESETS,
@@ -341,6 +343,10 @@ export default function GeneralSettings({ formData, handleChange, useUniversityS
                 />
                 <p className="text-xs text-gray-500 mt-1">{t('colleges.generalSettings.adminPasswordHint')}</p>
               </div>
+              <MenuPermissionsPicker
+                value={formData.admin_menu_permissions || defaultMenuPermissions()}
+                onChange={(keys) => handleChange('admin_menu_permissions', keys)}
+              />
             </div>
           )}
         </div>

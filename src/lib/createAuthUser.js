@@ -4,25 +4,28 @@ import { supabase } from './supabase'
  * Helper function to create auth user via Edge Function
  * This properly handles CORS and authentication
  */
-export async function createAuthUser({ email, password, role, college_id, name, kind, record_id }) {
+export async function createAuthUser({ email, password, role, college_id, name, kind, record_id, menu_permissions }) {
   const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
   
   if (!supabaseUrl) {
     throw new Error('VITE_SUPABASE_URL is not set')
   }
 
+  const bodyPayload = {
+    email,
+    password,
+    role,
+    college_id,
+    name,
+    kind,
+    record_id,
+    menu_permissions: menu_permissions ?? null,
+  }
+
   try {
     // Use Supabase functions.invoke for proper CORS handling
     const { data, error } = await supabase.functions.invoke('create-auth-user', {
-      body: {
-        email,
-        password,
-        role,
-        college_id,
-        name,
-        kind,
-        record_id,
-      },
+      body: bodyPayload,
     })
 
     if (error) {
@@ -40,15 +43,7 @@ export async function createAuthUser({ email, password, role, college_id, name, 
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
       },
-      body: JSON.stringify({
-        email,
-        password,
-        role,
-        college_id,
-        name,
-        kind,
-        record_id,
-      }),
+      body: JSON.stringify(bodyPayload),
     })
 
     if (!response.ok) {

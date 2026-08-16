@@ -5,6 +5,8 @@ import { Save, User, Bell, Shield, UserPlus } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
 import { createAuthUser } from '../lib/createAuthUser'
 import { supabase } from '../lib/supabase'
+import MenuPermissionsPicker from '../components/admin/MenuPermissionsPicker'
+import { defaultMenuPermissions, normalizeMenuPermissions } from '../utils/menuPermissions'
 
 export default function Settings() {
   const { t, i18n } = useTranslation()
@@ -47,6 +49,21 @@ export default function Settings() {
   const [saListError, setSaListError] = useState('')
   const [superAdmins, setSuperAdmins] = useState([])
 
+  const [staffName, setStaffName] = useState('')
+  const [staffEmail, setStaffEmail] = useState('')
+  const [staffPassword, setStaffPassword] = useState('')
+  const [staffConfirm, setStaffConfirm] = useState('')
+  const [staffMenus, setStaffMenus] = useState(() => defaultMenuPermissions())
+  const [staffLoading, setStaffLoading] = useState(false)
+  const [staffError, setStaffError] = useState('')
+  const [staffSuccess, setStaffSuccess] = useState('')
+  const [staffListLoading, setStaffListLoading] = useState(false)
+  const [staffListError, setStaffListError] = useState('')
+  const [staffUsers, setStaffUsers] = useState([])
+  const [editingStaffId, setEditingStaffId] = useState(null)
+  const [editingMenus, setEditingMenus] = useState([])
+  const [staffSaveBusy, setStaffSaveBusy] = useState(false)
+
   const loadSuperAdmins = async () => {
     if (userRole !== 'admin') return
     setSaListLoading(true)
@@ -67,9 +84,30 @@ export default function Settings() {
     }
   }
 
+  const loadStaffUsers = async () => {
+    if (userRole !== 'admin') return
+    setStaffListLoading(true)
+    setStaffListError('')
+    try {
+      const { data, error } = await supabase
+        .from('users')
+        .select('id, name, email, menu_permissions, createdAt')
+        .eq('role', 'user')
+        .order('createdAt', { ascending: false })
+        .limit(200)
+      if (error) throw error
+      setStaffUsers(data || [])
+    } catch (e) {
+      setStaffListError(e?.message || String(e))
+    } finally {
+      setStaffListLoading(false)
+    }
+  }
+
   useEffect(() => {
     if (userRole === 'admin') {
       loadSuperAdmins()
+      loadStaffUsers()
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [userRole])
@@ -119,6 +157,93 @@ export default function Settings() {
       setSaError(err?.message || String(err))
     } finally {
       setSaLoading(false)
+    }
+  }
+
+  const handleCreateStaffUser = async (e) => {
+    e.preventDefault()
+    setStaffError('')
+    setStaffSuccess('')
+
+    const email = staffEmail.trim().toLowerCase()
+    if (!email || !email.includes('@')) {
+      setStaffError(t('settings.staffUser.invalidEmail', 'Please enter a valid email.'))
+      return
+    }
+    if (staffPassword.length < 6) {
+      setStaffError(t('settings.staffUser.passwordMin', 'Password must be at least 6 characters.'))
+      return
+    }
+    if (staffPassword !== staffConfirm) {
+      setStaffError(t('settings.staffUser.passwordMismatch', 'Passwords do not match.'))
+      return
+    }
+    const menus = normalizeMenuPermissions(staffMenus) || defaultMenuPermissions()
+    if (!menus.length) {
+      setStaffError(t('settings.staffUser.menusRequired', 'Select at least one menu item.'))
+      return
+    }
+
+    setStaffLoading(true)
+    try {
+      const authResult = await createAuthUser({
+        email,
+        password: staffPassword,
+        role: 'user',
+        college_id: null,
+        name: (staffName.trim() || email).trim(),
+        menu_permissions: menus,
+      })
+
+      const body = authResult?.data ?? authResult
+      if (body && typeof body === 'object' && body.error) {
+        setStaffError(String(body.error))
+        return
+      }
+
+      // Ensure menus are saved even if the Edge Function has not been redeployed yet
+      const createdId = body?.user?.id || body?.data?.user?.id
+      if (createdId) {
+        await supabase.from('users').update({ menu_permissions: menus }).eq('id', createdId)
+      } else if (email) {
+        await supabase.from('users').update({ menu_permissions: menus }).eq('email', email)
+      }
+
+      setStaffSuccess(t('settings.staffUser.success', 'Staff user created successfully.'))
+      setStaffName('')
+      setStaffEmail('')
+      setStaffPassword('')
+      setStaffConfirm('')
+      setStaffMenus(defaultMenuPermissions())
+      loadStaffUsers()
+    } catch (err) {
+      setStaffError(err?.message || String(err))
+    } finally {
+      setStaffLoading(false)
+    }
+  }
+
+  const startEditMenus = (row) => {
+    setEditingStaffId(row.id)
+    setEditingMenus(normalizeMenuPermissions(row.menu_permissions) || defaultMenuPermissions())
+  }
+
+  const saveStaffMenus = async (userId) => {
+    setStaffSaveBusy(true)
+    setStaffListError('')
+    try {
+      const menus = normalizeMenuPermissions(editingMenus) || defaultMenuPermissions()
+      const { error } = await supabase
+        .from('users')
+        .update({ menu_permissions: menus })
+        .eq('id', userId)
+      if (error) throw error
+      setEditingStaffId(null)
+      await loadStaffUsers()
+    } catch (e) {
+      setStaffListError(e?.message || String(e))
+    } finally {
+      setStaffSaveBusy(false)
     }
   }
 
@@ -447,6 +572,209 @@ export default function Settings() {
                 </div>
               )}
             </div>
+          </div>
+        </div>
+      )}
+
+      {userRole === 'admin' && (
+        <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6">
+          <div className={`flex items-center gap-3 mb-6 w-full ${isArabicLayout ? 'justify-start' : ''}`}>
+            {isArabicLayout ? (
+              <>
+                <h2 className={`text-xl font-bold text-gray-900 ${alignStart}`}>
+                  {t('settings.staffUser.title', 'Create Staff User')}
+                </h2>
+                <UserPlus className="w-6 h-6 text-primary-600 shrink-0" />
+              </>
+            ) : (
+              <>
+                <UserPlus className="w-6 h-6 text-primary-600 shrink-0" />
+                <h2 className={`text-xl font-bold text-gray-900 ${alignStart}`}>
+                  {t('settings.staffUser.title', 'Create Staff User')}
+                </h2>
+              </>
+            )}
+          </div>
+          <p className={`text-sm text-gray-600 mb-4 ${alignStart}`}>
+            {t(
+              'settings.staffUser.subtitle',
+              'Create a staff login and choose which menu sections they can see. Use quick options like Admissions or Finance, then fine-tune the checkboxes.',
+            )}
+          </p>
+
+          <form onSubmit={handleCreateStaffUser} className="space-y-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className={`block text-sm font-medium text-gray-700 mb-2 ${alignStart}`}>
+                  {t('settings.staffUser.name', 'Name')}
+                </label>
+                <input
+                  type="text"
+                  value={staffName}
+                  onChange={(e) => setStaffName(e.target.value)}
+                  className={`w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-primary-500 focus:border-transparent ${alignStart}`}
+                />
+              </div>
+              <div>
+                <label className={`block text-sm font-medium text-gray-700 mb-2 ${alignStart}`}>
+                  {t('settings.staffUser.email', 'Email')}
+                </label>
+                <input
+                  type="email"
+                  value={staffEmail}
+                  onChange={(e) => setStaffEmail(e.target.value)}
+                  className={`w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-primary-500 focus:border-transparent ${alignStart}`}
+                  dir="ltr"
+                  required
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className={`block text-sm font-medium text-gray-700 mb-2 ${alignStart}`}>
+                  {t('settings.staffUser.password', 'Password')}
+                </label>
+                <input
+                  type="password"
+                  value={staffPassword}
+                  onChange={(e) => setStaffPassword(e.target.value)}
+                  className={`w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-primary-500 focus:border-transparent ${alignStart}`}
+                  dir="ltr"
+                  required
+                />
+              </div>
+              <div>
+                <label className={`block text-sm font-medium text-gray-700 mb-2 ${alignStart}`}>
+                  {t('settings.staffUser.confirm', 'Confirm password')}
+                </label>
+                <input
+                  type="password"
+                  value={staffConfirm}
+                  onChange={(e) => setStaffConfirm(e.target.value)}
+                  className={`w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-primary-500 focus:border-transparent ${alignStart}`}
+                  dir="ltr"
+                  required
+                />
+              </div>
+            </div>
+
+            <MenuPermissionsPicker value={staffMenus} onChange={setStaffMenus} disabled={staffLoading} />
+
+            {staffError && (
+              <div className={`text-sm text-red-700 bg-red-50 border border-red-200 rounded-xl px-4 py-3 ${alignStart}`}>
+                {staffError}
+              </div>
+            )}
+            {staffSuccess && (
+              <div className={`text-sm text-green-800 bg-green-50 border border-green-200 rounded-xl px-4 py-3 ${alignStart}`}>
+                {staffSuccess}
+              </div>
+            )}
+
+            <div className={`flex ${isArabicLayout ? 'justify-start' : 'justify-end'}`}>
+              <button
+                type="submit"
+                disabled={staffLoading}
+                className={`flex items-center gap-2 bg-primary-gradient text-white px-8 py-3 rounded-xl font-semibold shadow-lg hover:shadow-xl transform hover:-translate-y-0.5 transition-all disabled:opacity-50 ${iconRow}`}
+              >
+                <UserPlus className="w-5 h-5 shrink-0" />
+                <span>
+                  {staffLoading
+                    ? t('common.loading', 'Loading...')
+                    : t('settings.staffUser.submit', 'Create Staff User')}
+                </span>
+              </button>
+            </div>
+          </form>
+
+          <div className="mt-8 pt-6 border-t border-gray-200">
+            <div className={`flex items-center justify-between gap-3 mb-3 ${iconRow}`}>
+              <h3 className={`text-lg font-bold text-gray-900 ${alignStart}`}>
+                {t('settings.staffUser.listTitle', 'Staff users')}
+              </h3>
+              <button
+                type="button"
+                onClick={loadStaffUsers}
+                className="text-sm font-semibold text-primary-700 hover:underline"
+              >
+                {t('common.refresh', 'Refresh')}
+              </button>
+            </div>
+            {staffListError && (
+              <div className={`text-sm text-red-700 bg-red-50 border border-red-200 rounded-xl px-4 py-3 mb-3 ${alignStart}`}>
+                {staffListError}
+              </div>
+            )}
+            {staffListLoading ? (
+              <div className={`text-sm text-gray-600 ${alignStart}`}>{t('common.loading', 'Loading...')}</div>
+            ) : !staffUsers.length ? (
+              <div className={`text-sm text-gray-600 ${alignStart}`}>
+                {t('settings.staffUser.none', 'No staff users found.')}
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {staffUsers.map((u) => (
+                  <div key={u.id} className="border border-gray-200 rounded-xl p-4 bg-gray-50">
+                    <div className={`flex flex-wrap items-start justify-between gap-3 ${iconRow}`}>
+                      <div className={alignStart}>
+                        <div className="font-semibold text-gray-900">{u.name || '—'}</div>
+                        <div className="text-sm text-gray-600" dir="ltr">
+                          {u.email || '—'}
+                        </div>
+                        <div className="text-xs text-gray-500 mt-1">
+                          {Array.isArray(u.menu_permissions) && u.menu_permissions.length
+                            ? t('settings.staffUser.menusCount', {
+                                defaultValue: '{{n}} menus',
+                                n: u.menu_permissions.length,
+                              })
+                            : t('settings.staffUser.fullMenus', 'Full menu access')}
+                        </div>
+                      </div>
+                      <div className={`flex gap-2 ${iconRow}`}>
+                        {editingStaffId === u.id ? (
+                          <>
+                            <button
+                              type="button"
+                              disabled={staffSaveBusy}
+                              onClick={() => saveStaffMenus(u.id)}
+                              className="px-3 py-1.5 rounded-lg text-sm font-semibold bg-primary-600 text-white disabled:opacity-50"
+                            >
+                              {t('common.save', 'Save')}
+                            </button>
+                            <button
+                              type="button"
+                              disabled={staffSaveBusy}
+                              onClick={() => setEditingStaffId(null)}
+                              className="px-3 py-1.5 rounded-lg text-sm font-medium border border-gray-300 text-gray-700"
+                            >
+                              {t('common.cancel', 'Cancel')}
+                            </button>
+                          </>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => startEditMenus(u)}
+                            className="px-3 py-1.5 rounded-lg text-sm font-semibold border border-gray-300 text-primary-700 hover:bg-white"
+                          >
+                            {t('settings.staffUser.editMenus', 'Edit menus')}
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                    {editingStaffId === u.id && (
+                      <div className="mt-4">
+                        <MenuPermissionsPicker
+                          value={editingMenus}
+                          onChange={setEditingMenus}
+                          disabled={staffSaveBusy}
+                        />
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         </div>
       )}
