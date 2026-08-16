@@ -52,7 +52,7 @@ export function examSubmissionScoreOutOf100(submission, exam) {
 export function isExamSubmissionGradable(submission) {
   if (!submission) return false
   const data = submission.submission_data
-  // Pending instructor re-exam: current row is empty; do not reuse archived attempt scores.
+  // Pending instructor re-exam: current row is empty until they submit again.
   if (submission.status === 'EX_DRF' && data?.instructor_retake) return false
   if (submission.status === 'EX_SUB' || submission.status === 'EX_GRD') return true
   // Stuck drafts: finished attempt never flipped off EX_DRF (missing submitted/autoGrade flags)
@@ -174,6 +174,47 @@ function subjKey(studentId, subjectId) {
   return `${Number(studentId)}::subj::${Number(subjectId)}`
 }
 
+/** Latest completed attempt: current row if graded, otherwise archived re-exam history. */
+function latestCompletedExamScore(sub, exam) {
+  let bestScore = null
+  let bestAt = 0
+
+  const consider = (submissionLike, atRaw) => {
+    const score = examSubmissionScoreOutOf100(submissionLike, exam)
+    if (score == null) return
+    const at = atRaw ? new Date(atRaw).getTime() : 0
+    if (bestScore == null || at >= bestAt) {
+      bestScore = score
+      bestAt = at
+    }
+  }
+
+  if (isExamSubmissionGradable(sub)) {
+    consider(sub, sub.submitted_at)
+  }
+
+  const prev = sub?.submission_data?.previous_attempts
+  if (Array.isArray(prev)) {
+    for (const attempt of prev) {
+      consider(
+        {
+          points_earned: attempt.points_earned,
+          grade: attempt.grade,
+          submitted_at: attempt.submitted_at,
+          submission_data: {
+            autoGrade: attempt.autoGrade,
+            answers: attempt.answers,
+          },
+        },
+        attempt.submitted_at,
+      )
+    }
+  }
+
+  if (bestScore == null) return null
+  return { score: bestScore, at: bestAt }
+}
+
 function collectLatestExamScores(subs, examById) {
   const byEnrollment = {}
   const byStudentClass = {}
@@ -199,14 +240,13 @@ function collectLatestExamScores(subs, examById) {
   }
 
   for (const sub of subs || []) {
-    if (!isExamSubmissionGradable(sub)) continue
     const exam = examById[sub.exam_id]
     if (!exam) continue
     const col = examTypeToGradeColumn(exam.exam_type)
     if (!GRADE_COMPONENT_DB_COLUMNS.includes(col)) continue
-    const score = examSubmissionScoreOutOf100(sub, exam)
-    if (score == null) continue
-    const at = sub.submitted_at ? new Date(sub.submitted_at).getTime() : 0
+    const latest = latestCompletedExamScore(sub, exam)
+    if (!latest) continue
+    const { score, at } = latest
 
     const enrId = sub.enrollment_id != null && sub.enrollment_id !== ''
       ? Number(sub.enrollment_id)
@@ -299,31 +339,39 @@ export function examScoresForEnrollment(examData, enrollment) {
       ? subjKey(enrollment.student_id, subjectId)
       : null
 
-  const scores =
-    (Number.isFinite(numId) ? byEnrollment[numId] : null) ||
-    byEnrollment[id] ||
-    byEnrollment[String(id)] ||
-    (sc ? byStudentClass[sc] : null) ||
-    (sk ? byStudentSubject[sk] : null) ||
-    {}
+  const peakAt = (atMap, overall) => {
+    const times = Object.values(atMap || {}).map(Number).filter((n) => Number.isFinite(n))
+    const fromMap = times.length ? Math.max(...times) : 0
+    return Math.max(fromMap, Number(overall?.at) || 0)
+  }
 
-  const overall =
-    (Number.isFinite(numId) ? latestOverall[numId] : null) ||
-    latestOverall[id] ||
-    (sc ? latestOverallSC[sc] : null) ||
-    (sk ? latestOverallSubj[sk] : null) ||
-    null
+  const candidates = []
+  const push = (scores, overall, atMap) => {
+    if ((!scores || !Object.keys(scores).length) && overall == null) return
+    candidates.push({
+      scores: scores || {},
+      overall: overall || null,
+      at: peakAt(atMap, overall),
+    })
+  }
 
-  const atMap =
-    (Number.isFinite(numId) ? latestAt[numId] : null) ||
-    latestAt[id] ||
-    (sc ? latestAtSC[sc] : null) ||
-    (sk ? latestAtSubj[sk] : null) ||
-    {}
-  const times = Object.values(atMap || {}).map(Number).filter((n) => Number.isFinite(n))
-  const examAt = overall?.at || (times.length ? Math.max(...times) : 0)
-  const latestPercent = overall?.score != null ? Number(overall.score) : null
-  return { scores, examAt, latestPercent }
+  if (Number.isFinite(numId)) {
+    push(
+      byEnrollment[numId] || byEnrollment[id] || byEnrollment[String(id)],
+      latestOverall[numId] || latestOverall[id] || latestOverall[String(id)],
+      latestAt[numId] || latestAt[id] || latestAt[String(id)],
+    )
+  }
+  if (sc) push(byStudentClass[sc], latestOverallSC[sc], latestAtSC[sc])
+  if (sk) push(byStudentSubject[sk], latestOverallSubj[sk], latestAtSubj[sk])
+
+  if (!candidates.length) {
+    return { scores: {}, examAt: 0, latestPercent: null }
+  }
+  candidates.sort((a, b) => (b.at || 0) - (a.at || 0))
+  const best = candidates[0]
+  const latestPercent = best.overall?.score != null ? Number(best.overall.score) : null
+  return { scores: best.scores, examAt: best.at || 0, latestPercent }
 }
 
 async function resolveMissingEnrollmentIds(subs, examById) {
