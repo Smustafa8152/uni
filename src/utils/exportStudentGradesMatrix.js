@@ -79,6 +79,73 @@ function scoreFill(score) {
   return C.rowD
 }
 
+function normUniversityId(value) {
+  return String(value || '')
+    .replace(/^STU/i, '')
+    .replace(/[\s\-]/g, '')
+    .toLowerCase()
+}
+
+function normPersonName(person) {
+  const parts = [
+    person?.name_en,
+    person?.name_ar,
+    [person?.first_name, person?.last_name].filter(Boolean).join(' '),
+    [person?.first_name_ar, person?.last_name_ar].filter(Boolean).join(' '),
+  ]
+    .map((v) => String(v || '').replace(/\s+/g, ' ').trim().toLowerCase())
+    .filter(Boolean)
+  return parts[0] || ''
+}
+
+function studentIdsFromExamData(examData) {
+  const ids = new Set()
+  const addFromKeys = (obj) => {
+    Object.keys(obj || {}).forEach((key) => {
+      const n = Number(String(key).split('::')[0])
+      if (Number.isFinite(n)) ids.add(n)
+    })
+  }
+  addFromKeys(examData?.byStudentClass)
+  addFromKeys(examData?.byStudentSubject)
+  addFromKeys(examData?.latestOverallSC)
+  addFromKeys(examData?.latestOverallSubj)
+  return [...ids]
+}
+
+async function fetchStudentsByIds(ids) {
+  const uniq = [...new Set((ids || []).map(Number).filter((n) => Number.isFinite(n)))]
+  const rows = []
+  for (let i = 0; i < uniq.length; i += 80) {
+    const { data, error } = await supabase
+      .from('students')
+      .select('id, student_id, name_en, name_ar, first_name, last_name, first_name_ar, last_name_ar')
+      .in('id', uniq.slice(i, i + 80))
+    if (error) throw error
+    rows.push(...(data || []))
+  }
+  return rows
+}
+
+/** Map an exported student row onto the exam_submissions student when IDs differ (duplicate records). */
+function examLookupIdForStudent(student, examStudents) {
+  const pk = Number(student?.id)
+  if (!examStudents?.length) return Number.isFinite(pk) ? pk : null
+  if (examStudents.some((s) => Number(s.id) === pk)) return pk
+  const uni = normUniversityId(student?.student_id)
+  if (uni) {
+    const hit = examStudents.find((s) => normUniversityId(s.student_id) === uni)
+    if (hit) return Number(hit.id)
+  }
+  const name = normPersonName(student)
+  if (name) {
+    const hits = examStudents.filter((s) => normPersonName(s) === name)
+    const unique = [...new Set(hits.map((s) => Number(s.id)))]
+    if (unique.length === 1) return unique[0]
+  }
+  return Number.isFinite(pk) ? pk : null
+}
+
 function scoreColor(score) {
   if (score == null) return C.muted
   if (score >= 90) return C.pass
@@ -293,7 +360,8 @@ export async function exportStudentGradesMatrixExcel({
       size: 10,
     })
 
-    const bySubject = gradesByStudent?.[stu.id] || {}
+    const bySubject =
+      gradesByStudent?.[stu.id] || gradesByStudent?.[Number(stu.id)] || gradesByStudent?.[String(stu.id)] || {}
     subjectList.forEach((subj, i) => {
       const start = 3 + i * 3
       const g = bySubject[subj.id] || {}
@@ -317,7 +385,11 @@ export async function exportStudentGradesMatrixExcel({
       })
     })
 
-    const overall = gradesByStudent?.[stu.id]?.__overall || {}
+    const overall =
+      gradesByStudent?.[stu.id]?.__overall ||
+      gradesByStudent?.[Number(stu.id)]?.__overall ||
+      gradesByStudent?.[String(stu.id)]?.__overall ||
+      {}
     const oScore = overall.score != null ? Number(overall.score) : null
     const oFill = oScore != null ? scoreFill(oScore) : zebra
     setCell(ws.getCell(r, overallStart), oScore != null ? oScore : '—', {
@@ -423,7 +495,9 @@ export async function loadStudentGradesExportData({
     return { students: [], subjects: [], gradesByStudent: {} }
   }
 
-  const studentIdSet = new Set(studentList.map((s) => s.id))
+  const studentIdSet = new Set(
+    studentList.map((s) => Number(s.id)).filter((id) => Number.isFinite(id)),
+  )
   const enrollments = []
   const chunkSize = 40
   for (let i = 0; i < classIds.length; i += chunkSize) {
@@ -433,15 +507,16 @@ export async function loadStudentGradesExportData({
     for (;;) {
       let q = supabase
         .from('enrollments')
-        .select('id, student_id, semester_id, class_id, numeric_grade, grade_points, grade')
-        .eq('status', 'enrolled')
+        .select('id, student_id, semester_id, class_id, numeric_grade, grade_points, grade, status')
         .in('class_id', chunk)
       if (semesterIds) q = q.in('semester_id', semesterIds)
       const { data, error } = await q.range(from, from + page - 1)
       if (error) throw error
       if (!data?.length) break
       for (const e of data) {
-        if (studentIdSet.has(e.student_id)) enrollments.push(e)
+        const st = String(e.status || '').toLowerCase()
+        if (st && st !== 'enrolled' && st !== 'completed' && st !== 'passed') continue
+        if (studentIdSet.has(Number(e.student_id))) enrollments.push(e)
       }
       if (data.length < page) break
       from += page
@@ -460,29 +535,21 @@ export async function loadStudentGradesExportData({
     for (const gc of gcs || []) gcByEnrollment.set(gc.enrollment_id, gc)
   }
 
-  let examData = { byEnrollment: {}, byStudentClass: {}, latestAt: {}, latestAtSC: {} }
+  let examData = {}
   try {
-  try {
-    const classIdsForExams = [...new Set(enrollments.map((e) => e.class_id).filter(Boolean))]
     const subjectIdsForExams = [
       ...new Set((classRows || []).map((c) => c.subject_id).filter(Boolean)),
     ]
-    examData = await fetchExamScoresByClassIds(classIdsForExams, { subjectIds: subjectIdsForExams })
-  } catch (examErr) {
-    console.warn('loadStudentGradesExportData exam overlay', examErr)
-  }
+    examData = await fetchExamScoresByClassIds(classIds, { subjectIds: subjectIdsForExams })
   } catch (examErr) {
     console.warn('loadStudentGradesExportData exam overlay', examErr)
   }
 
-  // subjectId → best enrollment per student
   const gradesByStudent = {}
   const subjectMap = new Map()
 
-  for (const e of enrollments) {
-    const cls = classById.get(e.class_id)
-    const subj = cls?.subjects
-    if (!subj?.id) continue
+  const rememberSubject = (subj) => {
+    if (!subj?.id || subjectMap.has(subj.id)) return
     const credits = Number(subj.credit_hours) > 0 ? Number(subj.credit_hours) : 1
     subjectMap.set(subj.id, {
       id: subj.id,
@@ -494,19 +561,64 @@ export async function loadStudentGradesExportData({
       name_ar: subj.name_ar,
       creditHours: credits,
     })
+  }
 
-    const gcRaw = gcByEnrollment.get(e.id) || null
+  for (const c of classRows || []) rememberSubject(c.subjects)
+
+  const applyCell = (studentId, subj, cell) => {
+    const sid = Number(studentId)
+    if (!Number.isFinite(sid) || !subj?.id) return
+    if (!gradesByStudent[sid]) gradesByStudent[sid] = {}
+    const prev = gradesByStudent[sid][subj.id]
+    if (!prev) {
+      gradesByStudent[sid][subj.id] = cell
+      return
+    }
+    const prevHas = prev.score != null && !Number.isNaN(Number(prev.score))
+    const cellHas = cell.score != null && !Number.isNaN(Number(cell.score))
+    // Never let an empty enrollment row wipe a real exam/gradebook score.
+    if (cellHas && !prevHas) {
+      gradesByStudent[sid][subj.id] = cell
+      return
+    }
+    if (!cellHas && prevHas) return
+    if ((cell.examAt || 0) > (prev.examAt || 0)) {
+      gradesByStudent[sid][subj.id] = cell
+      return
+    }
+    if ((cell.examAt || 0) === (prev.examAt || 0) && (cell.semester_id || 0) > (prev.semester_id || 0)) {
+      gradesByStudent[sid][subj.id] = cell
+    }
+  }
+
+  const cellFromPercent = (percent, credits, extra = {}) => {
+    const score = percent != null && !Number.isNaN(Number(percent)) ? Number(percent) : null
+    return {
+      score,
+      letter: score != null ? getLetterFromPercent(score, gradingScale) : extra.letter || null,
+      gpa: score != null ? numericGradeToGpaPoints(score, gradingScale) : extra.gpa ?? null,
+      credits,
+      semester_id: extra.semester_id || 0,
+      examAt: extra.examAt || 0,
+    }
+  }
+
+  for (const e of enrollments) {
+    const cls = classById.get(e.class_id) || classById.get(Number(e.class_id))
+    const subj = cls?.subjects
+    if (!subj?.id) continue
+    rememberSubject(subj)
+    const credits = Number(subj.credit_hours) > 0 ? Number(subj.credit_hours) : 1
+
+    const gcRaw = gcByEnrollment.get(e.id) || gcByEnrollment.get(Number(e.id)) || null
     const { scores, examAt, latestPercent } = examScoresForEnrollment(examData, {
       ...e,
-      subject_id: cls.subject_id,
+      subject_id: cls.subject_id || subj.id,
     })
     const gc = overlayExamScoresOnGradeComponent(gcRaw, scores, gradingScale)
-
     const enrollment = {
       ...e,
-      classes: cls
-        ? { id: cls.id, subject_id: cls.subject_id, subjects: subj }
-        : null,
+      classes: cls ? { id: cls.id, subject_id: cls.subject_id, subjects: subj } : null,
       grade_components: gc,
     }
     const comp = normalizeGradeComponent(enrollment.grade_components)
@@ -514,8 +626,7 @@ export async function loadStudentGradesExportData({
     const examVals = Object.values(scores || {})
       .map(Number)
       .filter((n) => !Number.isNaN(n))
-    // One online exam (typical): exported score is the latest attempt %, not the stale gradebook cell.
-    const useExamPercent = latestPercent != null && examVals.length <= 1
+    const useExamPercent = latestPercent != null && (examVals.length <= 1 || gc?.numeric_grade == null)
     const scoreRaw = useExamPercent
       ? latestPercent
       : comp?.numeric_grade ?? comp?.final ?? enrollment.numeric_grade ?? null
@@ -523,33 +634,70 @@ export async function loadStudentGradesExportData({
       scoreRaw != null && scoreRaw !== '' && !Number.isNaN(Number(scoreRaw))
         ? Number(scoreRaw)
         : null
-    const cell = {
-      score,
-      letter: useExamPercent
-        ? getLetterFromPercent(score, gradingScale) || letter
-        : comp?.letter_grade || letter || enrollment.grade || null,
-      gpa: useExamPercent
-        ? numericGradeToGpaPoints(score, gradingScale)
-        : points,
-      credits,
-      semester_id: e.semester_id || 0,
-      examAt: examAt || 0,
-    }
+    applyCell(
+      e.student_id,
+      subj,
+      cellFromPercent(score, credits, {
+        letter: useExamPercent ? null : comp?.letter_grade || letter || enrollment.grade,
+        gpa: useExamPercent ? null : points,
+        semester_id: e.semester_id || 0,
+        examAt: examAt || 0,
+      }),
+    )
+  }
 
-    if (!gradesByStudent[e.student_id]) gradesByStudent[e.student_id] = {}
-    const prev = gradesByStudent[e.student_id][subj.id]
-    if (!prev) {
-      gradesByStudent[e.student_id][subj.id] = cell
-    } else if ((cell.semester_id || 0) > (prev.semester_id || 0)) {
-      gradesByStudent[e.student_id][subj.id] = cell
-    } else if ((cell.semester_id || 0) === (prev.semester_id || 0)) {
-      if ((cell.examAt || 0) > (prev.examAt || 0)) {
-        gradesByStudent[e.student_id][subj.id] = cell
-      } else if (!(prev.examAt || 0) && cell.score != null && prev.score == null) {
-        gradesByStudent[e.student_id][subj.id] = cell
-      }
+  let examStudents = []
+  try {
+    examStudents = await fetchStudentsByIds(studentIdsFromExamData(examData))
+  } catch (stuErr) {
+    console.warn('loadStudentGradesExportData exam students', stuErr)
+  }
+
+  // Any student with an exam attempt (original or re-exam) must appear, even if enrollment/gradebook matching failed.
+  for (const s of studentList) {
+    const sid = Number(s.id)
+    const examStudentId = examLookupIdForStudent(s, examStudents)
+    for (const subj of subjectMap.values()) {
+      const existing = gradesByStudent[sid]?.[subj.id]
+      if (existing?.score != null) continue
+      const { latestPercent, examAt } = examScoresForEnrollment(examData, {
+        student_id: examStudentId,
+        subject_id: subj.id,
+      })
+      if (latestPercent == null) continue
+      applyCell(
+        sid,
+        subj,
+        cellFromPercent(latestPercent, subj.creditHours || 1, { examAt }),
+      )
     }
   }
+
+  const listedIds = new Set(studentList.map((s) => Number(s.id)).filter((n) => Number.isFinite(n)))
+  const extraExamStudents = examStudents.filter((s) => {
+    const pk = Number(s.id)
+    if (!Number.isFinite(pk) || listedIds.has(pk)) return false
+    return [...subjectMap.values()].some((subj) => {
+      const { latestPercent } = examScoresForEnrollment(examData, {
+        student_id: pk,
+        subject_id: subj.id,
+      })
+      return latestPercent != null
+    })
+  })
+  for (const s of extraExamStudents) {
+    const sid = Number(s.id)
+    for (const subj of subjectMap.values()) {
+      const { latestPercent, examAt } = examScoresForEnrollment(examData, {
+        student_id: sid,
+        subject_id: subj.id,
+      })
+      if (latestPercent == null) continue
+      applyCell(sid, subj, cellFromPercent(latestPercent, subj.creditHours || 1, { examAt }))
+    }
+  }
+
+  const allStudentsForExport = [...studentList, ...extraExamStudents]
 
   // Only include subjects that appear in data (or forced single subject)
   let subjectsOut = [...subjectMap.values()].sort((a, b) =>
@@ -590,7 +738,7 @@ export async function loadStudentGradesExportData({
   })
 
   // Only students who have at least one grade when exporting, or all filtered students
-  const exportStudents = studentList
+  const exportStudents = allStudentsForExport
     .map((s) => ({
       id: s.id,
       studentId: String(s.student_id || '').replace(/^STU/i, ''),

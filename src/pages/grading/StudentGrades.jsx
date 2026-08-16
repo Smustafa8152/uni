@@ -274,7 +274,7 @@ export default function StudentGrades() {
 
         let examData = {}
         try {
-          examData = await fetchExamScoresByClassIds(classIds)
+          examData = await fetchExamScoresByClassIds(classIds, { subjectIds: [subjectId] })
         } catch (examErr) {
           console.warn('StudentGrades exam overlay', examErr)
         }
@@ -283,7 +283,10 @@ export default function StudentGrades() {
         const byStudent = {}
         for (const e of enrollments) {
           const cls = classById.get(e.class_id)
-          const { scores, examAt } = examScoresForEnrollment(examData, e)
+          const { scores, examAt } = examScoresForEnrollment(examData, {
+            ...e,
+            subject_id: cls?.subject_id,
+          })
           const row = {
             ...e,
             examAt,
@@ -413,7 +416,10 @@ export default function StudentGrades() {
   )
 
   const getSubjectGradeRow = (studentId) => {
-    const enrollment = subjectGradeByStudent[studentId]
+    const enrollment =
+      subjectGradeByStudent[studentId] ||
+      subjectGradeByStudent[Number(studentId)] ||
+      subjectGradeByStudent[String(studentId)]
     if (!enrollment) return null
     const comp = normalizeGradeComponent(enrollment.grade_components)
     const { points, letter } = getSubjectGpaFromEnrollment(enrollment, gradingScale)
