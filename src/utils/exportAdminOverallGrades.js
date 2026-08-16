@@ -1,7 +1,17 @@
 import * as XLSX from 'xlsx'
 import { supabase } from '../lib/supabase'
-import { GRADE_COMPONENT_DB_COLUMNS } from './getCollegeSettings'
-import { examTypeToGradeColumn } from './syncExamGradesToGradebook'
+import {
+  GRADE_COMPONENT_DB_COLUMNS,
+  getGradingScaleFromUniversitySettings,
+  numericGradeToGpaPoints,
+} from './getCollegeSettings'
+import { getLetterFromPercent } from './instructorGradeSheet'
+import {
+  examTypeToGradeColumn,
+  fetchExamScoresByClassIds,
+  overlayExamScoresOnGradeComponent,
+  examScoresForEnrollment,
+} from './syncExamGradesToGradebook'
 
 function stamp() {
   const d = new Date()
@@ -24,7 +34,7 @@ async function fetchOverallGradeRows({ semesterId = null } = {}) {
     .select(
       `
       id, section, code, semester_id, college_id, instructor_id, status,
-      subjects(id, code, name_en, name_ar),
+      subjects(id, code, name_en, name_ar, credit_hours),
       semesters(id, name_en, name_ar, academic_year),
       colleges(id, name_en, name_ar),
       instructors(id, name_en, name_ar)
@@ -36,7 +46,7 @@ async function fetchOverallGradeRows({ semesterId = null } = {}) {
 
   const { data: classes, error: cErr } = await classQuery
   if (cErr) throw cErr
-  if (!classes?.length) return []
+  if (!classes?.length) return { overallRows: [], semesterOverallRows: [] }
 
   const classIds = classes.map((c) => c.id)
   const classById = Object.fromEntries(classes.map((c) => [c.id, c]))
@@ -57,7 +67,7 @@ async function fetchOverallGradeRows({ semesterId = null } = {}) {
     enrollments.push(...(data || []))
   }
 
-  if (!enrollments.length) return []
+  if (!enrollments.length) return { overallRows: [], semesterOverallRows: [] }
 
   const enrollmentIds = enrollments.map((e) => e.id)
   const gradesByEnrollment = {}
@@ -69,14 +79,39 @@ async function fetchOverallGradeRows({ semesterId = null } = {}) {
     })
   }
 
-  return enrollments.map((e) => {
+  let examData = {}
+  try {
+    examData = await fetchExamScoresByClassIds(classIds)
+  } catch (examErr) {
+    console.warn('fetchOverallGradeRows exam overlay', examErr)
+  }
+
+  const gradingScale = await getGradingScaleFromUniversitySettings()
+
+  const overallRows = enrollments.map((e) => {
     const cls = classById[e.class_id] || {}
-    const g = gradesByEnrollment[e.id] || {}
+    const { scores } = examScoresForEnrollment(examData, e)
+    const g = overlayExamScoresOnGradeComponent(
+      gradesByEnrollment[e.id] || {},
+      scores,
+      gradingScale,
+    ) || {}
     const st = e.students || {}
+    const credits = Number(cls.subjects?.credit_hours) > 0 ? Number(cls.subjects.credit_hours) : 1
+    const numeric = g.numeric_grade != null && g.numeric_grade !== '' ? Number(g.numeric_grade) : null
+    const gpa =
+      g.gpa_points != null && g.gpa_points !== ''
+        ? Number(g.gpa_points)
+        : numeric != null
+          ? numericGradeToGpaPoints(numeric, gradingScale)
+          : null
     const row = {
       College: cls.colleges?.name_en || cls.colleges?.name_ar || '',
       Semester: cls.semesters?.name_en || cls.semesters?.name_ar || '',
       'Academic year': cls.semesters?.academic_year || '',
+      semester_id: cls.semester_id || '',
+      student_db_id: e.student_id,
+      Credits: credits,
       'Subject code': cls.subjects?.code || '',
       'Subject name': cls.subjects?.name_en || cls.subjects?.name_ar || '',
       Section: cls.section || cls.code || '',
@@ -89,13 +124,65 @@ async function fetchOverallGradeRows({ semesterId = null } = {}) {
     GRADE_COMPONENT_DB_COLUMNS.forEach((col) => {
       row[col] = g[col] != null ? Number(g[col]) : ''
     })
-    row.numeric_grade = g.numeric_grade != null ? Number(g.numeric_grade) : ''
-    row.letter_grade = g.letter_grade || ''
-    row.gpa_points = g.gpa_points != null ? Number(g.gpa_points) : ''
+    row.numeric_grade = numeric != null ? numeric : ''
+    row.letter_grade = g.letter_grade || (numeric != null ? getLetterFromPercent(numeric, gradingScale) : '')
+    row.gpa_points = gpa != null ? gpa : ''
     row.grade_status = g.status || ''
     row.record_status = g.record_status || ''
     return row
   })
+
+  const byStudentSemester = new Map()
+  for (const row of overallRows) {
+    const key = `${row.student_db_id}::${row.semester_id || row.Semester}`
+    if (!byStudentSemester.has(key)) {
+      byStudentSemester.set(key, {
+        College: row.College,
+        Semester: row.Semester,
+        'Academic year': row['Academic year'],
+        'Student ID': row['Student ID'],
+        'Student name': row['Student name'],
+        Email: row.Email,
+        scoreWeight: 0,
+        scoreCredits: 0,
+        gpaWeight: 0,
+        gpaCredits: 0,
+        subjects: 0,
+      })
+    }
+    const agg = byStudentSemester.get(key)
+    agg.subjects += 1
+    const credits = Number(row.Credits) || 1
+    if (row.numeric_grade !== '' && row.numeric_grade != null) {
+      agg.scoreWeight += Number(row.numeric_grade) * credits
+      agg.scoreCredits += credits
+    }
+    if (row.gpa_points !== '' && row.gpa_points != null) {
+      agg.gpaWeight += Number(row.gpa_points) * credits
+      agg.gpaCredits += credits
+    }
+  }
+
+  const semesterOverallRows = [...byStudentSemester.values()].map((agg) => {
+    const overallScore =
+      agg.scoreCredits > 0 ? Math.round((agg.scoreWeight / agg.scoreCredits) * 100) / 100 : null
+    const overallGpa =
+      agg.gpaCredits > 0 ? Math.round((agg.gpaWeight / agg.gpaCredits) * 100) / 100 : null
+    return {
+      College: agg.College,
+      Semester: agg.Semester,
+      'Academic year': agg['Academic year'],
+      'Student ID': agg['Student ID'],
+      'Student name': agg['Student name'],
+      Email: agg.Email,
+      Subjects: agg.subjects,
+      'Overall score': overallScore != null ? overallScore : '',
+      'Overall grade': overallScore != null ? getLetterFromPercent(overallScore, gradingScale) : '',
+      'Semester GPA': overallGpa != null ? overallGpa : '',
+    }
+  })
+
+  return { overallRows, semesterOverallRows }
 }
 
 /**
@@ -135,7 +222,7 @@ async function fetchOnlineExamRows({ semesterId = null } = {}) {
     const { data, error } = await supabase
       .from('exam_submissions')
       .select(
-        'id, exam_id, student_id, status, points_earned, grade, started_at, submitted_at, students(student_id, name_en, name_ar, email)',
+        'id, exam_id, student_id, status, points_earned, grade, started_at, submitted_at, submission_data, students(student_id, name_en, name_ar, email)',
       )
       .in('exam_id', ids)
     if (error) throw error
@@ -158,7 +245,9 @@ async function fetchOnlineExamRows({ semesterId = null } = {}) {
     'Scheduled date': ex.scheduled_date || '',
   }))
 
-  const attemptRows = submissions.map((s) => {
+  const attemptRows = submissions
+    .filter((s) => !(s.status === 'EX_DRF' && s.submission_data?.instructor_retake))
+    .map((s) => {
     const ex = examById[s.exam_id] || {}
     const st = s.students || {}
     return {
@@ -185,6 +274,13 @@ async function fetchOnlineExamRows({ semesterId = null } = {}) {
   return { examCatalog, attemptRows }
 }
 
+function publicOverallRows(rows) {
+  return (rows || []).map((row) => {
+    const { semester_id, student_db_id, ...rest } = row
+    return rest
+  })
+}
+
 function sheetFromRows(rows, sheetName) {
   if (!rows?.length) {
     return XLSX.utils.aoa_to_sheet([['No data']])
@@ -197,13 +293,19 @@ function sheetFromRows(rows, sheetName) {
  * @returns {{ overallCount: number, examCount: number, attemptCount: number }}
  */
 export async function exportAdminOverallGradesExcel({ semesterId = null, filename } = {}) {
-  const [overallRows, examData] = await Promise.all([
+  const [gradeData, examData] = await Promise.all([
     fetchOverallGradeRows({ semesterId }),
     fetchOnlineExamRows({ semesterId }),
   ])
 
+  const overallRows = publicOverallRows(gradeData.overallRows)
   const wb = XLSX.utils.book_new()
   XLSX.utils.book_append_sheet(wb, sheetFromRows(overallRows, 'Overall grades'), 'Overall grades')
+  XLSX.utils.book_append_sheet(
+    wb,
+    sheetFromRows(gradeData.semesterOverallRows, 'Semester overall'),
+    'Semester overall',
+  )
   XLSX.utils.book_append_sheet(wb, sheetFromRows(examData.examCatalog, 'Exams'), 'All exams')
   XLSX.utils.book_append_sheet(wb, sheetFromRows(examData.attemptRows, 'Exam attempts'), 'Exam attempts')
 
@@ -212,6 +314,7 @@ export async function exportAdminOverallGradesExcel({ semesterId = null, filenam
 
   return {
     overallCount: overallRows.length,
+    semesterOverallCount: gradeData.semesterOverallRows.length,
     examCount: examData.examCatalog.length,
     attemptCount: examData.attemptRows.length,
     filename: name,
@@ -222,7 +325,8 @@ export async function exportAdminOverallGradesExcel({ semesterId = null, filenam
  * CSV-only overall grades (single sheet).
  */
 export async function exportAdminOverallGradesCsv({ semesterId = null, filename } = {}) {
-  const rows = await fetchOverallGradeRows({ semesterId })
+  const { overallRows } = await fetchOverallGradeRows({ semesterId })
+  const rows = publicOverallRows(overallRows)
   const ws = sheetFromRows(rows, 'Overall')
   const csv = XLSX.utils.sheet_to_csv(ws)
   const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' })

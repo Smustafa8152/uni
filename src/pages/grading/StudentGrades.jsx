@@ -16,6 +16,7 @@ import {
   exportStudentGradesMatrixExcel,
   loadStudentGradesExportData,
 } from '../../utils/exportStudentGradesMatrix'
+import { fetchExamScoresByClassIds, overlayExamScoresOnGradeComponent, examScoresForEnrollment } from '../../utils/syncExamGradesToGradebook'
 import { Search, GraduationCap, Download } from 'lucide-react'
 
 export default function StudentGrades() {
@@ -265,18 +266,27 @@ export default function StudentGrades() {
           const chunk = enrollmentIds.slice(i, i + 200)
           const { data: gcs, error: gcErr } = await supabase
             .from('grade_components')
-            .select('enrollment_id, numeric_grade, final, gpa_points, letter_grade')
+            .select('*')
             .in('enrollment_id', chunk)
           if (gcErr) throw gcErr
           for (const gc of gcs || []) gcByEnrollment.set(gc.enrollment_id, gc)
         }
 
-        // 4) Best row per student (highest semester_id wins)
+        let examData = {}
+        try {
+          examData = await fetchExamScoresByClassIds(classIds)
+        } catch (examErr) {
+          console.warn('StudentGrades exam overlay', examErr)
+        }
+
+        // 4) Best row per student (highest semester_id wins; latest exam attempt breaks ties)
         const byStudent = {}
         for (const e of enrollments) {
           const cls = classById.get(e.class_id)
+          const { scores, examAt } = examScoresForEnrollment(examData, e)
           const row = {
             ...e,
+            examAt,
             classes: cls
               ? {
                   id: cls.id,
@@ -284,10 +294,19 @@ export default function StudentGrades() {
                   subjects: cls.subjects,
                 }
               : null,
-            grade_components: gcByEnrollment.get(e.id) || null,
+            grade_components: overlayExamScoresOnGradeComponent(
+              gcByEnrollment.get(e.id) || null,
+              scores,
+              gradingScale,
+            ),
           }
           const sid = e.student_id
-          if (!byStudent[sid] || (e.semester_id || 0) > (byStudent[sid].semester_id || 0)) {
+          const prev = byStudent[sid]
+          if (
+            !prev ||
+            (e.semester_id || 0) > (prev.semester_id || 0) ||
+            ((e.semester_id || 0) === (prev.semester_id || 0) && (examAt || 0) > (prev.examAt || 0))
+          ) {
             byStudent[sid] = row
           }
         }
@@ -305,7 +324,7 @@ export default function StudentGrades() {
     return () => {
       cancelled = true
     }
-  }, [selectedSubjectId, selectedYearId])
+  }, [selectedSubjectId, selectedYearId, gradingScale])
 
   const fetchStudents = async () => {
     if (userRole === 'user' && !authCollegeId) return

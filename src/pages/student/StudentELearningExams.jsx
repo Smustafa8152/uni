@@ -8,6 +8,7 @@ import { getLocalizedName } from '../../utils/localizedName'
 import {
   isExamSubmissionComplete,
   canStudentAttemptExam,
+  canStudentSeeExamScore,
   resolveExamAvailabilityWindow,
   resolveExamDurationMinutes,
   parseLocalDateOnly,
@@ -390,6 +391,23 @@ export default function StudentELearningExams() {
                         {countdown(soonMs)}
                       </div>
                     </>
+                  )}
+                  {canStudentSeeExamScore(ex, ex.submission) && (
+                    <div className="mt-3 px-3 py-2 rounded-lg text-sm" style={{ background: UI.okBg, color: UI.ok }}>
+                      <div className="text-[11px] font-extrabold uppercase tracking-wide">
+                        {t('studentPortal.elearning.score', 'Score')}
+                      </div>
+                      <div className="text-lg font-extrabold" style={{ color: UI.p }}>
+                        {ex.submission.points_earned != null
+                          ? `${ex.submission.points_earned}/${ex.total_points || 0}`
+                          : '—'}
+                      </div>
+                      {ex.submission.grade != null && ex.submission.grade !== '' && (
+                        <div className="text-xs font-bold">
+                          {t('studentPortal.elearning.grade', 'Grade')}: {ex.submission.grade}%
+                        </div>
+                      )}
+                    </div>
                   )}
                 </div>
               </div>

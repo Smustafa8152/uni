@@ -1,3 +1,5 @@
+import { mergeAssessmentSettings, RESULT_VISIBILITY, canShowReviewField } from './assessmentSettings'
+
 /** Default how long an exam stays enterable once published (availability window). */
 export const DEFAULT_AVAILABILITY_HOURS = 24
 
@@ -267,4 +269,39 @@ export function canStudentAttemptExam(exam, submission, now = new Date()) {
       1,
   )
   return used < maxAttempts
+}
+
+/**
+ * Which review-options bucket applies for a submitted attempt.
+ * immediate → immediately_after
+ * after_window (still open) → while_open
+ * after_window (ended) / closed / released → after_closed
+ * manual_release → after_closed only once results are released
+ */
+export function examResultReviewTiming(exam, submission, now = new Date()) {
+  if (!isExamSubmissionComplete(submission)) return null
+  if (submission.status === 'EX_DRF' && submission.submission_data?.instructor_retake) return null
+  const settings = mergeAssessmentSettings(exam?.assessment_settings)
+  const vis = settings.result_visibility
+  if (vis === RESULT_VISIBILITY.IMMEDIATE) return 'immediately_after'
+  if (vis === RESULT_VISIBILITY.MANUAL_RELEASE) {
+    return exam?.status === 'EX_REL' ? 'after_closed' : null
+  }
+  const { end } = resolveExamAvailabilityWindow(exam, submission)
+  const windowOver =
+    exam?.status === 'EX_CLS' ||
+    exam?.status === 'EX_REL' ||
+    (end instanceof Date && !Number.isNaN(end.getTime()) && now >= end)
+  return windowOver ? 'after_closed' : 'while_open'
+}
+
+/** Whether the student may see their score / letter for this exam attempt. */
+export function canStudentSeeExamScore(exam, submission, now = new Date()) {
+  const timing = examResultReviewTiming(exam, submission, now)
+  if (!timing) return false
+  const hasScore =
+    submission?.points_earned != null ||
+    (submission?.grade != null && submission.grade !== '')
+  if (!hasScore) return false
+  return canShowReviewField(exam?.assessment_settings, timing, 'marks')
 }

@@ -66,7 +66,9 @@ export default function InstructorExamMonitor() {
     const headers = ['Student ID', 'Name', 'Status', 'Started', 'Submitted', 'Score']
     const qHeaders = questions.map((_, i) => `Q${i + 1}`)
     const lines = [headers.concat(qHeaders).join(',')]
-    submissions.forEach((s) => {
+    submissions
+      .filter((s) => !(s.status === 'EX_DRF' && s.submission_data?.instructor_retake))
+      .forEach((s) => {
       const st = s.students
       const answers = s.submission_data?.answers || {}
       const row = [

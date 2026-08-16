@@ -6,7 +6,7 @@ import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
 import { checkFinancePermission, getStudentSemesterMilestone } from '../../utils/financePermissions'
 import { getPaymentsEnabled } from '../../utils/getPaymentsEnabled'
-import { isExamEnterableForStudent } from '../../utils/subjectExamDateTime'
+import { isExamEnterableForStudent, canStudentSeeExamScore } from '../../utils/subjectExamDateTime'
 
 import { 
   ArrowLeft, BookOpen, FileText, Video, Download, Upload, CheckCircle, 
@@ -305,12 +305,37 @@ export default function StudentSubjectView() {
 
   const fetchGrades = async (enrollmentId) => {
     try {
-      // Check if grades are visible based on subject rules and student finance
       if (!subject) return
+
+      const examGrades = exams
+        .filter((exam) => canStudentSeeExamScore(exam, exam.submission))
+        .map((exam) => ({
+          type: 'exam',
+          title: exam.title,
+          points: exam.submission.points_earned,
+          total: exam.total_points,
+          grade: exam.submission.grade,
+        }))
+
+      const homeworkGrades = homework
+        .filter((hw) => hw.submission?.points_earned != null)
+        .map((hw) => ({
+          type: 'homework',
+          title: hw.title,
+          points: hw.submission.points_earned,
+          total: hw.total_points,
+          grade: hw.submission.grade,
+        }))
 
       const gradesVisible = checkGradesVisibility()
       if (!gradesVisible) {
-        setGrades({ visible: false, reason: 'Grades are hidden. Complete payment to view grades.' })
+        setGrades({
+          visible: false,
+          reason: 'Official course grades are hidden until they are released.',
+          exams: examGrades,
+          homework: homeworkGrades,
+          components: [],
+        })
         return
       }
 
@@ -321,32 +346,11 @@ export default function StudentSubjectView() {
 
       if (error) throw error
 
-      // Also fetch homework and exam grades
-      const homeworkGrades = homework
-        .filter(hw => hw.submission?.points_earned !== undefined)
-        .map(hw => ({
-          type: 'homework',
-          title: hw.title,
-          points: hw.submission.points_earned,
-          total: hw.total_points,
-          grade: hw.submission.grade
-        }))
-
-      const examGrades = exams
-        .filter(exam => exam.submission?.points_earned !== undefined)
-        .map(exam => ({
-          type: 'exam',
-          title: exam.title,
-          points: exam.submission.points_earned,
-          total: exam.total_points,
-          grade: exam.submission.grade
-        }))
-
       setGrades({
         visible: true,
         components: data || [],
         homework: homeworkGrades,
-        exams: examGrades
+        exams: examGrades,
       })
     } catch (err) {
       console.error('Error fetching grades:', err)
@@ -516,8 +520,11 @@ export default function StudentSubjectView() {
   }
 
   const getExamStatus = (exam) => {
-    if (exam.status === 'EX_REL' && exam.submission?.status === 'EX_GRD') {
+    if (canStudentSeeExamScore(exam, exam.submission)) {
       return { label: 'Results Released', color: 'bg-green-100 text-green-800', canView: true }
+    }
+    if (exam.submission && (exam.submission.status === 'EX_SUB' || exam.submission.status === 'EX_GRD')) {
+      return { label: 'Submitted', color: 'bg-blue-100 text-blue-800', canView: false }
     }
     if (exam.status === 'EX_CLS') return { label: 'Closed', color: 'bg-gray-100 text-gray-800', canView: false }
     if (isExamEnterableForStudent(exam, new Date(), exam.submission)) {
@@ -1069,39 +1076,24 @@ export default function StudentSubjectView() {
           <div className="space-y-4">
             <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
               <h2 className="text-xl font-bold text-gray-900 mb-4">Grades</h2>
-              {grades?.visible ? (
-                <div className="space-y-6">
-                  {/* Overall Grade Component */}
-                  {grades.components && grades.components.length > 0 && (
+              {(grades?.exams?.length > 0 || grades?.homework?.length > 0) && (
+                <div className="space-y-6 mb-6">
+                  {grades.exams?.length > 0 && (
                     <div>
-                      <h3 className="text-lg font-semibold text-gray-900 mb-3">Overall Grade</h3>
+                      <h3 className="text-lg font-semibold text-gray-900 mb-3">Exams</h3>
                       <div className="space-y-2">
-                        {grades.components.map((component, idx) => (
-                          <div key={idx} className="p-4 bg-gray-50 rounded-lg">
-                            <div className="flex items-center justify-between">
-                              <div>
-                                <p className="font-medium text-gray-900">Final Grade</p>
-                                {component.letter_grade && (
-                                  <p className="text-sm text-gray-600">Letter: {component.letter_grade}</p>
-                                )}
-                              </div>
-                              <div className="text-right">
-                                {component.numeric_grade && (
-                                  <p className="text-2xl font-bold text-gray-900">{component.numeric_grade}</p>
-                                )}
-                                {component.gpa_points && (
-                                  <p className="text-sm text-gray-600">GPA: {component.gpa_points}</p>
-                                )}
-                              </div>
-                            </div>
+                        {grades.exams.map((exam, idx) => (
+                          <div key={idx} className="flex items-center justify-between p-3 border border-gray-200 rounded-lg">
+                            <span className="font-medium text-gray-900">{exam.title}</span>
+                            <span className="text-gray-900 font-semibold">
+                              {exam.points} / {exam.total} {exam.grade != null && exam.grade !== '' ? `(${exam.grade}%)` : ''}
+                            </span>
                           </div>
                         ))}
                       </div>
                     </div>
                   )}
-
-                  {/* Homework Grades */}
-                  {grades.homework && grades.homework.length > 0 && (
+                  {grades.homework?.length > 0 && (
                     <div>
                       <h3 className="text-lg font-semibold text-gray-900 mb-3">Homework</h3>
                       <div className="space-y-2">
@@ -1116,18 +1108,32 @@ export default function StudentSubjectView() {
                       </div>
                     </div>
                   )}
-
-                  {/* Exam Grades */}
-                  {grades.exams && grades.exams.length > 0 && (
+                </div>
+              )}
+              {grades?.visible ? (
+                <div className="space-y-6">
+                  {grades.components && grades.components.length > 0 && (
                     <div>
-                      <h3 className="text-lg font-semibold text-gray-900 mb-3">Exams</h3>
+                      <h3 className="text-lg font-semibold text-gray-900 mb-3">Overall Grade</h3>
                       <div className="space-y-2">
-                        {grades.exams.map((exam, idx) => (
-                          <div key={idx} className="flex items-center justify-between p-3 border border-gray-200 rounded-lg">
-                            <span className="font-medium text-gray-900">{exam.title}</span>
-                            <span className="text-gray-900">
-                              {exam.points} / {exam.total} {exam.grade && `(${exam.grade})`}
-                            </span>
+                        {grades.components.map((component, idx) => (
+                          <div key={idx} className="p-4 bg-gray-50 rounded-lg">
+                            <div className="flex items-center justify-between">
+                              <div>
+                                <p className="font-medium text-gray-900">Final Grade</p>
+                                {component.letter_grade && (
+                                  <p className="text-sm text-gray-600">Letter: {component.letter_grade}</p>
+                                )}
+                              </div>
+                              <div className="text-right">
+                                {component.numeric_grade != null && component.numeric_grade !== '' && (
+                                  <p className="text-2xl font-bold text-gray-900">{component.numeric_grade}</p>
+                                )}
+                                {component.gpa_points != null && component.gpa_points !== '' && (
+                                  <p className="text-sm text-gray-600">GPA: {component.gpa_points}</p>
+                                )}
+                              </div>
+                            </div>
                           </div>
                         ))}
                       </div>
@@ -1135,11 +1141,13 @@ export default function StudentSubjectView() {
                   )}
                 </div>
               ) : (
+                !grades?.exams?.length && !grades?.homework?.length && (
                 <div className="text-center py-8">
                   <Lock className="w-12 h-12 text-gray-400 mx-auto mb-4" />
                   <p className="text-gray-600 mb-2">Grades are not available</p>
                   <p className="text-sm text-gray-500">{grades?.reason || 'Complete payment requirements to view grades'}</p>
                 </div>
+                )
               )}
             </div>
           </div>

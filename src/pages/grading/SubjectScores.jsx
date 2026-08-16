@@ -12,6 +12,7 @@ import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
 import { useCollege } from '../../contexts/CollegeContext'
 import { exportSubjectScoresExcel } from '../../utils/exportSubjectScores'
+import { fetchExamScoresByClassIds, overlayExamScoresOnGradeComponent, examScoresForEnrollment } from '../../utils/syncExamGradesToGradebook'
 import { Search, BookOpen, Users, Award, TrendingUp, Percent, Download } from 'lucide-react'
 
 export default function SubjectScores() {
@@ -301,27 +302,40 @@ export default function SubjectScores() {
           const chunk = enrollmentIds.slice(i, i + 200)
           const { data: gcs, error: gcErr } = await supabase
             .from('grade_components')
-            .select('enrollment_id, numeric_grade, final, gpa_points, letter_grade')
+            .select('*')
             .in('enrollment_id', chunk)
           if (gcErr) throw gcErr
           for (const gc of gcs || []) gcByEnrollment.set(gc.enrollment_id, gc)
         }
 
-        // Prefer latest semester per student
+        let examData = {}
+        try {
+          examData = await fetchExamScoresByClassIds(classIds)
+        } catch (examErr) {
+          console.warn('SubjectScores exam overlay', examErr)
+        }
+
+        // Prefer latest semester per student; if tied, the enrollment with the latest exam attempt
         const bestByStudent = new Map()
         for (const e of enrollments) {
           if (!e.students) continue
           if (collegeId && e.students.college_id && Number(e.students.college_id) !== Number(collegeId)) {
             continue
           }
+          const { examAt } = examScoresForEnrollment(examData, e)
           const prev = bestByStudent.get(e.student_id)
-          if (!prev || (e.semester_id || 0) > (prev.semester_id || 0)) {
-            bestByStudent.set(e.student_id, e)
+          if (
+            !prev ||
+            (e.semester_id || 0) > (prev.semester_id || 0) ||
+            ((e.semester_id || 0) === (prev.semester_id || 0) && examAt > (prev._examAt || 0))
+          ) {
+            bestByStudent.set(e.student_id, { ...e, _examAt: examAt })
           }
         }
 
         const built = [...bestByStudent.values()].map((e) => {
           const cls = classById.get(e.class_id)
+          const { scores } = examScoresForEnrollment(examData, e)
           const enrollment = {
             ...e,
             classes: cls
@@ -331,7 +345,11 @@ export default function SubjectScores() {
                   subjects: cls.subjects,
                 }
               : null,
-            grade_components: gcByEnrollment.get(e.id) || null,
+            grade_components: overlayExamScoresOnGradeComponent(
+              gcByEnrollment.get(e.id) || null,
+              scores,
+              gradingScale,
+            ),
           }
           const comp = normalizeGradeComponent(enrollment.grade_components)
           const { points, letter } = getSubjectGpaFromEnrollment(enrollment, gradingScale)
