@@ -55,6 +55,7 @@ serve(async (req) => {
       name?: string
       kind?: 'student' | 'instructor'
       record_id?: number | string
+      menu_permissions?: string[] | null
     }
     try {
       requestData = await req.json()
@@ -65,7 +66,23 @@ serve(async (req) => {
       })
     }
 
-    const { email, password, role, college_id, name, kind, record_id } = requestData
+    const { email, password, role, college_id, name, kind, record_id, menu_permissions } = requestData
+
+    const normalizedMenuPermissions = Array.isArray(menu_permissions)
+      ? [...new Set(menu_permissions.map(String).filter(Boolean))]
+      : menu_permissions === null
+        ? null
+        : undefined
+
+    const menuPermissionPatch =
+      normalizedMenuPermissions !== undefined
+        ? {
+            menu_permissions:
+              normalizedMenuPermissions && normalizedMenuPermissions.length
+                ? normalizedMenuPermissions
+                : null,
+          }
+        : {}
 
     if (!email || !password || !role) {
       return new Response(JSON.stringify({ error: 'Missing required fields: email, password, role' }), {
@@ -133,6 +150,7 @@ serve(async (req) => {
           name: name || emailTrim,
           role,
           college_id: college_id ?? null,
+          ...menuPermissionPatch,
         })
         .eq('id', userPk)
         .select()
@@ -183,6 +201,7 @@ serve(async (req) => {
             role,
             college_id: college_id ?? null,
             email: emailTrim,
+            ...menuPermissionPatch,
           })
           .eq('id', userPk)
           .select()
@@ -261,6 +280,7 @@ serve(async (req) => {
             role,
             college_id: college_id ?? null,
             email: emailTrim,
+            ...menuPermissionPatch,
           })
           .eq('id', byOpenId.id)
           .select()
@@ -295,6 +315,7 @@ serve(async (req) => {
           role,
           college_id: college_id ?? null,
           loginMethod: 'email',
+          ...menuPermissionPatch,
         })
         .select()
         .single()
@@ -328,6 +349,7 @@ serve(async (req) => {
         role,
         college_id: college_id ?? null,
         loginMethod: 'email',
+        ...menuPermissionPatch,
       })
       .select()
       .single()

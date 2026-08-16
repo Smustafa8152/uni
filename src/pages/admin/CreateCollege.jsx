@@ -66,6 +66,9 @@ async function createAdminAccountDirectly(collegeId, formData, serviceRoleKey, s
         role: 'user',
         college_id: collegeId,
         loginMethod: 'email',
+        menu_permissions: formData.admin_menu_permissions?.length
+          ? formData.admin_menu_permissions
+          : null,
       }, {
         onConflict: 'openId'
       })
@@ -839,6 +842,26 @@ export default function CreateCollege() {
     admin_email: '',
     admin_password: '',
     admin_name: '',
+    admin_menu_permissions: [
+      'dashboard',
+      'academicYears',
+      'semesters',
+      'departments',
+      'majors',
+      'subjects',
+      'sessions',
+      'enrollments',
+      'students',
+      'instructors',
+      'schedule',
+      'examinations',
+      'attendance',
+      'gradingManagement',
+      'financeAffairs',
+      'admissions',
+      'studentRequests',
+      'settings',
+    ],
     // Location
     building: '',
     floor: '',
@@ -1394,6 +1417,9 @@ export default function CreateCollege() {
                   role: 'user',
                   college_id: data.id,
                   name: formData.admin_name || formData.dean_name || formData.name_en + ' Admin',
+                  menu_permissions: formData.admin_menu_permissions?.length
+                    ? formData.admin_menu_permissions
+                    : null,
                 },
               })
 

@@ -3,6 +3,7 @@ import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { useAuth } from '../contexts/AuthContext'
 import { useLanguage } from '../contexts/LanguageContext'
+import { filterNavByMenuPermissions } from '../utils/menuPermissions'
 import {
   LayoutDashboard,
   GraduationCap,
@@ -133,7 +134,7 @@ function NavigationItem({ item, location, setSidebarOpen, t, openSubmenuKey, set
 }
 
 const defaultNavigation = [
-  { name: 'Dashboard', translationKey: 'navigation.dashboard', href: '/dashboard', icon: LayoutDashboard, roles: ['admin', 'user', 'instructor', 'student'] },
+  { name: 'Dashboard', translationKey: 'navigation.dashboard', href: '/dashboard', icon: LayoutDashboard, roles: ['admin', 'user', 'instructor', 'student'], menuKey: 'dashboard' },
   {
     name: 'Colleges',
     translationKey: 'navigation.colleges',
@@ -146,17 +147,18 @@ const defaultNavigation = [
       { name: 'Rubric builder', translationKey: 'navigation.rubricBuilderAdmin', href: '/admin/rubric-builder' },
     ],
   },
-  { name: 'Academic Years', translationKey: 'navigation.academicYears', href: '/academic/years', icon: CalendarDays, roles: ['admin', 'user'] },
-  { name: 'Semesters', translationKey: 'navigation.semesters', href: '/academic/semesters', icon: Calendar, roles: ['admin', 'user'] },
-  { name: 'Departments', translationKey: 'navigation.departments', href: '/academic/departments', icon: Building2, roles: ['admin', 'user'] },
-  { name: 'Majors', translationKey: 'navigation.majors', href: '/academic/majors', icon: BookMarked, roles: ['admin', 'user'] },
-  { name: 'Subjects', translationKey: 'navigation.subjects', href: '/academic/subjects', icon: BookOpen, roles: ['admin', 'user'] },
+  { name: 'Academic Years', translationKey: 'navigation.academicYears', href: '/academic/years', icon: CalendarDays, roles: ['admin', 'user'], menuKey: 'academicYears' },
+  { name: 'Semesters', translationKey: 'navigation.semesters', href: '/academic/semesters', icon: Calendar, roles: ['admin', 'user'], menuKey: 'semesters' },
+  { name: 'Departments', translationKey: 'navigation.departments', href: '/academic/departments', icon: Building2, roles: ['admin', 'user'], menuKey: 'departments' },
+  { name: 'Majors', translationKey: 'navigation.majors', href: '/academic/majors', icon: BookMarked, roles: ['admin', 'user'], menuKey: 'majors' },
+  { name: 'Subjects', translationKey: 'navigation.subjects', href: '/academic/subjects', icon: BookOpen, roles: ['admin', 'user'], menuKey: 'subjects' },
   {
     name: 'Sessions',
     translationKey: 'navigation.sessions',
     href: '/academic/classes',
     icon: Library,
     roles: ['admin', 'user'],
+    menuKey: 'sessions',
     submenu: [
       { name: 'All sessions', translationKey: 'navigation.allSessions', href: '/academic/classes' },
       { name: 'Build lessons', translationKey: 'navigation.buildLessonsAdmin', href: '/academic/classes/build-lessons' },
@@ -168,6 +170,7 @@ const defaultNavigation = [
     href: '/enrollments',
     icon: GraduationCap,
     roles: ['admin', 'user'],
+    menuKey: 'enrollments',
     submenu: [
       { name: 'All Enrollments', translationKey: 'navigation.allEnrollments', href: '/enrollments' },
       { name: 'Bulk Enrollment', translationKey: 'navigation.bulkEnrollment', href: '/enrollments/bulk' },
@@ -179,20 +182,22 @@ const defaultNavigation = [
     href: '/students',
     icon: GraduationCap,
     roles: ['admin', 'user', 'instructor'],
+    menuKey: 'students',
     submenu: [
       { name: 'All Students', translationKey: 'navigation.allStudents', href: '/students' },
       { name: 'Upload from Excel', translationKey: 'navigation.uploadStudents', href: '/students/upload' },
     ],
   },
-  { name: 'Instructors', translationKey: 'navigation.instructors', href: '/instructors', icon: Users, roles: ['admin', 'user'] },
+  { name: 'Instructors', translationKey: 'navigation.instructors', href: '/instructors', icon: Users, roles: ['admin', 'user'], menuKey: 'instructors' },
   { name: 'Enroll in Sessions', translationKey: 'navigation.enroll', href: '/student/enroll', icon: GraduationCap, roles: ['student'] },
-  { name: 'Schedule', translationKey: 'navigation.schedule', href: '/schedule', icon: Calendar, roles: ['admin', 'user', 'instructor', 'student'] },
+  { name: 'Schedule', translationKey: 'navigation.schedule', href: '/schedule', icon: Calendar, roles: ['admin', 'user', 'instructor', 'student'], menuKey: 'schedule' },
   {
     name: 'Examinations',
     translationKey: 'navigation.examinations',
     href: '/examinations',
     icon: FileText,
     roles: ['admin', 'user', 'instructor'],
+    menuKey: 'examinations',
     submenu: [
       { name: 'Dashboard', translationKey: 'navigation.examinationDashboard', href: '/examinations/dashboard' },
       { name: 'All Examinations', translationKey: 'navigation.allExaminations', href: '/examinations' },
@@ -200,7 +205,7 @@ const defaultNavigation = [
       { name: 'Conflicts', translationKey: 'navigation.conflicts', href: '/examinations/conflicts' },
     ],
   },
-  { name: 'Attendance', translationKey: 'navigation.attendance', href: '/attendance', icon: Calendar, roles: ['admin', 'user', 'instructor'] },
+  { name: 'Attendance', translationKey: 'navigation.attendance', href: '/attendance', icon: Calendar, roles: ['admin', 'user', 'instructor'], menuKey: 'attendance' },
   { name: 'My Attendance', translationKey: 'navigation.myAttendance', href: '/student/attendance', icon: Calendar, roles: ['student'] },
   {
     name: 'Grading Management',
@@ -208,6 +213,7 @@ const defaultNavigation = [
     href: '/grading',
     icon: FileText,
     roles: ['admin', 'user', 'instructor'],
+    menuKey: 'gradingManagement',
     submenu: [
       { name: 'Grade Management', translationKey: 'navigation.gradeManagement', href: '/grading' },
       { name: 'Student Grades', translationKey: 'navigation.studentGrades', href: '/grading/students' },
@@ -225,6 +231,7 @@ const defaultNavigation = [
     href: '/finance/invoices',
     icon: DollarSign,
     roles: ['admin', 'user'],
+    menuKey: 'financeAffairs',
     submenu: [
       { name: 'Invoice Management', translationKey: 'navigation.invoiceManagement', href: '/finance/invoices' },
       { name: 'Create Invoice', translationKey: 'navigation.createInvoice', href: '/finance/invoices/create' },
@@ -242,6 +249,7 @@ const defaultNavigation = [
     href: '/admissions/applications',
     icon: GraduationCap,
     roles: ['admin', 'user'],
+    menuKey: 'admissions',
     submenu: [
       { name: 'All Applications', translationKey: 'navigation.allApplications', href: '/admissions/applications' },
       { name: 'Pending Requests', translationKey: 'navigation.pendingRequests', href: '/admissions/applications?status=pending' },
@@ -254,6 +262,7 @@ const defaultNavigation = [
     href: '/admin/requests',
     icon: FileText,
     roles: ['admin', 'user'],
+    menuKey: 'studentRequests',
   },
   {
     name: 'Settings',
@@ -261,6 +270,7 @@ const defaultNavigation = [
     href: '/settings',
     icon: Settings,
     roles: ['admin', 'user', 'instructor'],
+    menuKey: 'settings',
     submenu: [{ name: 'User Settings', translationKey: 'navigation.userSettings', href: '/settings' }],
   },
 ]
@@ -380,18 +390,20 @@ export default function Layout({ children }) {
   const [userMenuOpen, setUserMenuOpen] = useState(false)
   const [langMenuOpen, setLangMenuOpen] = useState(false)
   const [openSubmenuKey, setOpenSubmenuKey] = useState(null)
-  const { user, userRole, signOut } = useAuth()
+  const { user, userRole, menuPermissions, signOut } = useAuth()
   const location = useLocation()
   const navigate = useNavigate()
   const isAdminTheme = userRole === 'admin'
   
-  // Filter navigation based on user role
+  // Filter navigation based on user role, then per-user menu modules (college staff)
   const navigation = userRole === 'admin' ? adminNavigation : defaultNavigation
-  const filteredNavigation = navigation.filter(item => {
+  const roleFiltered = navigation.filter(item => {
     if (!item.roles) return true
     if (!userRole) return false
     return item.roles.includes(userRole)
   })
+  const filteredNavigation =
+    userRole === 'user' ? filterNavByMenuPermissions(roleFiltered, menuPermissions) : roleFiltered
 
   const handleSignOut = async () => {
     await signOut()

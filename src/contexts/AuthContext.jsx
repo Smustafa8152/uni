@@ -8,6 +8,7 @@ const defaultAuthValue = {
   userRole: null,
   collegeId: null,
   departmentId: null,
+  menuPermissions: null,
   loading: true,
   signIn: async () => {
     throw new Error('useAuth must be used within an AuthProvider')
@@ -38,6 +39,7 @@ export const AuthProvider = ({ children }) => {
   const [userRole, setUserRole] = useState(null)
   const [collegeId, setCollegeId] = useState(null)
   const [departmentId, setDepartmentId] = useState(null)
+  const [menuPermissions, setMenuPermissions] = useState(null)
   const [loading, setLoading] = useState(true)
 
   const fetchUserRole = async (email) => {
@@ -45,6 +47,7 @@ export const AuthProvider = ({ children }) => {
       setUserRole(null)
       setCollegeId(null)
       setDepartmentId(null)
+      setMenuPermissions(null)
       return null
     }
     try {
@@ -52,7 +55,16 @@ export const AuthProvider = ({ children }) => {
       let error = null
       let matchedEmail = null
       for (const candidate of getEmailLookupCandidates(email)) {
-        const res = await supabase.from('users').select('role, college_id').eq('email', candidate).maybeSingle()
+        let res = await supabase
+          .from('users')
+          .select('role, college_id, menu_permissions')
+          .eq('email', candidate)
+          .maybeSingle()
+        // Older DBs before menu_permissions migration
+        if (res.error && /menu_permissions/i.test(res.error.message || '')) {
+          res = await supabase.from('users').select('role, college_id').eq('email', candidate).maybeSingle()
+          if (res.data) res = { ...res, data: { ...res.data, menu_permissions: null } }
+        }
         if (res.data) {
           data = res.data
           matchedEmail = candidate
@@ -64,6 +76,7 @@ export const AuthProvider = ({ children }) => {
 
       if (!error && data) {
         setUserRole(data.role)
+        setMenuPermissions(data.menu_permissions ?? null)
         let finalCollegeId = data.college_id
         
         // If user is a college admin (role === 'user') but college_id is null,
@@ -156,6 +169,7 @@ export const AuthProvider = ({ children }) => {
             setUserRole('instructor')
             setCollegeId(inst.college_id ?? null)
             setDepartmentId(inst.department_id ?? null)
+            setMenuPermissions(null)
             return 'instructor'
           }
         } catch (fallbackErr) {
@@ -168,6 +182,7 @@ export const AuthProvider = ({ children }) => {
         setUserRole(null)
         setCollegeId(null)
         setDepartmentId(null)
+        setMenuPermissions(null)
         return null
       }
     } catch (err) {
@@ -175,6 +190,7 @@ export const AuthProvider = ({ children }) => {
       setUserRole(null)
       setCollegeId(null)
       setDepartmentId(null)
+      setMenuPermissions(null)
       return null
     }
   }
@@ -189,6 +205,7 @@ export const AuthProvider = ({ children }) => {
         setUserRole(null)
         setCollegeId(null)
         setDepartmentId(null)
+        setMenuPermissions(null)
       }
     } catch (e) {
       console.warn('refreshUserRole failed:', e)
@@ -537,6 +554,7 @@ export const AuthProvider = ({ children }) => {
     userRole,
     collegeId,
     departmentId,
+    menuPermissions,
     loading,
     signIn,
     signUp,
