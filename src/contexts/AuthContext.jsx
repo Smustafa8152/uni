@@ -486,6 +486,8 @@ export const AuthProvider = ({ children }) => {
         // Allow 'college' to match 'user' role in database
         if (expectedRole === 'college' && userData.role === 'user') {
           // This is valid - college admin uses 'user' role
+        } else if (expectedRole === 'admin' && (userData.role === 'admin' || userData.role === 'user')) {
+          // Super admin + staff users (menu-limited) share the admin portal login
         } else if (expectedRole === 'applicant' && userData.role === 'applicant') {
           // Pre-enrollment applicant portal
         } else if (expectedRole !== userRole) {

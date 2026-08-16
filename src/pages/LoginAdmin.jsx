@@ -17,9 +17,9 @@ export default function LoginAdmin() {
   const { signIn, user, userRole, loading: authLoading } = useAuth()
   const navigate = useNavigate()
 
-  // Redirect if already logged in
+  // Redirect if already logged in (super admin or staff with menu access)
   useEffect(() => {
-    if (!authLoading && user && userRole === 'admin') {
+    if (!authLoading && user && (userRole === 'admin' || userRole === 'user')) {
       navigate('/dashboard', { replace: true })
     }
   }, [user, userRole, authLoading, navigate])
