@@ -1,43 +1,53 @@
 /**
- * Sidebar modules for college staff (role = user).
- * Keys must match `menuKey` on items in Layout.jsx defaultNavigation.
+ * Admin sidebar modules for staff users (restricted admin portal).
+ * Keys match `menuKey` on items in Layout.jsx adminNavigation.
+ * Legacy college-menu keys are mapped in normalizeMenuPermissions.
  */
 
 export const MENU_MODULES = [
   { key: 'dashboard', label: 'Dashboard', labelAr: 'لوحة التحكم', always: true },
-  { key: 'academicYears', label: 'Academic Years', labelAr: 'السنوات الأكاديمية' },
-  { key: 'semesters', label: 'Semesters', labelAr: 'الفصول الدراسية' },
-  { key: 'departments', label: 'Departments', labelAr: 'الأقسام' },
-  { key: 'majors', label: 'Majors', labelAr: 'التخصصات' },
-  { key: 'subjects', label: 'Subjects', labelAr: 'المواد' },
-  { key: 'sessions', label: 'Sessions', labelAr: 'الجلسات' },
-  { key: 'enrollments', label: 'Enrollments', labelAr: 'التسجيلات' },
-  { key: 'students', label: 'Students', labelAr: 'الطلاب' },
-  { key: 'instructors', label: 'Instructors', labelAr: 'المدرسون' },
-  { key: 'schedule', label: 'Schedule', labelAr: 'الجدول' },
-  { key: 'examinations', label: 'Examinations', labelAr: 'الاختبارات' },
-  { key: 'attendance', label: 'Attendance', labelAr: 'الحضور' },
-  { key: 'gradingManagement', label: 'Grading', labelAr: 'الدرجات' },
-  { key: 'financeAffairs', label: 'Finance', labelAr: 'الشؤون المالية' },
+  { key: 'university', label: 'University configuration', labelAr: 'إعدادات الجامعة' },
+  { key: 'academic', label: 'Academic configuration', labelAr: 'الإعدادات الأكاديمية' },
   { key: 'admissions', label: 'Admissions', labelAr: 'القبول' },
-  { key: 'studentRequests', label: 'Student Requests', labelAr: 'طلبات الطلاب' },
-  { key: 'settings', label: 'Settings', labelAr: 'الإعدادات' },
+  { key: 'people', label: 'People', labelAr: 'الأفراد' },
+  { key: 'grades', label: 'Grades', labelAr: 'الدرجات' },
+  { key: 'finance', label: 'Finance', labelAr: 'الشؤون المالية' },
+  { key: 'operations', label: 'Operations', labelAr: 'العمليات' },
 ]
 
 export const MENU_MODULE_KEYS = MENU_MODULES.map((m) => m.key)
 
-const ACADEMIC_KEYS = [
-  'dashboard',
-  'academicYears',
-  'semesters',
-  'departments',
-  'majors',
-  'subjects',
-  'sessions',
-  'enrollments',
-  'schedule',
-  'settings',
-]
+/** Map old college-sidebar keys (+ aliases) → admin menu keys */
+const KEY_ALIASES = {
+  dashboard: 'dashboard',
+  settings: 'university',
+  universityConfiguration: 'university',
+  university: 'university',
+  academicYears: 'academic',
+  semesters: 'academic',
+  departments: 'academic',
+  majors: 'academic',
+  subjects: 'academic',
+  sessions: 'academic',
+  academicConfiguration: 'academic',
+  academic: 'academic',
+  admissions: 'admissions',
+  enrollments: 'admissions',
+  admissionsConfiguration: 'admissions',
+  students: 'people',
+  instructors: 'people',
+  people: 'people',
+  gradingManagement: 'grades',
+  grades: 'grades',
+  financeAffairs: 'finance',
+  financialAssistance: 'finance',
+  finance: 'finance',
+  schedule: 'operations',
+  attendance: 'operations',
+  examinations: 'operations',
+  studentRequests: 'operations',
+  operations: 'operations',
+}
 
 /** Quick role-style presets for staff user creation */
 export const MENU_PRESETS = [
@@ -51,48 +61,54 @@ export const MENU_PRESETS = [
     id: 'admissions',
     label: 'Admissions',
     labelAr: 'القبول',
-    keys: ['dashboard', 'admissions', 'enrollments', 'students', 'studentRequests', 'settings'],
+    keys: ['dashboard', 'admissions', 'people', 'operations'],
   },
   {
     id: 'finance',
     label: 'Finance',
     labelAr: 'المالية',
-    keys: ['dashboard', 'financeAffairs', 'students', 'settings'],
+    keys: ['dashboard', 'finance', 'people'],
   },
   {
     id: 'academic',
     label: 'Academic',
     labelAr: 'أكاديمي',
-    keys: ACADEMIC_KEYS,
+    keys: ['dashboard', 'academic', 'people'],
   },
   {
     id: 'grades',
     label: 'Grades',
     labelAr: 'الدرجات',
-    keys: ['dashboard', 'gradingManagement', 'students', 'examinations', 'subjects', 'sessions', 'settings'],
+    keys: ['dashboard', 'grades', 'people', 'academic'],
   },
   {
     id: 'operations',
     label: 'Operations',
     labelAr: 'العمليات',
-    keys: ['dashboard', 'schedule', 'attendance', 'examinations', 'studentRequests', 'students', 'settings'],
+    keys: ['dashboard', 'operations', 'people'],
   },
 ]
 
 export function normalizeMenuPermissions(value) {
   if (value == null) return null
-  if (Array.isArray(value)) {
-    const keys = [...new Set(value.map(String).filter((k) => MENU_MODULE_KEYS.includes(k)))]
-    return keys.length ? keys : null
-  }
+  let raw = value
   if (typeof value === 'string') {
     try {
-      return normalizeMenuPermissions(JSON.parse(value))
+      raw = JSON.parse(value)
     } catch {
       return null
     }
   }
-  return null
+  if (!Array.isArray(raw)) return null
+  const keys = [
+    ...new Set(
+      raw
+        .map(String)
+        .map((k) => KEY_ALIASES[k] || k)
+        .filter((k) => MENU_MODULE_KEYS.includes(k)),
+    ),
+  ]
+  return keys.length ? keys : null
 }
 
 /** Null/empty permissions = unrestricted (legacy users). */
@@ -105,7 +121,7 @@ export function isMenuModuleAllowed(permissions, menuKey) {
   if (!menuKey) return true
   if (hasFullMenuAccess(permissions)) return true
   const keys = normalizeMenuPermissions(permissions)
-  if (keys.includes('dashboard') === false && menuKey === 'dashboard') return true
+  if (menuKey === 'dashboard') return true
   return keys.includes(menuKey)
 }
 
@@ -116,4 +132,9 @@ export function filterNavByMenuPermissions(navigation, permissions) {
 
 export function defaultMenuPermissions() {
   return [...MENU_MODULE_KEYS]
+}
+
+/** Staff without a college use the admin shell with restricted menus. */
+export function isAdminPortalStaff(userRole, collegeId) {
+  return userRole === 'user' && (collegeId == null || collegeId === '')
 }

@@ -3,7 +3,7 @@ import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { useAuth } from '../contexts/AuthContext'
 import { useLanguage } from '../contexts/LanguageContext'
-import { filterNavByMenuPermissions } from '../utils/menuPermissions'
+import { filterNavByMenuPermissions, isAdminPortalStaff } from '../utils/menuPermissions'
 import {
   LayoutDashboard,
   GraduationCap,
@@ -276,13 +276,14 @@ const defaultNavigation = [
 ]
 
 const adminNavigation = [
-  { name: 'Dashboard', translationKey: 'navigation.dashboard', href: '/dashboard', icon: LayoutDashboard, roles: ['admin'] },
+  { name: 'Dashboard', translationKey: 'navigation.dashboard', href: '/dashboard', icon: LayoutDashboard, roles: ['admin', 'user'], menuKey: 'dashboard' },
   {
     name: 'University configuration',
     translationKey: 'navigation.universityConfiguration',
     href: '/admin/university-settings',
     icon: Building2,
-    roles: ['admin'],
+    roles: ['admin', 'user'],
+    menuKey: 'university',
     submenu: [
       { name: 'University Settings', translationKey: 'navigation.universitySettings', href: '/admin/university-settings' },
       { name: 'Colleges', translationKey: 'navigation.colleges', href: '/admin/colleges' },
@@ -294,7 +295,8 @@ const adminNavigation = [
     translationKey: 'navigation.academicConfiguration',
     href: '/academic/years',
     icon: School,
-    roles: ['admin'],
+    roles: ['admin', 'user'],
+    menuKey: 'academic',
     submenu: [
       { name: 'Academic Years', translationKey: 'navigation.academicYears', href: '/academic/years' },
       { name: 'Semesters', translationKey: 'navigation.semesters', href: '/academic/semesters' },
@@ -313,7 +315,8 @@ const adminNavigation = [
     translationKey: 'navigation.admissionsConfiguration',
     href: '/admissions/applications',
     icon: GraduationCap,
-    roles: ['admin'],
+    roles: ['admin', 'user'],
+    menuKey: 'admissions',
     submenu: [
       { name: 'Applications', translationKey: 'navigation.allApplications', href: '/admissions/applications' },
       { name: 'New Application', translationKey: 'navigation.newApplication', href: '/admissions/applications/create' },
@@ -326,7 +329,8 @@ const adminNavigation = [
     translationKey: 'navigation.people',
     href: '/students',
     icon: Users,
-    roles: ['admin'],
+    roles: ['admin', 'user'],
+    menuKey: 'people',
     submenu: [
       { name: 'Students', translationKey: 'navigation.students', href: '/students' },
       { name: 'Upload from Excel', translationKey: 'navigation.uploadStudents', href: '/students/upload' },
@@ -338,7 +342,8 @@ const adminNavigation = [
     translationKey: 'navigation.grades',
     href: '/grading',
     icon: FileText,
-    roles: ['admin'],
+    roles: ['admin', 'user'],
+    menuKey: 'grades',
     submenu: [
       { name: 'Grading Management', translationKey: 'navigation.gradingManagement', href: '/grading' },
       { name: 'Student Grades', translationKey: 'navigation.studentGrades', href: '/grading/students' },
@@ -354,7 +359,8 @@ const adminNavigation = [
     translationKey: 'navigation.financialAssistance',
     href: '/finance/invoices',
     icon: DollarSign,
-    roles: ['admin'],
+    roles: ['admin', 'user'],
+    menuKey: 'finance',
     submenu: [
       { name: 'Invoice Management', translationKey: 'navigation.invoiceManagement', href: '/finance/invoices' },
       { name: 'Create Invoice', translationKey: 'navigation.createInvoice', href: '/finance/invoices/create' },
@@ -371,7 +377,8 @@ const adminNavigation = [
     translationKey: 'navigation.operations',
     href: '/schedule',
     icon: Layers,
-    roles: ['admin'],
+    roles: ['admin', 'user'],
+    menuKey: 'operations',
     submenu: [
       { name: 'Schedule', translationKey: 'navigation.schedule', href: '/schedule' },
       { name: 'Attendance', translationKey: 'navigation.attendance', href: '/attendance' },
@@ -390,13 +397,15 @@ export default function Layout({ children }) {
   const [userMenuOpen, setUserMenuOpen] = useState(false)
   const [langMenuOpen, setLangMenuOpen] = useState(false)
   const [openSubmenuKey, setOpenSubmenuKey] = useState(null)
-  const { user, userRole, menuPermissions, signOut } = useAuth()
+  const { user, userRole, collegeId, menuPermissions, signOut } = useAuth()
   const location = useLocation()
   const navigate = useNavigate()
-  const isAdminTheme = userRole === 'admin'
+  const staffOnAdminPortal = isAdminPortalStaff(userRole, collegeId)
+  const useAdminShell = userRole === 'admin' || staffOnAdminPortal
+  const isAdminTheme = useAdminShell
   
-  // Filter navigation based on user role, then per-user menu modules (college staff)
-  const navigation = userRole === 'admin' ? adminNavigation : defaultNavigation
+  // Admin shell for super admin + restricted staff; college admins keep college nav
+  const navigation = useAdminShell ? adminNavigation : defaultNavigation
   const roleFiltered = navigation.filter(item => {
     if (!item.roles) return true
     if (!userRole) return false

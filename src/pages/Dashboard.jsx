@@ -244,10 +244,12 @@ export default function Dashboard() {
       <div className={`flex items-center ${isRTL ? 'flex-row-reverse justify-between' : 'justify-between'}`}>
         <div>
           <h1 className="text-3xl font-bold text-gray-900">
-            {userRole === 'user' ? t('kpis.universityKPIs.collegeDashboard') : t('kpis.universityKPIs.title')}
+            {userRole === 'user' && collegeId
+              ? t('kpis.universityKPIs.collegeDashboard')
+              : t('kpis.universityKPIs.title')}
           </h1>
           <p className="text-gray-600 mt-1">
-            {userRole === 'user' 
+            {userRole === 'user' && collegeId
               ? t('kpis.universityKPIs.monitorCollege')
               : t('kpis.universityKPIs.monitorUniversity')}
           </p>
