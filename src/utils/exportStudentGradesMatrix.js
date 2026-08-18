@@ -79,6 +79,17 @@ function scoreFill(score) {
   return C.rowD
 }
 
+function zeroGradeCell(credits, gradingScale) {
+  return {
+    score: 0,
+    letter: getLetterFromPercent(0, gradingScale),
+    gpa: numericGradeToGpaPoints(0, gradingScale) ?? 0,
+    credits: Number(credits) > 0 ? Number(credits) : 1,
+    semester_id: 0,
+    examAt: 0,
+  }
+}
+
 function normUniversityId(value) {
   return String(value || '')
     .replace(/^STU/i, '')
@@ -364,24 +375,24 @@ export async function exportStudentGradesMatrixExcel({
       gradesByStudent?.[stu.id] || gradesByStudent?.[Number(stu.id)] || gradesByStudent?.[String(stu.id)] || {}
     subjectList.forEach((subj, i) => {
       const start = 3 + i * 3
-      const g = bySubject[subj.id] || {}
-      const score = g.score != null ? Number(g.score) : null
-      const fill = score != null ? scoreFill(score) : zebra
-      setCell(ws.getCell(r, start), score != null ? score : '—', {
+      const g = bySubject[subj.id] || zeroGradeCell(subj.creditHours || 1, null)
+      const score = g.score != null ? Number(g.score) : 0
+      const fill = scoreFill(score) || zebra
+      setCell(ws.getCell(r, start), score, {
         fillArgb: fill,
         bold: true,
         color: scoreColor(score),
         size: 11,
       })
-      setCell(ws.getCell(r, start + 1), g.letter || '—', {
+      setCell(ws.getCell(r, start + 1), g.letter || getLetterFromPercent(0, null) || 'F', {
         fillArgb: fill,
         bold: true,
         size: 11,
       })
-      setCell(ws.getCell(r, start + 2), g.gpa != null ? Number(g.gpa) : '—', {
+      setCell(ws.getCell(r, start + 2), g.gpa != null ? Number(g.gpa) : 0, {
         fillArgb: fill,
         size: 11,
-        numFmt: g.gpa != null ? '0.00' : undefined,
+        numFmt: '0.00',
       })
     })
 
@@ -389,24 +400,24 @@ export async function exportStudentGradesMatrixExcel({
       gradesByStudent?.[stu.id]?.__overall ||
       gradesByStudent?.[Number(stu.id)]?.__overall ||
       gradesByStudent?.[String(stu.id)]?.__overall ||
-      {}
-    const oScore = overall.score != null ? Number(overall.score) : null
-    const oFill = oScore != null ? scoreFill(oScore) : zebra
-    setCell(ws.getCell(r, overallStart), oScore != null ? oScore : '—', {
+      zeroGradeCell(1, null)
+    const oScore = overall.score != null ? Number(overall.score) : 0
+    const oFill = scoreFill(oScore) || zebra
+    setCell(ws.getCell(r, overallStart), oScore, {
       fillArgb: oFill,
       bold: true,
       color: scoreColor(oScore),
       size: 11,
     })
-    setCell(ws.getCell(r, overallStart + 1), overall.letter || '—', {
+    setCell(ws.getCell(r, overallStart + 1), overall.letter || getLetterFromPercent(0, null) || 'F', {
       fillArgb: oFill,
       bold: true,
       size: 11,
     })
-    setCell(ws.getCell(r, overallStart + 2), overall.gpa != null ? Number(overall.gpa) : '—', {
+    setCell(ws.getCell(r, overallStart + 2), overall.gpa != null ? Number(overall.gpa) : 0, {
       fillArgb: oFill,
       size: 11,
-      numFmt: overall.gpa != null ? '0.00' : undefined,
+      numFmt: '0.00',
     })
     ws.getRow(r).height = 18
   })
@@ -714,17 +725,17 @@ export async function loadStudentGradesExportData({
     let gpaWeight = 0
     let gpaCredits = 0
     subjectsOut.forEach((subj) => {
-      const cell = bySubject[subj.id]
-      if (!cell) return
+      const cell = bySubject[subj.id] || zeroGradeCell(subj.creditHours || 1, gradingScale)
       const credits = Number(cell.credits || subj.creditHours || 1) || 1
-      if (cell.score != null && !Number.isNaN(Number(cell.score))) {
-        scoreWeight += Number(cell.score) * credits
-        scoreCredits += credits
-      }
-      if (cell.gpa != null && !Number.isNaN(Number(cell.gpa))) {
-        gpaWeight += Number(cell.gpa) * credits
-        gpaCredits += credits
-      }
+      const score = cell.score != null && !Number.isNaN(Number(cell.score)) ? Number(cell.score) : 0
+      const gpa =
+        cell.gpa != null && !Number.isNaN(Number(cell.gpa))
+          ? Number(cell.gpa)
+          : (numericGradeToGpaPoints(0, gradingScale) ?? 0)
+      scoreWeight += score * credits
+      scoreCredits += credits
+      gpaWeight += gpa * credits
+      gpaCredits += credits
     })
     const overallScore =
       scoreCredits > 0 ? Math.round((scoreWeight / scoreCredits) * 100) / 100 : null
