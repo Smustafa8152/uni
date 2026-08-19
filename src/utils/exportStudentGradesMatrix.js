@@ -489,7 +489,9 @@ export async function loadStudentGradesExportData({
   // Classes scoped by subject filter or college subjects
   let classQuery = supabase
     .from('classes')
-    .select('id, subject_id, subjects(id, code, name_en, name_ar, credit_hours)')
+    .select(
+      'id, subject_id, subjects(id, code, name_en, name_ar, credit_hours, status)',
+    )
   if (subjectId) {
     classQuery = classQuery.eq('subject_id', Number(subjectId))
   } else if (collegeId) {
@@ -561,6 +563,9 @@ export async function loadStudentGradesExportData({
 
   const rememberSubject = (subj) => {
     if (!subj?.id || subjectMap.has(subj.id)) return
+    // Excel subject sheet must match the UI subject dropdown.
+    // If a `class` references an inactive subject, skip it here.
+    if (subj.status && String(subj.status).toLowerCase() !== 'active') return
     const credits = Number(subj.credit_hours) > 0 ? Number(subj.credit_hours) : 1
     subjectMap.set(subj.id, {
       id: subj.id,
@@ -670,7 +675,6 @@ export async function loadStudentGradesExportData({
     const examStudentId = examLookupIdForStudent(s, examStudents)
     for (const subj of subjectMap.values()) {
       const existing = gradesByStudent[sid]?.[subj.id]
-      if (existing?.score != null) continue
       const { latestPercent, examAt } = examScoresForEnrollment(examData, {
         student_id: examStudentId,
         subject_id: subj.id,
@@ -679,7 +683,10 @@ export async function loadStudentGradesExportData({
       applyCell(
         sid,
         subj,
-        cellFromPercent(latestPercent, subj.creditHours || 1, { examAt }),
+        cellFromPercent(latestPercent, subj.creditHours || 1, {
+          examAt,
+          semester_id: existing?.semester_id || 0,
+        }),
       )
     }
   }
