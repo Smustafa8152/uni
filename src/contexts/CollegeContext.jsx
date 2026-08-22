@@ -1,6 +1,7 @@
 import { createContext, useContext, useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from './AuthContext'
+import { hasUniversityWideScope } from '../utils/menuPermissions'
 
 const CollegeContext = createContext()
 
@@ -13,7 +14,8 @@ function readStoredCollegeId() {
 }
 
 export function CollegeProvider({ children }) {
-  const { userRole } = useAuth()
+  const { userRole, collegeId: authCollegeId } = useAuth()
+  const universityWide = hasUniversityWideScope(userRole, authCollegeId)
   const [selectedCollegeId, setSelectedCollegeId] = useState(() =>
     readStoredCollegeId()
   )
@@ -21,20 +23,20 @@ export function CollegeProvider({ children }) {
   const [loading, setLoading] = useState(false)
 
   useEffect(() => {
-    if (userRole === 'admin') {
+    if (universityWide) {
       fetchColleges()
     } else {
       setSelectedCollegeId(null)
+      setColleges([])
       localStorage.removeItem('selectedCollegeId')
     }
-  }, [userRole])
+  }, [universityWide])
 
   useEffect(() => {
-    // Save to localStorage when selection changes
-    if (userRole === 'admin' && selectedCollegeId) {
+    if (universityWide && selectedCollegeId) {
       localStorage.setItem('selectedCollegeId', selectedCollegeId.toString())
     }
-  }, [selectedCollegeId, userRole])
+  }, [selectedCollegeId, universityWide])
 
   const fetchColleges = async () => {
     setLoading(true)
@@ -59,8 +61,8 @@ export function CollegeProvider({ children }) {
     setSelectedCollegeId,
     colleges,
     loading,
-    isAdmin: userRole === 'admin',
-    requiresCollegeSelection: userRole === 'admin' && !selectedCollegeId,
+    isAdmin: universityWide,
+    requiresCollegeSelection: universityWide && !selectedCollegeId,
   }
 
   return (
@@ -77,6 +79,3 @@ export function useCollege() {
   }
   return context
 }
-
-
-

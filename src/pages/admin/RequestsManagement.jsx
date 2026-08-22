@@ -6,6 +6,7 @@ import { useAuth } from '../../contexts/AuthContext'
 import { useCollege } from '../../contexts/CollegeContext'
 import { supabase } from '../../lib/supabase'
 import { getLocalizedName } from '../../utils/localizedName'
+import { resolveEffectiveCollegeId } from '../../utils/menuPermissions'
 
 const UI = {
   p: '#1a3a6b',
@@ -47,7 +48,7 @@ export default function RequestsManagement() {
   const { selectedCollegeId } = useCollege()
   const navigate = useNavigate()
 
-  const collegeId = userRole === 'admin' ? selectedCollegeId : authCollegeId
+  const collegeId = resolveEffectiveCollegeId(userRole, authCollegeId, selectedCollegeId)
 
   const [loading, setLoading] = useState(true)
   const [rows, setRows] = useState([])
