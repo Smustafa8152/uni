@@ -7,7 +7,7 @@ import { useLanguage } from '../../contexts/LanguageContext'
 import { supabase } from '../../lib/supabase'
 import { getActiveInstructorByEmail } from '../../utils/getActiveInstructorByEmail'
 import { getLocalizedName } from '../../utils/localizedName'
-import { gradeQuestion } from '../../utils/autoGradeExam'
+import { gradeQuestion, autoGradeExam } from '../../utils/autoGradeExam'
 import {
   formatStudentAnswer,
   formatCorrectAnswer,
@@ -446,6 +446,7 @@ export default function ExamStudentAnswers({ mode = 'instructor' }) {
 
   const answersMap = selectedSubmission?.submission_data?.answers || {}
   const autoGrade = selectedSubmission?.submission_data?.autoGrade || null
+  const liveAutoGrade = useMemo(() => autoGradeExam(questions, answersMap), [questions, answersMap])
   const manualMarks = selectedSubmission?.submission_data?.manualMarks || {}
 
   const subjectOptions = useMemo(() => {
@@ -956,9 +957,9 @@ export default function ExamStudentAnswers({ mode = 'instructor' }) {
                             {t('examAnswers.timedWindow', 'Timed')}
                           </span>
                         )}
-                        {s.points_earned != null && (
+                        {(s.points_earned ?? s.submission_data?.autoGrade?.points_earned) != null && (
                           <span style={{ fontWeight: 700, color: '#1e2a3a' }}>
-                            {s.points_earned}/{exam.total_points}
+                            {s.points_earned ?? s.submission_data?.autoGrade?.points_earned}/{exam.total_points}
                           </span>
                         )}
                       </div>
@@ -1024,13 +1025,21 @@ export default function ExamStudentAnswers({ mode = 'instructor' }) {
                     <div style={{ textAlign: 'end', fontSize: 13, flex: '0 0 auto' }}>
                       <div style={{ fontWeight: 800, fontSize: 16 }}>
                         {t('examAnswers.score', 'Score')}:{' '}
-                        {selectedSubmission.points_earned != null
-                          ? `${selectedSubmission.points_earned} / ${exam.total_points}`
+                        {(selectedSubmission.points_earned ??
+                          selectedSubmission.submission_data?.autoGrade?.points_earned ??
+                          liveAutoGrade?.points_earned) != null
+                          ? `${selectedSubmission.points_earned ??
+                              selectedSubmission.submission_data?.autoGrade?.points_earned ??
+                              liveAutoGrade?.points_earned} / ${exam.total_points}`
                           : '—'}
-                        {selectedSubmission.grade != null ? (
+                        {(selectedSubmission.grade ??
+                          selectedSubmission.submission_data?.autoGrade?.percent ??
+                          liveAutoGrade?.percent) != null ? (
                           <span style={{ color: 'var(--muted)', fontWeight: 600 }}>
                             {' '}
-                            ({selectedSubmission.grade}%)
+                            ({selectedSubmission.grade ??
+                              selectedSubmission.submission_data?.autoGrade?.percent ??
+                              liveAutoGrade?.percent}%)
                           </span>
                         ) : null}
                       </div>
@@ -1141,10 +1150,12 @@ export default function ExamStudentAnswers({ mode = 'instructor' }) {
                                   : '—'}
                             </span>
                             <span>
-                              {a.points_earned != null
-                                ? `${a.points_earned}/${exam.total_points}`
+                              {(a.points_earned ?? a.autoGrade?.points_earned) != null
+                                ? `${a.points_earned ?? a.autoGrade?.points_earned}/${exam.total_points}`
                                 : '—'}
-                              {a.grade != null ? ` (${a.grade}%)` : ''}
+                              {(a.grade ?? a.autoGrade?.percent) != null
+                                ? ` (${a.grade ?? a.autoGrade?.percent}%)`
+                                : ''}
                             </span>
                             <span>{submissionStatusLabel(a.status, t)}</span>
                           </div>

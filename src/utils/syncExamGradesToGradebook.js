@@ -166,6 +166,84 @@ async function recoverDraftExamSubmissions(subs, examById) {
   return [...(subs || []).filter((s) => !recoveredIds.has(s.id)), ...recovered]
 }
 
+/**
+ * Recover EX_SUB submissions that were marked submitted but missing autoGrade/points/grade.
+ * This happens in re-exam cases where the student answers exist, but the submission_data->autoGrade
+ * was never persisted (so instructor views show Submitted + no score).
+ */
+async function recoverMissingAutoGradeExamSubmissions(subs, examById) {
+  const needs = (subs || []).filter((s) => {
+    if (!s) return false
+    const hasAnswers = !!(s.submission_data?.answers && Object.keys(s.submission_data.answers).length > 0)
+    const hasPayloadAuto = s.submission_data?.autoGrade != null
+    const noScore =
+      s.points_earned == null &&
+      (s.grade == null || s.grade === '') &&
+      !hasPayloadAuto
+    return (s.status === 'EX_SUB' || s.status === 'EX_GRD') && noScore && hasAnswers
+  })
+
+  if (!needs.length) return subs || []
+
+  const examIds = [...new Set(needs.map((d) => d.exam_id).filter(Boolean))]
+  const nowIso = new Date().toISOString()
+
+  const { data: questions } = await supabase
+    .from('subject_exam_questions')
+    .select(
+      'id, subject_exam_id, question_type, options, correct_answers, marks',
+    )
+    .in('subject_exam_id', examIds)
+
+  const qsByExam = {}
+  ;(questions || []).forEach((q) => {
+    if (!qsByExam[q.subject_exam_id]) qsByExam[q.subject_exam_id] = []
+    qsByExam[q.subject_exam_id].push(q)
+  })
+
+  const recovered = []
+
+  for (const sub of needs) {
+    const qs = qsByExam[sub.exam_id] || []
+    if (!qs.length) continue
+    const exam = examById[sub.exam_id]
+    if (!exam) continue
+
+    const answers = sub.submission_data?.answers || {}
+    const grade = autoGradeExam(qs, answers)
+
+    const preferredStatus = grade.fullyAutoGraded ? 'EX_GRD' : 'EX_SUB'
+
+    const totalPoints = Number(exam.total_points || grade.total_points || 0)
+    const scorePct =
+      totalPoints > 0
+        ? Math.round((Number(grade.points_earned) / totalPoints) * 1000) / 10
+        : grade.percent
+
+    const patch = {
+      submission_data: {
+        ...(sub.submission_data || {}),
+        submitted: true,
+        autoGrade: grade,
+      },
+      status: preferredStatus,
+      points_earned: grade.points_earned,
+      grade: scorePct,
+      submitted_at: sub.submitted_at || nowIso,
+      updated_at: nowIso,
+    }
+
+    let { error } = await supabase.from('exam_submissions').update(patch).eq('id', sub.id)
+    if (error && preferredStatus === 'EX_GRD') {
+      patch.status = 'EX_SUB'
+      ;({ error } = await supabase.from('exam_submissions').update(patch).eq('id', sub.id))
+    }
+    if (!error) recovered.push({ ...sub, ...patch })
+  }
+
+  return [...(subs || []), ...(recovered || [])]
+}
+
 function scKey(studentId, classId) {
   return `${Number(studentId)}::${Number(classId)}`
 }
@@ -462,6 +540,7 @@ export async function fetchExamScoresByClassIds(classIds, extra = {}) {
   let recovered = subsRaw
   try {
     recovered = await recoverDraftExamSubmissions(subsRaw, examById)
+    recovered = await recoverMissingAutoGradeExamSubmissions(recovered, examById)
   } catch (err) {
     console.warn('recoverDraftExamSubmissions', err)
   }
@@ -602,18 +681,25 @@ export async function recoverAndSyncExamSubmissions(examId, submissions) {
     (list || [])
       .filter(
         (s) =>
-          s.status === 'EX_DRF' &&
-          (s.points_earned != null ||
-            (s.grade != null && s.grade !== '') ||
-            s.submitted_at ||
-            s.submission_data?.submitted === true ||
-            s.submission_data?.autoGrade ||
+          (s.status === 'EX_DRF' &&
+            (s.points_earned != null ||
+              (s.grade != null && s.grade !== '') ||
+              s.submitted_at ||
+              s.submission_data?.submitted === true ||
+              s.submission_data?.autoGrade ||
+              (s.submission_data?.answers && Object.keys(s.submission_data.answers).length > 0))) ||
+          ((s.status === 'EX_SUB' || s.status === 'EX_GRD') &&
+            s.points_earned == null &&
+            (s.grade == null || s.grade === '') &&
+            s.submission_data?.autoGrade == null &&
             (s.submission_data?.answers && Object.keys(s.submission_data.answers).length > 0)),
       )
       .map((s) => s.id),
   )
 
-  const updated = await recoverDraftExamSubmissions(list, examById)
+  let updated = await recoverDraftExamSubmissions(list, examById)
+  // Also recover EX_SUB rows missing autoGrade so they can become EX_GRD.
+  updated = await recoverMissingAutoGradeExamSubmissions(updated, examById)
   let recovered = 0
   let synced = 0
   for (const sub of updated) {
