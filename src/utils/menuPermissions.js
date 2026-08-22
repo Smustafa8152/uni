@@ -138,3 +138,20 @@ export function defaultMenuPermissions() {
 export function isAdminPortalStaff(userRole, collegeId) {
   return userRole === 'user' && (collegeId == null || collegeId === '')
 }
+
+/** Superadmin or university-wide staff (no college_id) — see all colleges/semesters. */
+export function hasUniversityWideScope(userRole, collegeId) {
+  return userRole === 'admin' || isAdminPortalStaff(userRole, collegeId)
+}
+
+/**
+ * Effective college filter for list/create pages.
+ * University-wide roles use optional CollegeContext selection (null = all colleges).
+ * College-scoped `user` keeps their auth college_id.
+ */
+export function resolveEffectiveCollegeId(userRole, authCollegeId, selectedCollegeId) {
+  if (hasUniversityWideScope(userRole, authCollegeId)) {
+    return selectedCollegeId ?? null
+  }
+  return authCollegeId ?? null
+}

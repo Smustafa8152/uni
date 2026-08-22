@@ -8,6 +8,7 @@ import { useCollege } from '../contexts/CollegeContext'
 import { getLocalizedName } from '../utils/localizedName'
 import { buildStudentSearchOrFilter } from '../utils/studentSearchQuery'
 import { ArrowLeft, ArrowRight, ShoppingCart, Calendar, Search, Plus, X, Eye, Trash2, Check, Save, Loader, Building2 } from 'lucide-react'
+import { resolveEffectiveCollegeId } from '../utils/menuPermissions'
 
 export default function BulkEnrollment() {
   const { t } = useTranslation()
@@ -15,7 +16,7 @@ export default function BulkEnrollment() {
   const navigate = useNavigate()
   const { userRole, collegeId: authCollegeId } = useAuth()
   const { selectedCollegeId, requiresCollegeSelection, colleges, setSelectedCollegeId } = useCollege()
-  const collegeId = userRole === 'admin' ? selectedCollegeId : authCollegeId
+  const collegeId = resolveEffectiveCollegeId(userRole, authCollegeId, selectedCollegeId)
   const [currentStep, setCurrentStep] = useState(1)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')

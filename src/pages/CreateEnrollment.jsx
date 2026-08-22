@@ -9,6 +9,7 @@ import { useAuth } from '../contexts/AuthContext'
 import { useCollege } from '../contexts/CollegeContext'
 import { buildStudentSearchOrFilter } from '../utils/studentSearchQuery'
 import { ArrowLeft, ArrowRight, Check, Calendar, User, BookOpen, FileCheck, Building2 } from 'lucide-react'
+import { resolveEffectiveCollegeId, hasUniversityWideScope } from '../utils/menuPermissions'
 
 export default function CreateEnrollment() {
   const { t } = useTranslation()
@@ -17,7 +18,8 @@ export default function CreateEnrollment() {
   const [searchParams] = useSearchParams()
   const { userRole, collegeId: authCollegeId, departmentId } = useAuth()
   const { selectedCollegeId, requiresCollegeSelection, colleges, setSelectedCollegeId } = useCollege()
-  const collegeId = userRole === 'admin' ? selectedCollegeId : authCollegeId
+  const collegeId = resolveEffectiveCollegeId(userRole, authCollegeId, selectedCollegeId)
+  const universityWide = hasUniversityWideScope(userRole, authCollegeId)
 
   // Get student and semester from URL params
   const studentIdFromUrl = searchParams.get('student')
@@ -65,7 +67,7 @@ export default function CreateEnrollment() {
 
   // When admin has semester in URL but no college selected, fetch that semester and set college so semesters load
   useEffect(() => {
-    if (semesterIdFromUrl && !collegeId && userRole === 'admin' && setSelectedCollegeId) {
+    if (semesterIdFromUrl && !collegeId && universityWide && setSelectedCollegeId) {
       const run = async () => {
         const { data } = await supabase
           .from('semesters')
@@ -76,7 +78,7 @@ export default function CreateEnrollment() {
       }
       run()
     }
-  }, [semesterIdFromUrl, collegeId, userRole, setSelectedCollegeId])
+  }, [semesterIdFromUrl, collegeId, universityWide, setSelectedCollegeId])
 
   useEffect(() => {
     if (collegeId) {
@@ -1085,8 +1087,8 @@ export default function CreateEnrollment() {
         </div>
       </div>
 
-      {/* College Selector for Admin - Must be selected first */}
-      {userRole === 'admin' && (
+      {/* College Selector for university-wide staff / admin */}
+      {universityWide && (
         <div className={`rounded-lg p-6 ${requiresCollegeSelection ? 'bg-yellow-50 border-2 border-yellow-300' : 'bg-blue-50 border border-blue-200'}`}>
           <div className={`flex items-center ${isRTL ? 'flex-row-reverse space-x-reverse' : 'space-x-4'}`}>
             <Building2 className={`w-6 h-6 ${requiresCollegeSelection ? 'text-yellow-600' : 'text-blue-600'}`} />

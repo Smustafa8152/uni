@@ -77,49 +77,10 @@ export const AuthProvider = ({ children }) => {
       if (!error && data) {
         setUserRole(data.role)
         setMenuPermissions(data.menu_permissions ?? null)
-        let finalCollegeId = data.college_id
-        
-        // If user is a college admin (role === 'user') but college_id is null,
-        // try to find the college by matching email with college contact emails
-        if (data.role === 'user' && !data.college_id) {
-          console.warn('College admin has null college_id, attempting to find college by email...', email)
-          try {
-            // Try to find college by matching email with various college email fields
-            const { data: collegeData, error: collegeError } = await supabase
-              .from('colleges')
-              .select('id, contact_email, official_email, dean_email, name_en')
-              .or(`contact_email.ilike.%${email}%,official_email.ilike.%${email}%,dean_email.ilike.%${email}%`)
-              .eq('status', 'active')
-              .limit(1)
-            
-            if (!collegeError && collegeData && collegeData.length > 0) {
-              finalCollegeId = collegeData[0].id
-              console.log('✅ Found college by email:', finalCollegeId, 'College:', collegeData[0].name_en)
-              
-              // Update the user record with the found college_id
-              try {
-                const { error: updateError } = await supabase
-                  .from('users')
-                  .update({ college_id: finalCollegeId })
-                  .eq('email', matchedEmail)
-                
-                if (!updateError) {
-                  console.log('✅ Updated user record with college_id:', finalCollegeId)
-                } else {
-                  console.error('❌ Failed to update user record with college_id:', updateError)
-                }
-              } catch (updateErr) {
-                console.error('❌ Error updating user record with college_id:', updateErr)
-              }
-            } else {
-              console.error('❌ Could not find college for email:', email, 'Error:', collegeError)
-              console.warn('⚠️ Please ensure college_id is set in users table or email matches a college contact email')
-            }
-          } catch (collegeErr) {
-            console.error('❌ Error fetching college by email:', collegeErr)
-          }
-        }
-        
+        // Null college_id on role=user is intentional for university-wide staff
+        // (admissions/finance/etc. on the admin portal). Do not auto-bind a college.
+        const finalCollegeId = data.college_id ?? null
+
         setCollegeId(finalCollegeId)
         console.log('User role fetched:', data.role, 'College ID:', finalCollegeId)
         

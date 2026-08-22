@@ -11,6 +11,7 @@ import { normalizeNationalityCode } from '../../utils/nationalities'
 import NationalitySelect from '../../components/common/NationalitySelect'
 import { getPaymentsEnabled } from '../../utils/getPaymentsEnabled'
 import { ArrowLeft, ArrowRight, Save, User, Phone, AlertCircle, GraduationCap, FileText, BookOpen, Building2 } from 'lucide-react'
+import { resolveEffectiveCollegeId, hasUniversityWideScope } from '../../utils/menuPermissions'
 
 export default function CreateApplication() {
   const { t } = useTranslation()
@@ -35,7 +36,8 @@ export default function CreateApplication() {
   const navigate = useNavigate()
   const { userRole, collegeId: authCollegeId } = useAuth()
   const { selectedCollegeId, requiresCollegeSelection, colleges, setSelectedCollegeId, loading: collegesLoading } = useCollege()
-  const collegeId = userRole === 'admin' ? selectedCollegeId : authCollegeId
+  const collegeId = resolveEffectiveCollegeId(userRole, authCollegeId, selectedCollegeId)
+  const universityWide = hasUniversityWideScope(userRole, authCollegeId)
   const [paymentsEnabled, setPaymentsEnabled] = useState(true)
   const [currentStep, setCurrentStep] = useState(1)
   const [loading, setLoading] = useState(false)
@@ -348,8 +350,8 @@ export default function CreateApplication() {
         </div>
       </div>
 
-      {/* College Selector for University Admin */}
-      {userRole === 'admin' && (
+      {/* College Selector for university-wide staff / admin */}
+      {universityWide && (
         <div className={`rounded-xl shadow-sm p-6 ${requiresCollegeSelection ? 'bg-yellow-50 border-2 border-yellow-400' : 'bg-white border-2 border-blue-200'}`}>
           <div className={`flex flex-col ${isRTL ? 'items-end' : 'items-start'} md:flex-row md:items-center ${isRTL ? 'md:flex-row-reverse md:space-x-reverse' : 'md:space-x-4'} gap-4`}>
             <div className={`flex items-center ${isRTL ? 'flex-row-reverse space-x-reverse' : 'space-x-3'}`}>
