@@ -7,8 +7,10 @@ import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
 import { useCollege } from '../../contexts/CollegeContext'
 import { getNationalityFilterOptions, nationalityMatchesFilter } from '../../utils/nationalities'
-import { Search, Plus, Eye, CheckCircle, XCircle, Clock, Calendar, Phone, GraduationCap, FileText, Building2, Filter, LayoutDashboard, X } from 'lucide-react'
+import { Search, Plus, Eye, CheckCircle, XCircle, Clock, Calendar, Phone, GraduationCap, FileText, Building2, Filter, LayoutDashboard, X, Download, Loader2 } from 'lucide-react'
 import { hasUniversityWideScope, resolveEffectiveCollegeId } from '../../utils/menuPermissions'
+import { exportApplicationsList, applyApplicationFilters } from '../../utils/exportApplications'
+import SearchableMultiSelect from '../../components/SearchableMultiSelect'
 
 const ASSIGN_FIELDS = [
   { key: 'college_id', labelKey: 'admissions.applicationsPage.assignCollege', fallback: 'College' },
@@ -118,6 +120,21 @@ export default function Applications() {
     academicYears: [],
   })
   const [assignCatalogLoading, setAssignCatalogLoading] = useState(false)
+  const [exporting, setExporting] = useState(false)
+  const [exportMessage, setExportMessage] = useState('')
+  const [exportOpen, setExportOpen] = useState(false)
+  const [exportFormat, setExportFormat] = useState('xlsx')
+  const [exportFilters, setExportFilters] = useState({
+    colleges: [],
+    majors: [],
+    academicYears: [],
+    semesters: [],
+    statuses: [],
+    nationalities: [],
+    genders: [],
+    search: '',
+    onlySelected: false,
+  })
 
   // Admin setting: default program for new applications (global)
   const [programDefaultsLoading, setProgramDefaultsLoading] = useState(false)
@@ -620,6 +637,246 @@ export default function Applications() {
 
   const stats = useMemo(() => summarizeApps(filteredApplications), [filteredApplications])
 
+  const exportPreviewApps = useMemo(
+    () =>
+      applyApplicationFilters(applications, exportFilters, {
+        pendingApplicantRequestMap,
+        selectedIds: exportFilters.onlySelected ? selectedIds : null,
+      }),
+    [applications, exportFilters, pendingApplicantRequestMap, selectedIds],
+  )
+
+  const exportCollegeSelectOptions = useMemo(
+    () => collegeOptions.map((c) => ({ value: c.id, label: c.label })),
+    [collegeOptions],
+  )
+
+  const exportMajorOptions = useMemo(() => {
+    const map = new Map()
+    for (const a of applications) {
+      if (exportFilters.colleges.length) {
+        const cid = String(a.college_id ?? a.colleges?.id ?? '')
+        if (!exportFilters.colleges.includes(cid)) continue
+      }
+      const id = a.major_id ?? a.majors?.id
+      if (id == null) continue
+      if (!map.has(String(id))) {
+        map.set(String(id), {
+          id: String(id),
+          label: getLocalizedName(a.majors, isArabicLayout) || a.majors?.name_en || a.majors?.code || `#${id}`,
+        })
+      }
+    }
+    return [...map.values()].sort((a, b) => a.label.localeCompare(b.label, undefined, { sensitivity: 'base' }))
+  }, [applications, exportFilters.colleges, isArabicLayout])
+
+  const exportMajorSelectOptions = useMemo(
+    () => exportMajorOptions.map((m) => ({ value: m.id, label: m.label })),
+    [exportMajorOptions],
+  )
+
+  const exportAcademicYearOptions = useMemo(() => {
+    const map = new Map()
+    for (const a of applications) {
+      if (exportFilters.colleges.length) {
+        const cid = String(a.college_id ?? a.colleges?.id ?? '')
+        if (!exportFilters.colleges.includes(cid)) continue
+      }
+      if (exportFilters.majors.length) {
+        const mid = String(a.major_id ?? a.majors?.id ?? '')
+        if (!exportFilters.majors.includes(mid)) continue
+      }
+      const { id, row, startDate } = getAppAcademicYear(a)
+      if (id == null) continue
+      const key = String(id)
+      if (!map.has(key)) {
+        map.set(key, {
+          id: key,
+          label: academicYearLabel(row, isArabicLayout, id),
+          startDate,
+        })
+      }
+    }
+    return [...map.values()].sort((a, b) => {
+      if (a.startDate && b.startDate) return String(b.startDate).localeCompare(String(a.startDate))
+      return a.label.localeCompare(b.label, undefined, { sensitivity: 'base' })
+    })
+  }, [applications, exportFilters.colleges, exportFilters.majors, isArabicLayout])
+
+  const exportAcademicYearSelectOptions = useMemo(
+    () => [
+      ...exportAcademicYearOptions.map((y) => ({ value: y.id, label: y.label })),
+      {
+        value: '__none__',
+        label: t('admissions.applicationsPage.academicYearUnassigned', 'No academic year'),
+      },
+    ],
+    [exportAcademicYearOptions, t],
+  )
+
+  const exportSemesterOptions = useMemo(() => {
+    const map = new Map()
+    for (const a of applications) {
+      if (exportFilters.colleges.length) {
+        const cid = String(a.college_id ?? a.colleges?.id ?? '')
+        if (!exportFilters.colleges.includes(cid)) continue
+      }
+      if (exportFilters.majors.length) {
+        const mid = String(a.major_id ?? a.majors?.id ?? '')
+        if (!exportFilters.majors.includes(mid)) continue
+      }
+      if (exportFilters.academicYears.length) {
+        const { id: ayId } = getAppAcademicYear(a)
+        const ayKey = ayId == null ? '__none__' : String(ayId)
+        if (!exportFilters.academicYears.includes(ayKey)) continue
+      }
+      const id = a.semester_id ?? a.semesters?.id
+      if (id == null) continue
+      if (!map.has(String(id))) {
+        map.set(String(id), {
+          id: String(id),
+          label: getLocalizedName(a.semesters, isArabicLayout) || a.semesters?.name_en || a.semesters?.code || `#${id}`,
+        })
+      }
+    }
+    return [...map.values()].sort((a, b) => a.label.localeCompare(b.label, undefined, { sensitivity: 'base' }))
+  }, [applications, exportFilters.colleges, exportFilters.majors, exportFilters.academicYears, isArabicLayout])
+
+  const exportSemesterSelectOptions = useMemo(
+    () => [
+      ...exportSemesterOptions.map((s) => ({ value: s.id, label: s.label })),
+      {
+        value: '__none__',
+        label: t('admissions.applicationsPage.semesterUnassigned', 'No semester'),
+      },
+    ],
+    [exportSemesterOptions, t],
+  )
+
+  const exportStatusSelectOptions = useMemo(
+    () => [
+      { value: 'pending', label: t('admissions.applicationsPage.filterPending') },
+      { value: 'accepted', label: t('admissions.applicationsPage.filterAccepted') },
+      { value: 'rejected', label: t('admissions.applicationsPage.filterRejected') },
+      { value: 'waitlisted', label: t('admissions.applicationsPage.filterWaitlisted') },
+      {
+        value: 'pending_requests',
+        label: t('admissions.applicationsPage.filterPendingRequests', 'Pending applicant requests'),
+      },
+    ],
+    [t],
+  )
+
+  const exportNationalitySelectOptions = useMemo(() => {
+    const opts = []
+    if (nationalityOptions.hasEmpty) {
+      opts.push({
+        value: '__empty__',
+        label: t('admissions.applicationsPage.filterNationalityNotSpecified'),
+      })
+    }
+    for (const nat of nationalityOptions.values) {
+      opts.push({ value: nat.code, label: nat.label })
+    }
+    return opts
+  }, [nationalityOptions, t])
+
+  const exportGenderSelectOptions = useMemo(() => {
+    const opts = []
+    if (genderOptions.hasEmpty) {
+      opts.push({
+        value: '__empty__',
+        label: t('admissions.applicationsPage.filterGenderNotSpecified'),
+      })
+    }
+    for (const g of genderOptions.values) {
+      opts.push({ value: g, label: formatGenderFilterLabel(t, g) })
+    }
+    return opts
+  }, [genderOptions, t])
+
+  const summarizeExportMulti = (selected, options, max = 2) => {
+    if (!selected?.length) return null
+    const labels = selected.map((id) => options.find((o) => String(o.value) === String(id))?.label || id)
+    if (labels.length <= max) return labels.join(', ')
+    return `${labels.slice(0, max).join(', ')} +${labels.length - max}`
+  }
+
+  const openExportModal = () => {
+    setExportFilters({
+      colleges: collegeFilter !== 'all' ? [collegeFilter] : [],
+      majors: majorFilter !== 'all' ? [majorFilter] : [],
+      academicYears: academicYearFilter !== 'all' ? [academicYearFilter] : [],
+      semesters: semesterFilter !== 'all' ? [semesterFilter] : [],
+      statuses: statusFilter !== 'all' ? [statusFilter] : [],
+      nationalities: nationalityFilter !== 'all' ? [nationalityFilter] : [],
+      genders: genderFilter !== 'all' ? [genderFilter] : [],
+      search: searchQuery,
+      onlySelected: selectedIds.size > 0,
+    })
+    setExportFormat('xlsx')
+    setExportOpen(true)
+  }
+
+  const buildExportFilterSummary = () => {
+    const parts = []
+    const allLabel = isArabicLayout ? 'الكل' : 'All'
+    const collegePart = summarizeExportMulti(exportFilters.colleges, exportCollegeSelectOptions)
+    if (collegePart) parts.push(collegePart)
+    const majorPart = summarizeExportMulti(exportFilters.majors, exportMajorSelectOptions)
+    if (majorPart) parts.push(majorPart)
+    const ayPart = summarizeExportMulti(exportFilters.academicYears, exportAcademicYearSelectOptions)
+    if (ayPart) parts.push(ayPart)
+    const semPart = summarizeExportMulti(exportFilters.semesters, exportSemesterSelectOptions)
+    if (semPart) parts.push(semPart)
+    const statusPart = summarizeExportMulti(exportFilters.statuses, exportStatusSelectOptions)
+    if (statusPart) parts.push(statusPart)
+    const natPart = summarizeExportMulti(exportFilters.nationalities, exportNationalitySelectOptions)
+    if (natPart) parts.push(natPart)
+    const genderPart = summarizeExportMulti(exportFilters.genders, exportGenderSelectOptions)
+    if (genderPart) parts.push(genderPart)
+    if (exportFilters.search) parts.push(`"${exportFilters.search}"`)
+    if (exportFilters.onlySelected) {
+      parts.push(t('admissions.applicationsPage.exportOnlySelectedShort', 'Selected only'))
+    }
+    return parts.length ? parts.join(' · ') : allLabel
+  }
+
+  const handleExport = async () => {
+    const ids = exportPreviewApps.map((a) => a.id)
+    if (!ids.length) return
+    setExporting(true)
+    setExportMessage('')
+    try {
+      const count = await exportApplicationsList({
+        applicationIds: ids,
+        isArabic: isArabicLayout,
+        getStatusLabel: (code) => getApplicationStatusLabel(t, code),
+        format: exportFormat,
+        filterSummary: buildExportFilterSummary(),
+      })
+      setExportOpen(false)
+      setExportMessage(
+        t('admissions.applicationsPage.exportSuccess', {
+          defaultValue: 'Exported {{count}} application(s).',
+          count,
+        }),
+      )
+      setTimeout(() => setExportMessage(''), 4000)
+    } catch (e) {
+      console.error('Export applications failed:', e)
+      setExportMessage(
+        t('admissions.applicationsPage.exportFailed', {
+          defaultValue: 'Export failed: {{message}}',
+          message: e?.message || 'Unknown error',
+        }),
+      )
+      setTimeout(() => setExportMessage(''), 6000)
+    } finally {
+      setExporting(false)
+    }
+  }
+
   const scopeAppsForDashboards = useCallback(() => {
     let scoped = [...applications]
     if (collegeFilter !== 'all') {
@@ -993,15 +1250,38 @@ export default function Applications() {
           <h1 className="text-3xl font-bold text-gray-900">{t('admissions.applicationsPage.title')}</h1>
           <p className="text-gray-600 mt-1">{t('admissions.applicationsPage.subtitle')}</p>
         </div>
-        <button
-          type="button"
-          onClick={() => navigate('/admissions/applications/create')}
-          className={`flex items-center gap-2 bg-primary-gradient text-white px-6 py-3 rounded-xl font-semibold shadow-lg hover:shadow-xl transition-all ${iconRow}`}
-        >
-          <Plus className="w-5 h-5 shrink-0" />
-          <span>{t('admissions.applicationsPage.newApplication')}</span>
-        </button>
+        <div className={`flex flex-wrap items-center gap-2 ${isArabicLayout ? 'flex-row-reverse' : ''}`}>
+          <button
+            type="button"
+            disabled={exporting || applications.length === 0}
+            onClick={openExportModal}
+            className={`flex items-center gap-2 px-4 py-3 rounded-xl font-semibold border border-indigo-200 bg-indigo-50 text-indigo-900 hover:bg-indigo-100 disabled:opacity-50 disabled:cursor-not-allowed transition-all ${iconRow}`}
+          >
+            {exporting ? <Loader2 className="w-5 h-5 animate-spin shrink-0" /> : <Download className="w-5 h-5 shrink-0" />}
+            <span>{t('admissions.applicationsPage.export', 'Export')}</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => navigate('/admissions/applications/create')}
+            className={`flex items-center gap-2 bg-primary-gradient text-white px-6 py-3 rounded-xl font-semibold shadow-lg hover:shadow-xl transition-all ${iconRow}`}
+          >
+            <Plus className="w-5 h-5 shrink-0" />
+            <span>{t('admissions.applicationsPage.newApplication')}</span>
+          </button>
+        </div>
       </div>
+
+      {exportMessage && (
+        <div
+          className={`rounded-lg border px-4 py-3 text-sm ${
+            exportMessage.includes('failed') || exportMessage.includes('فشل')
+              ? 'bg-red-50 border-red-200 text-red-700'
+              : 'bg-green-50 border-green-200 text-green-700'
+          } ${alignStart}`}
+        >
+          {exportMessage}
+        </div>
+      )}
 
       {userRole === 'admin' && (
         <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6">
@@ -1390,6 +1670,13 @@ export default function Applications() {
           )}
         </div>
 
+        <p className={`text-xs text-gray-500 mb-3 ${alignStart}`}>
+          {t(
+            'admissions.applicationsPage.exportFilteredHint',
+            'Use Export to choose filters and download a formatted spreadsheet.',
+          )}
+        </p>
+
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-5 gap-3 mb-4">
           {collegeOptions.length > 1 && (
             <select
@@ -1762,6 +2049,271 @@ export default function Applications() {
               ? t('admissions.applicationsPage.emptyFiltered')
               : t('admissions.applicationsPage.emptyNone')}
           </p>
+        </div>
+      )}
+
+      {exportOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40">
+          <div
+            className={`bg-white rounded-2xl shadow-xl border border-gray-200 w-full max-w-3xl overflow-hidden ${alignStart}`}
+            role="dialog"
+            aria-modal="true"
+          >
+            <div className="bg-gradient-to-r from-indigo-700 via-indigo-600 to-blue-600 px-6 py-5 text-white">
+              <div className={`flex items-start justify-between gap-3 ${isArabicLayout ? 'flex-row-reverse' : ''}`}>
+                <div>
+                  <h3 className="text-lg font-bold">
+                    {t('admissions.applicationsPage.exportTitle', 'Export applications')}
+                  </h3>
+                  <p className="text-sm text-indigo-100 mt-1">
+                    {t(
+                      'admissions.applicationsPage.exportModalHint',
+                      'Choose filters, then download a formatted Excel or CSV file.',
+                    )}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => !exporting && setExportOpen(false)}
+                  className="p-2 rounded-lg hover:bg-white/10 text-white/90"
+                  aria-label="Close"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+            </div>
+
+            <div className="p-6 space-y-4 max-h-[70vh] overflow-y-auto">
+              <div className="rounded-xl border border-indigo-100 bg-indigo-50/60 px-4 py-3">
+                <p className="text-sm font-semibold text-indigo-900">
+                  {t('admissions.applicationsPage.exportPreviewCount', {
+                    defaultValue: '{{count}} application(s) will be exported',
+                    count: exportPreviewApps.length,
+                  })}
+                </p>
+                <p className="text-xs text-indigo-700 mt-1">{buildExportFilterSummary()}</p>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                {collegeOptions.length > 1 && (
+                  <div>
+                    <label className="block text-xs font-semibold text-gray-600 mb-1">
+                      {t('admissions.applicationsPage.assignCollege', 'College')}
+                    </label>
+                    <SearchableMultiSelect
+                      inputId="export-colleges"
+                      value={exportFilters.colleges}
+                      onChange={(ids) =>
+                        setExportFilters((f) => ({
+                          ...f,
+                          colleges: ids,
+                          majors: [],
+                          academicYears: [],
+                          semesters: [],
+                        }))
+                      }
+                      options={exportCollegeSelectOptions}
+                      placeholder={t('admissions.applicationsPage.filterCollegeAll', 'All colleges')}
+                      isDisabled={exporting}
+                      isRTL={isArabicLayout}
+                    />
+                  </div>
+                )}
+
+                <div>
+                  <label className="block text-xs font-semibold text-gray-600 mb-1">
+                    {t('admissions.applicationsPage.assignMajor', 'Major')}
+                  </label>
+                  <SearchableMultiSelect
+                    inputId="export-majors"
+                    value={exportFilters.majors}
+                    onChange={(ids) =>
+                      setExportFilters((f) => ({
+                        ...f,
+                        majors: ids,
+                        academicYears: [],
+                        semesters: [],
+                      }))
+                    }
+                    options={exportMajorSelectOptions}
+                    placeholder={t('admissions.applicationsPage.filterMajorAll', 'All majors')}
+                    isDisabled={exporting}
+                    isRTL={isArabicLayout}
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-gray-600 mb-1">
+                    {t('admissions.applicationsPage.assignAcademicYear', 'Academic year')}
+                  </label>
+                  <SearchableMultiSelect
+                    inputId="export-academic-years"
+                    value={exportFilters.academicYears}
+                    onChange={(ids) =>
+                      setExportFilters((f) => ({
+                        ...f,
+                        academicYears: ids,
+                        semesters: [],
+                      }))
+                    }
+                    options={exportAcademicYearSelectOptions}
+                    placeholder={t('admissions.applicationsPage.filterAcademicYearAll', 'All academic years')}
+                    isDisabled={exporting}
+                    isRTL={isArabicLayout}
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-gray-600 mb-1">
+                    {t('admissions.applicationsPage.assignSemester', 'Semester')}
+                  </label>
+                  <SearchableMultiSelect
+                    inputId="export-semesters"
+                    value={exportFilters.semesters}
+                    onChange={(ids) => setExportFilters((f) => ({ ...f, semesters: ids }))}
+                    options={exportSemesterSelectOptions}
+                    placeholder={t('admissions.applicationsPage.filterSemesterAll', 'All semesters')}
+                    isDisabled={exporting}
+                    isRTL={isArabicLayout}
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-gray-600 mb-1">
+                    {t('admissions.applicationsPage.exportStatusLabel', 'Status')}
+                  </label>
+                  <SearchableMultiSelect
+                    inputId="export-statuses"
+                    value={exportFilters.statuses}
+                    onChange={(ids) => setExportFilters((f) => ({ ...f, statuses: ids }))}
+                    options={exportStatusSelectOptions}
+                    placeholder={t('admissions.applicationsPage.filterAll', 'All statuses')}
+                    isDisabled={exporting}
+                    isRTL={isArabicLayout}
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-gray-600 mb-1">
+                    {t('admissions.applicationsPage.exportNationalityLabel', 'Nationality')}
+                  </label>
+                  <SearchableMultiSelect
+                    inputId="export-nationalities"
+                    value={exportFilters.nationalities}
+                    onChange={(ids) => setExportFilters((f) => ({ ...f, nationalities: ids }))}
+                    options={exportNationalitySelectOptions}
+                    placeholder={t('admissions.applicationsPage.filterNationalityAll', 'All nationalities')}
+                    isDisabled={exporting}
+                    isRTL={isArabicLayout}
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-gray-600 mb-1">
+                    {t('admissions.applicationsPage.exportGenderLabel', 'Gender')}
+                  </label>
+                  <SearchableMultiSelect
+                    inputId="export-genders"
+                    value={exportFilters.genders}
+                    onChange={(ids) => setExportFilters((f) => ({ ...f, genders: ids }))}
+                    options={exportGenderSelectOptions}
+                    placeholder={t('admissions.applicationsPage.filterGenderAll', 'All genders')}
+                    isDisabled={exporting}
+                    isRTL={isArabicLayout}
+                  />
+                </div>
+
+                <div className="sm:col-span-2">
+                  <label className="block text-xs font-semibold text-gray-600 mb-1">
+                    {t('admissions.applicationsPage.searchPlaceholder')}
+                  </label>
+                  <input
+                    type="text"
+                    value={exportFilters.search}
+                    onChange={(e) => setExportFilters((f) => ({ ...f, search: e.target.value }))}
+                    placeholder={t('admissions.applicationsPage.searchPlaceholder')}
+                    className={`w-full px-3 py-2.5 border border-gray-300 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent ${alignStart}`}
+                    dir={isArabicLayout ? 'rtl' : 'ltr'}
+                    disabled={exporting}
+                  />
+                </div>
+              </div>
+
+              {selectedIds.size > 0 && (
+                <label className={`flex items-center gap-2 text-sm font-medium text-gray-800 cursor-pointer ${iconRow}`}>
+                  <input
+                    type="checkbox"
+                    checked={exportFilters.onlySelected}
+                    onChange={(e) => setExportFilters((f) => ({ ...f, onlySelected: e.target.checked }))}
+                    className="w-4 h-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+                    disabled={exporting}
+                  />
+                  <span>
+                    {t('admissions.applicationsPage.exportOnlySelected', {
+                      defaultValue: 'Export selected only ({{count}})',
+                      count: selectedIds.size,
+                    })}
+                  </span>
+                </label>
+              )}
+
+              <div>
+                <label className="block text-xs font-semibold text-gray-600 mb-2">
+                  {t('admissions.applicationsPage.exportFormat', 'Format')}
+                </label>
+                <div className={`flex flex-wrap gap-2 ${isArabicLayout ? 'flex-row-reverse' : ''}`}>
+                  <button
+                    type="button"
+                    onClick={() => setExportFormat('xlsx')}
+                    className={`px-4 py-2 rounded-xl text-sm font-semibold border transition-colors ${
+                      exportFormat === 'xlsx'
+                        ? 'bg-indigo-600 text-white border-indigo-600'
+                        : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
+                    }`}
+                    disabled={exporting}
+                  >
+                    {t('admissions.applicationsPage.exportExcel', 'Export Excel')}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setExportFormat('csv')}
+                    className={`px-4 py-2 rounded-xl text-sm font-semibold border transition-colors ${
+                      exportFormat === 'csv'
+                        ? 'bg-indigo-600 text-white border-indigo-600'
+                        : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
+                    }`}
+                    disabled={exporting}
+                  >
+                    {t('admissions.applicationsPage.exportCsv', 'Export CSV')}
+                  </button>
+                </div>
+              </div>
+
+              <div className={`flex flex-wrap gap-2 justify-end pt-2 ${isArabicLayout ? 'flex-row-reverse' : ''}`}>
+                <button
+                  type="button"
+                  onClick={() => setExportOpen(false)}
+                  disabled={exporting}
+                  className="px-4 py-2.5 rounded-xl text-sm font-semibold border border-gray-300 hover:bg-gray-50 disabled:opacity-50"
+                >
+                  {t('common.cancel', 'Cancel')}
+                </button>
+                <button
+                  type="button"
+                  onClick={handleExport}
+                  disabled={exporting || exportPreviewApps.length === 0}
+                  className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-50 ${iconRow}`}
+                >
+                  {exporting ? <Loader2 className="w-4 h-4 animate-spin shrink-0" /> : <Download className="w-4 h-4 shrink-0" />}
+                  <span>
+                    {exporting
+                      ? t('admissions.applicationsPage.exporting', 'Exporting…')
+                      : t('admissions.applicationsPage.exportDownload', 'Download')}
+                  </span>
+                </button>
+              </div>
+            </div>
+          </div>
         </div>
       )}
 

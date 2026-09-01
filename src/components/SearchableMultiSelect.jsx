@@ -13,8 +13,8 @@ export default function SearchableMultiSelect({
   isRTL,
   inputId,
 }) {
-  const idSet = new Set((value || []).map((v) => Number(v)))
-  const selected = options.filter((o) => idSet.has(Number(o.value)))
+  const idSet = new Set((value || []).map((v) => String(v)))
+  const selected = options.filter((o) => idSet.has(String(o.value)))
 
   return (
     <Select
