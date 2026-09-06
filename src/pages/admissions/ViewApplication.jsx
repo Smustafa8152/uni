@@ -12,6 +12,8 @@ import { getPaymentsEnabled } from '../../utils/getPaymentsEnabled'
 import { getNationalityLabel, normalizeNationalityCode } from '../../utils/nationalities'
 import NationalitySelect from '../../components/common/NationalitySelect'
 import { ArrowLeft, CheckCircle, XCircle, Clock, Mail, Phone, MapPin, Calendar, GraduationCap, FileText, User, AlertCircle, BookOpen, Edit, Save, X, ChevronDown, ChevronUp, ArrowRight, Info, Sparkles, Shield, TrendingUp, ArrowDown } from 'lucide-react'
+import ApplicationMessagesPanel from '../../components/admissions/ApplicationMessagesPanel'
+import InterviewExamInvitePanel from '../../components/admissions/InterviewExamInvitePanel'
 
 const TIMELINE_TRIGGER_ICONS = {
   TRSB: { icon: CheckCircle, iconClass: 'text-blue-600', labelClass: 'text-blue-900' },
@@ -816,6 +818,7 @@ export default function ViewApplication() {
   const [requestDocsMessage, setRequestDocsMessage] = useState('')
   const [requestDocsSending, setRequestDocsSending] = useState(false)
   const [verifyingDocId, setVerifyingDocId] = useState(null)
+  const [staffUserId, setStaffUserId] = useState(null)
 
   const [showOfferModal, setShowOfferModal] = useState(false)
   const [offerDeadline, setOfferDeadline] = useState('')
@@ -970,6 +973,10 @@ export default function ViewApplication() {
     if (userError) return null
     return userData?.id ?? null
   }, [user?.email])
+
+  useEffect(() => {
+    getStaffUserId().then((id) => setStaffUserId(id))
+  }, [getStaffUserId])
 
   const sendAdmissionNotification = useCallback(
     async ({ type, subject, message, meta } = {}) => {
@@ -1559,6 +1566,33 @@ export default function ViewApplication() {
             statusNotes?.trim() ||
             'Your uploaded documents are now under verification. We will contact you if anything else is required.',
           meta: { to_status_code: selectedStatus, reason_code: selectedReason || null },
+        })
+      } else if (selectedStatus === 'RVIV') {
+        await sendAdmissionNotification({
+          type: 'interview_invite',
+          subject: 'Interview required for your application',
+          message:
+            statusNotes?.trim() ||
+            'An admission interview is required. Please check your applicant portal for the date, time, and meeting link.',
+          meta: { to_status_code: selectedStatus },
+        })
+      } else if (selectedStatus === 'RVEX') {
+        await sendAdmissionNotification({
+          type: 'exam_invite',
+          subject: 'Entrance exam required for your application',
+          message:
+            statusNotes?.trim() ||
+            'An entrance exam / admission test is required. Please check your applicant portal for the date and details.',
+          meta: { to_status_code: selectedStatus },
+        })
+      } else if (selectedStatus === 'DCWL') {
+        await sendAdmissionNotification({
+          type: 'waitlisted',
+          subject: 'Update regarding your admission application',
+          message:
+            statusNotes?.trim() ||
+            'Your application has been waitlisted. Please check your applicant portal for updates.',
+          meta: { to_status_code: selectedStatus },
         })
       }
 
@@ -2918,6 +2952,26 @@ export default function ViewApplication() {
               </div>
             </div>
           )}
+
+          <ApplicationMessagesPanel
+            application={application}
+            mode="staff"
+            staffUserId={staffUserId}
+            isArabicLayout={isArabicLayout}
+            alignStart={alignStart}
+            iconRow={isArabicLayout ? 'flex-row-reverse' : 'flex-row'}
+          />
+
+          <InterviewExamInvitePanel
+            application={application}
+            applicationId={applicationId}
+            staffUserId={staffUserId}
+            sendAdmissionNotification={sendAdmissionNotification}
+            onUpdated={fetchApplication}
+            isArabicLayout={isArabicLayout}
+            alignStart={alignStart}
+            iconRow={isArabicLayout ? 'flex-row-reverse' : 'flex-row'}
+          />
 
           {/* Emergency Contact */}
           {application?.emergency_contact_name && (

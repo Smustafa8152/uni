@@ -8,6 +8,7 @@ import { MAJOR_STATUS_FOR_APPLICATION_DROPDOWN } from '../../utils/majorAdmissio
 import { getPaymentsEnabled } from '../../utils/getPaymentsEnabled'
 import { getApplicationFormDefaults } from '../../utils/getApplicationFormDefaults'
 import { normalizeNationalityCode } from '../../utils/nationalities'
+import { notifyApplicationSubmitted } from '../../utils/notifyApplicationSubmitted'
 import NationalitySelect from '../../components/common/NationalitySelect'
 import { ArrowLeft, ArrowRight, Save, User, Phone, AlertCircle, GraduationCap, FileText, BookOpen, Building2, CheckCircle, Copy, Upload, Award } from 'lucide-react'
 
@@ -578,10 +579,18 @@ export default function RegisterApplication({ portal = false }) {
           review_notes: null,
           ...(portal && user?.id ? { applicant_user_id: user.id } : {}),
         })
-        .select('id, application_number, created_at')
+        .select('id, application_number, created_at, email, college_id')
         .single()
 
       if (error) throw error
+
+      // Best-effort confirmation email (does not block success UI)
+      if (!formData.submit_as_draft && application?.id) {
+        const mailResult = await notifyApplicationSubmitted(supabase, application, { isDraft: false })
+        if (!mailResult.sent && !mailResult.skipped) {
+          console.warn('Submit confirmation email was not sent:', mailResult.error)
+        }
+      }
 
       // Insert audit log asynchronously (don't wait for it to complete)
       // This prevents timeout if audit log insert is slow

@@ -23,6 +23,7 @@ import {
   Layers,
   Library,
   DollarSign,
+  MessageSquare,
 } from 'lucide-react'
 
 const UI = {
@@ -135,6 +136,14 @@ function NavigationItem({ item, location, setSidebarOpen, t, openSubmenuKey, set
 
 const defaultNavigation = [
   { name: 'Dashboard', translationKey: 'navigation.dashboard', href: '/dashboard', icon: LayoutDashboard, roles: ['admin', 'user', 'instructor', 'student'], menuKey: 'dashboard' },
+  {
+    name: 'Communication',
+    translationKey: 'navigation.communication',
+    href: '/communication',
+    icon: MessageSquare,
+    roles: ['admin', 'user'],
+    menuKey: 'communication',
+  },
   {
     name: 'Colleges',
     translationKey: 'navigation.colleges',
@@ -252,6 +261,7 @@ const defaultNavigation = [
     menuKey: 'admissions',
     submenu: [
       { name: 'All Applications', translationKey: 'navigation.allApplications', href: '/admissions/applications' },
+      { name: 'Communication', translationKey: 'navigation.communication', href: '/communication' },
       { name: 'Pending Requests', translationKey: 'navigation.pendingRequests', href: '/admissions/applications?status=pending' },
       { name: 'New Application', translationKey: 'navigation.newApplication', href: '/admissions/applications/create' },
     ],
@@ -277,6 +287,14 @@ const defaultNavigation = [
 
 const adminNavigation = [
   { name: 'Dashboard', translationKey: 'navigation.dashboard', href: '/dashboard', icon: LayoutDashboard, roles: ['admin', 'user'], menuKey: 'dashboard' },
+  {
+    name: 'Communication',
+    translationKey: 'navigation.communication',
+    href: '/communication',
+    icon: MessageSquare,
+    roles: ['admin', 'user'],
+    menuKey: 'communication',
+  },
   {
     name: 'University configuration',
     translationKey: 'navigation.universityConfiguration',
@@ -319,6 +337,7 @@ const adminNavigation = [
     menuKey: 'admissions',
     submenu: [
       { name: 'Applications', translationKey: 'navigation.allApplications', href: '/admissions/applications' },
+      { name: 'Communication', translationKey: 'navigation.communication', href: '/communication' },
       { name: 'New Application', translationKey: 'navigation.newApplication', href: '/admissions/applications/create' },
       { name: 'Enrollments', translationKey: 'navigation.enrollments', href: '/enrollments' },
       { name: 'Bulk Enrollment', translationKey: 'navigation.bulkEnrollment', href: '/enrollments/bulk' },

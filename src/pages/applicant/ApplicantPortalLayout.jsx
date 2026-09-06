@@ -10,12 +10,14 @@ import {
   LogOut,
   Home,
   User,
+  MessageSquare,
   Mail,
 } from 'lucide-react'
 
 const nav = [
   { to: '/portal', end: true, icon: LayoutDashboard, labelKey: 'applicantPortal.nav.dashboard' },
   { to: '/portal/profile', icon: User, labelKey: 'applicantPortal.nav.profile' },
+  { to: '/portal/messages', icon: MessageSquare, labelKey: 'applicantPortal.nav.messages' },
   { to: '/portal/apply', icon: FilePlus2, labelKey: 'applicantPortal.nav.newApplication' },
   { to: '/application-status', end: true, icon: ListChecks, labelKey: 'applicantPortal.nav.trackPublic' },
   { to: '/portal/offer-letter', icon: Mail, labelKey: 'applicantPortal.nav.offerLetter' },

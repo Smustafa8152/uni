@@ -6,6 +6,7 @@
 
 export const MENU_MODULES = [
   { key: 'dashboard', label: 'Dashboard', labelAr: 'لوحة التحكم', always: true },
+  { key: 'communication', label: 'Communication', labelAr: 'التواصل', always: true },
   { key: 'university', label: 'University configuration', labelAr: 'إعدادات الجامعة' },
   { key: 'academic', label: 'Academic configuration', labelAr: 'الإعدادات الأكاديمية' },
   { key: 'admissions', label: 'Admissions', labelAr: 'القبول' },
@@ -20,6 +21,7 @@ export const MENU_MODULE_KEYS = MENU_MODULES.map((m) => m.key)
 /** Map old college-sidebar keys (+ aliases) → admin menu keys */
 const KEY_ALIASES = {
   dashboard: 'dashboard',
+  communication: 'communication',
   settings: 'university',
   universityConfiguration: 'university',
   university: 'university',
@@ -61,31 +63,31 @@ export const MENU_PRESETS = [
     id: 'admissions',
     label: 'Admissions',
     labelAr: 'القبول',
-    keys: ['dashboard', 'admissions', 'people', 'operations'],
+    keys: ['dashboard', 'communication', 'admissions', 'people', 'operations'],
   },
   {
     id: 'finance',
     label: 'Finance',
     labelAr: 'المالية',
-    keys: ['dashboard', 'finance', 'people'],
+    keys: ['dashboard', 'communication', 'finance', 'people'],
   },
   {
     id: 'academic',
     label: 'Academic',
     labelAr: 'أكاديمي',
-    keys: ['dashboard', 'academic', 'people'],
+    keys: ['dashboard', 'communication', 'academic', 'people'],
   },
   {
     id: 'grades',
     label: 'Grades',
     labelAr: 'الدرجات',
-    keys: ['dashboard', 'grades', 'people', 'academic'],
+    keys: ['dashboard', 'communication', 'grades', 'people', 'academic'],
   },
   {
     id: 'operations',
     label: 'Operations',
     labelAr: 'العمليات',
-    keys: ['dashboard', 'operations', 'people'],
+    keys: ['dashboard', 'communication', 'operations', 'people'],
   },
 ]
 
@@ -122,6 +124,7 @@ export function isMenuModuleAllowed(permissions, menuKey) {
   if (hasFullMenuAccess(permissions)) return true
   const keys = normalizeMenuPermissions(permissions)
   if (menuKey === 'dashboard') return true
+  if (menuKey === 'communication') return true
   return keys.includes(menuKey)
 }
 

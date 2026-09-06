@@ -8,6 +8,7 @@ import { getLocalizedName } from '../../utils/localizedName'
 import { canLoginWithoutSemesterPm10Milestone } from '../../utils/financePermissions'
 import PaymentModal from '../../components/payment/PaymentModal'
 import { getPaymentsEnabled } from '../../utils/getPaymentsEnabled'
+import ApplicationMessagesPanel from '../../components/admissions/ApplicationMessagesPanel'
 import {
   CheckCircle,
   XCircle,
@@ -24,6 +25,7 @@ import {
   Loader2,
   LogIn,
   Printer,
+  Video,
 } from 'lucide-react'
 
 // Same document types as in register form; uploadable on track page if not filled at registration
@@ -839,6 +841,93 @@ export default function ApplicationStatus() {
             <strong className="font-mono font-bold">{application.application_number}</strong>
           </p>
         </div>
+
+        {(application.interview_at || application.interview_meeting_url || application.status_code === 'RVIV') && (
+          <div
+            className={`rounded-md bg-violet-50 text-violet-900 border-s-4 border-violet-600 px-4 py-3.5 mb-4 text-sm ${isRTL ? 'text-end' : 'text-start'}`}
+          >
+            <div className={`flex items-start gap-2 ${isRTL ? 'flex-row-reverse' : ''}`}>
+              <Video className="w-5 h-5 shrink-0 mt-0.5" />
+              <div className="min-w-0 flex-1 space-y-1">
+                <p className="font-bold">{t('admissions.interview.portalTitle', 'Admission interview')}</p>
+                {application.interview_at && (
+                  <p>
+                    {t('admissions.interview.when', 'When')}:{' '}
+                    {new Date(application.interview_at).toLocaleString(isRTL ? 'ar' : undefined)}
+                    {application.interview_timezone ? ` (${application.interview_timezone})` : ''}
+                  </p>
+                )}
+                {application.interview_meeting_url && (
+                  <p>
+                    <a
+                      href={application.interview_meeting_url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="font-semibold text-violet-800 underline"
+                    >
+                      {t('admissions.interview.joinMeeting', 'Join meeting')}
+                    </a>
+                  </p>
+                )}
+                {application.interview_instructions && (
+                  <p className="whitespace-pre-wrap text-violet-800/90">{application.interview_instructions}</p>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {(application.exam_at || application.exam_location_or_link || application.status_code === 'RVEX') && (
+          <div
+            className={`rounded-md bg-amber-50 text-amber-950 border-s-4 border-amber-500 px-4 py-3.5 mb-6 text-sm ${isRTL ? 'text-end' : 'text-start'}`}
+          >
+            <div className={`flex items-start gap-2 ${isRTL ? 'flex-row-reverse' : ''}`}>
+              <GraduationCap className="w-5 h-5 shrink-0 mt-0.5" />
+              <div className="min-w-0 flex-1 space-y-1">
+                <p className="font-bold">{t('admissions.exam.portalTitle', 'Entrance exam / admission test')}</p>
+                {application.exam_at && (
+                  <p>
+                    {t('admissions.exam.when', 'When')}:{' '}
+                    {new Date(application.exam_at).toLocaleString(isRTL ? 'ar' : undefined)}
+                    {application.exam_timezone ? ` (${application.exam_timezone})` : ''}
+                  </p>
+                )}
+                {application.exam_location_or_link && (
+                  <p>
+                    {t('admissions.exam.location', 'Location / link')}:{' '}
+                    {/^https?:\/\//i.test(application.exam_location_or_link) ? (
+                      <a
+                        href={application.exam_location_or_link}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="font-semibold underline"
+                      >
+                        {application.exam_location_or_link}
+                      </a>
+                    ) : (
+                      application.exam_location_or_link
+                    )}
+                  </p>
+                )}
+                {application.exam_instructions && (
+                  <p className="whitespace-pre-wrap">{application.exam_instructions}</p>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {portalMode && user && (
+          <div className="mb-6">
+            <ApplicationMessagesPanel
+              application={application}
+              mode="applicant"
+              isArabicLayout={isRTL}
+              alignStart={isRTL ? 'text-right' : 'text-left'}
+              iconRow={isRTL ? 'flex-row-reverse' : 'flex-row'}
+            />
+          </div>
+        )}
 
         <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)] gap-6">
           <div className="min-w-0">

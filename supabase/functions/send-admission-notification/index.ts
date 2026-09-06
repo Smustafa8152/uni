@@ -18,11 +18,21 @@ type SmtpShape = {
   password: string
   fromEmail: string
   fromName: string
+  enableNotifications: boolean
+}
+
+function notificationsEnabled(raw: unknown): boolean {
+  if (!raw || typeof raw !== 'object') return true
+  const o = raw as Record<string, unknown>
+  if (typeof o.enable_email_notifications === 'boolean') return o.enable_email_notifications
+  if (typeof o.enableEmailNotifications === 'boolean') return o.enableEmailNotifications
+  return true
 }
 
 function normalizeEmailSettings(raw: unknown): SmtpShape | null {
   if (!raw || typeof raw !== 'object') return null
   const o = raw as Record<string, unknown>
+  const enabled = notificationsEnabled(raw)
   if (typeof o.smtp_host === 'string' && o.smtp_host.length > 0) {
     return {
       host: o.smtp_host,
@@ -32,6 +42,7 @@ function normalizeEmailSettings(raw: unknown): SmtpShape | null {
       password: String(o.smtp_password ?? ''),
       fromEmail: String(o.from_email ?? ''),
       fromName: String(o.from_name ?? ''),
+      enableNotifications: enabled,
     }
   }
   const smtp = o.smtp as Record<string, unknown> | undefined
@@ -44,6 +55,7 @@ function normalizeEmailSettings(raw: unknown): SmtpShape | null {
       password: String(smtp.password ?? ''),
       fromEmail: String(smtp.fromEmail ?? ''),
       fromName: String(smtp.fromName ?? ''),
+      enableNotifications: enabled,
     }
   }
   return null
@@ -116,6 +128,7 @@ async function sendSmtpMessage(cfg: SmtpShape, to: string, subject: string, text
   }
 }
 
+const STAFF_ROLES = new Set(['admin', 'college', 'user'])
 
 serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response(null, { status: 204, headers: corsHeaders })
@@ -146,30 +159,6 @@ serve(async (req) => {
       data: { user: authUser },
       error: authErr,
     } = await supabaseAdmin.auth.getUser(jwt)
-    if (authErr || !authUser?.id) {
-      return new Response(JSON.stringify({ error: 'Invalid session' }), {
-        status: 401,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      })
-    }
-
-    const { data: caller, error: callerErr } = await supabaseAdmin
-      .from('users')
-      .select('id, role, college_id')
-      .eq('openId', authUser.id)
-      .maybeSingle()
-
-    if (callerErr || !caller?.role) {
-      return new Response(JSON.stringify({ error: 'Forbidden' }), {
-        status: 403,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      })
-    }
-
-    const isAdmin = caller.role === 'admin'
-    const isCollegeStaff = caller.role === 'college'
-    const isApplicant = caller.role === 'applicant'
-    const isStudent = caller.role === 'student'
 
     const body = await req.json().catch(() => ({} as Record<string, unknown>))
     const scope = (body.scope as string) || 'college'
@@ -178,35 +167,120 @@ serve(async (req) => {
     const message = String(body.message || '')
     const type = (body.type as string) || ''
     const collegeId = body.collegeId != null ? Number(body.collegeId) : null
+    const applicationId = body.applicationId != null ? Number(body.applicationId) : null
     const appNo =
       body.application && typeof body.application === 'object'
         ? String((body.application as Record<string, unknown>).application_number || '')
         : ''
 
-    // Applicants may only send a submission confirmation to themselves (prevents abuse)
-    if (isApplicant) {
-      const authEmail = (authUser.email || '').trim().toLowerCase()
-      if (type !== 'submitted' || to.trim().toLowerCase() !== authEmail) {
-        return new Response(JSON.stringify({ error: 'Forbidden' }), {
+    // Public / anon submit confirmation: verify application row via service role
+    const isPublicSubmitted =
+      (!authUser?.id || authErr) &&
+      type === 'submitted' &&
+      Number.isFinite(applicationId) &&
+      applicationId > 0
+
+    let caller: { id: number; role: string; college_id: number | null } | null = null
+    let isAdmin = false
+    let isCollegeStaff = false
+    let isAdmissionsUser = false
+    let isApplicant = false
+    let isStudent = false
+
+    if (authUser?.id && !authErr) {
+      const { data: row, error: callerErr } = await supabaseAdmin
+        .from('users')
+        .select('id, role, college_id')
+        .eq('openId', authUser.id)
+        .maybeSingle()
+
+      if (!callerErr && row?.role) {
+        caller = row as { id: number; role: string; college_id: number | null }
+        isAdmin = caller.role === 'admin'
+        // DB enum has no "college"; college staff are stored as role "user"
+        isCollegeStaff = caller.role === 'user'
+        isAdmissionsUser = caller.role === 'user'
+        isApplicant = caller.role === 'applicant'
+        isStudent = caller.role === 'student'
+      } else if (authUser.email) {
+        // Portal applicants may exist only in auth + applications.applicant_user_id
+        isApplicant = true
+      }
+    }
+
+    if (isPublicSubmitted) {
+      const { data: app, error: appErr } = await supabaseAdmin
+        .from('applications')
+        .select('id, email, college_id, application_number, created_at, status_code')
+        .eq('id', applicationId)
+        .maybeSingle()
+      if (appErr || !app) {
+        return new Response(JSON.stringify({ error: 'Application not found' }), {
+          status: 404,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        })
+      }
+      const createdMs = app.created_at ? new Date(app.created_at).getTime() : 0
+      const ageMs = Date.now() - createdMs
+      if (!createdMs || ageMs > 30 * 60 * 1000) {
+        return new Response(JSON.stringify({ error: 'Submission confirmation window expired' }), {
           status: 403,
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         })
       }
+      if (to.trim().toLowerCase() !== String(app.email || '').trim().toLowerCase()) {
+        return new Response(JSON.stringify({ error: 'Recipient does not match application' }), {
+          status: 403,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        })
+      }
+      // Force college from application for SMTP resolution
+      ;(body as Record<string, unknown>).collegeId = app.college_id
+    } else if (isApplicant) {
+      const authEmail = (authUser?.email || '').trim().toLowerCase()
+      const allowedApplicantTypes = new Set(['submitted', 'application_message'])
+      if (!allowedApplicantTypes.has(type) || to.trim().toLowerCase() !== authEmail) {
+        // Applicant messaging to staff: to may be admissions inbox — allow application_message_staff
+        if (type === 'application_message_staff' && Number.isFinite(applicationId)) {
+          const { data: app } = await supabaseAdmin
+            .from('applications')
+            .select('id, email, applicant_user_id')
+            .eq('id', applicationId)
+            .maybeSingle()
+          const owns =
+            app &&
+            (app.applicant_user_id === authUser?.id ||
+              String(app.email || '').trim().toLowerCase() === authEmail)
+          if (!owns) {
+            return new Response(JSON.stringify({ error: 'Forbidden' }), {
+              status: 403,
+              headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+            })
+          }
+        } else if (type !== 'submitted' || to.trim().toLowerCase() !== authEmail) {
+          return new Response(JSON.stringify({ error: 'Forbidden' }), {
+            status: 403,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          })
+        }
+      }
     } else if (isStudent) {
-      // Students may only send a payment confirmation to themselves (prevents abuse)
-      const authEmail = (authUser.email || '').trim().toLowerCase()
+      const authEmail = (authUser?.email || '').trim().toLowerCase()
       if (type !== 'payment_received' || to.trim().toLowerCase() !== authEmail) {
         return new Response(JSON.stringify({ error: 'Forbidden' }), {
           status: 403,
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         })
       }
-    } else if (!isAdmin && !isCollegeStaff) {
+    } else if (!isAdmin && !isCollegeStaff && !isAdmissionsUser) {
       return new Response(JSON.stringify({ error: 'Forbidden' }), {
         status: 403,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       })
     }
+
+    const effectiveCollegeId =
+      body.collegeId != null ? Number(body.collegeId) : collegeId
 
     if (!to.includes('@')) {
       return new Response(JSON.stringify({ error: 'Invalid recipient email' }), {
@@ -222,6 +296,7 @@ serve(async (req) => {
     }
 
     let smtpCfg: SmtpShape | null = null
+    let rawUniversitySettings: unknown = null
     const loadUniversitySmtp = async () => {
       const { data: row, error: uErr } = await supabaseAdmin
         .from('university_settings')
@@ -230,11 +305,12 @@ serve(async (req) => {
         .limit(1)
         .maybeSingle()
       if (uErr) throw uErr
+      rawUniversitySettings = row?.email_settings
       return normalizeEmailSettings(row?.email_settings)
     }
 
     if (scope === 'university') {
-      if (!isAdmin) {
+      if (!isAdmin && !isPublicSubmitted) {
         return new Response(JSON.stringify({ error: 'Only administrators can send university notifications' }), {
           status: 403,
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -242,14 +318,20 @@ serve(async (req) => {
       }
       smtpCfg = await loadUniversitySmtp()
     } else {
-      const effectiveCollegeId = collegeId ?? caller.college_id ?? null
-      if (!effectiveCollegeId || !Number.isFinite(Number(effectiveCollegeId))) {
+      const cid = effectiveCollegeId ?? caller?.college_id ?? null
+      if (!cid || !Number.isFinite(Number(cid))) {
         return new Response(JSON.stringify({ error: 'collegeId is required' }), {
           status: 400,
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         })
       }
-      if (!isApplicant && !isAdmin && Number(caller.college_id) !== Number(effectiveCollegeId)) {
+      if (
+        !isPublicSubmitted &&
+        !isApplicant &&
+        !isAdmin &&
+        !isAdmissionsUser &&
+        Number(caller?.college_id) !== Number(cid)
+      ) {
         return new Response(JSON.stringify({ error: 'Not allowed for this college' }), {
           status: 403,
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -259,7 +341,7 @@ serve(async (req) => {
       const { data: col, error: cErr } = await supabaseAdmin
         .from('colleges')
         .select('email_settings, use_university_settings')
-        .eq('id', effectiveCollegeId)
+        .eq('id', cid)
         .maybeSingle()
       if (cErr || !col) {
         return new Response(JSON.stringify({ error: 'College not found' }), {
@@ -268,19 +350,18 @@ serve(async (req) => {
         })
       }
 
-      let rawEmail = col.email_settings
       if (col.use_university_settings) {
-        const uni = await loadUniversitySmtp()
-        smtpCfg = uni
+        smtpCfg = await loadUniversitySmtp()
       } else {
-        smtpCfg = normalizeEmailSettings(rawEmail)
+        smtpCfg = normalizeEmailSettings(col.email_settings)
+        if (smtpCfg && !notificationsEnabled(col.email_settings)) {
+          smtpCfg = { ...smtpCfg, enableNotifications: false }
+        }
       }
     }
 
     // Fallback: if college SMTP missing, use university SMTP automatically.
     if (!smtpCfg?.host || !smtpCfg.fromEmail) {
-      // Only admins can explicitly ask for university scope, but fallback is allowed for staff workflows.
-      // (Applicants are already restricted to "submitted" emails to themselves.)
       smtpCfg = await loadUniversitySmtp()
     }
     if (!smtpCfg?.host || !smtpCfg.fromEmail) {
@@ -290,6 +371,19 @@ serve(async (req) => {
       })
     }
 
+    if (smtpCfg.enableNotifications === false) {
+      return new Response(JSON.stringify({ success: true, skipped: true, reason: 'email_notifications_disabled' }), {
+        status: 200,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      })
+    }
+
+    const resolvedAppNo =
+      appNo ||
+      (isPublicSubmitted && applicationId
+        ? String((body.application as Record<string, unknown> | undefined)?.application_number || '')
+        : '')
+
     const brandName = smtpCfg?.fromName || ''
     const brandEmail = smtpCfg?.fromEmail || ''
     const html = buildBrandedEmailHtml({
@@ -297,10 +391,14 @@ serve(async (req) => {
       brandEmail,
       subject,
       message,
-      metaLabel: appNo ? 'Application' : '',
-      metaValue: appNo || '',
+      metaLabel: resolvedAppNo ? 'Application' : '',
+      metaValue: resolvedAppNo || '',
     })
-    const text = buildPlainTextEmail({ subject, message, metaLine: appNo ? `Application: ${appNo}` : '' })
+    const text = buildPlainTextEmail({
+      subject,
+      message,
+      metaLine: resolvedAppNo ? `Application: ${resolvedAppNo}` : '',
+    })
     await sendSmtpMessage(smtpCfg, to, subject, text, html)
 
     return new Response(JSON.stringify({ success: true }), {
@@ -314,4 +412,3 @@ serve(async (req) => {
     })
   }
 })
-

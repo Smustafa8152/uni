@@ -7,10 +7,11 @@ import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
 import { useCollege } from '../../contexts/CollegeContext'
 import { getNationalityFilterOptions, nationalityMatchesFilter } from '../../utils/nationalities'
-import { Search, Plus, Eye, CheckCircle, XCircle, Clock, Calendar, Phone, GraduationCap, FileText, Building2, Filter, LayoutDashboard, X, Download, Loader2 } from 'lucide-react'
+import { Search, Plus, Eye, CheckCircle, XCircle, Clock, Calendar, Phone, GraduationCap, FileText, Building2, Filter, LayoutDashboard, X, Download, Loader2, Mail } from 'lucide-react'
 import { hasUniversityWideScope, resolveEffectiveCollegeId } from '../../utils/menuPermissions'
 import { exportApplicationsList, applyApplicationFilters } from '../../utils/exportApplications'
 import SearchableMultiSelect from '../../components/SearchableMultiSelect'
+import { ADMISSION_MESSAGE_TEMPLATES, getAdmissionTemplate } from '../../utils/admissionMessageTemplates'
 
 const ASSIGN_FIELDS = [
   { key: 'college_id', labelKey: 'admissions.applicationsPage.assignCollege', fallback: 'College' },
@@ -90,7 +91,7 @@ export default function Applications() {
 
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
-  const { userRole, collegeId: authCollegeId, loading: authLoading } = useAuth()
+  const { userRole, collegeId: authCollegeId, loading: authLoading, user } = useAuth()
   const { selectedCollegeId } = useCollege()
   const universityWide = hasUniversityWideScope(userRole, authCollegeId)
   const [loading, setLoading] = useState(true)
@@ -135,6 +136,15 @@ export default function Applications() {
     search: '',
     onlySelected: false,
   })
+  const [bulkNotifyOpen, setBulkNotifyOpen] = useState(false)
+  const [bulkNotifySending, setBulkNotifySending] = useState(false)
+  const [bulkNotifyError, setBulkNotifyError] = useState('')
+  const [bulkNotifyOk, setBulkNotifyOk] = useState('')
+  const [bulkNotifyTemplate, setBulkNotifyTemplate] = useState('gambia_procedures')
+  const [bulkNotifySubject, setBulkNotifySubject] = useState('')
+  const [bulkNotifyBody, setBulkNotifyBody] = useState('')
+  const [bulkNotifyOnlySelected, setBulkNotifyOnlySelected] = useState(true)
+  const [bulkNotifySaveThread, setBulkNotifySaveThread] = useState(true)
 
   // Admin setting: default program for new applications (global)
   const [programDefaultsLoading, setProgramDefaultsLoading] = useState(false)
@@ -818,6 +828,110 @@ export default function Applications() {
     setExportOpen(true)
   }
 
+  const bulkNotifyTargets = useMemo(() => {
+    const base =
+      bulkNotifyOnlySelected && selectedIds.size > 0
+        ? filteredApplications.filter((a) => selectedIds.has(a.id))
+        : filteredApplications
+    return base.filter((a) => a.email && String(a.email).includes('@'))
+  }, [bulkNotifyOnlySelected, selectedIds, filteredApplications])
+
+  const openBulkNotifyModal = () => {
+    const nat = String(nationalityFilter || '').toUpperCase()
+    const key =
+      nat.includes('GM') || nat.includes('GAMBIA') ? 'gambia_procedures' : 'general_update'
+    const tpl = getAdmissionTemplate(key, isArabicLayout)
+    setBulkNotifyTemplate(tpl.key)
+    setBulkNotifySubject(tpl.subject)
+    setBulkNotifyBody(tpl.body)
+    setBulkNotifyOnlySelected(selectedIds.size > 0)
+    setBulkNotifySaveThread(true)
+    setBulkNotifyError('')
+    setBulkNotifyOk('')
+    setBulkNotifyOpen(true)
+  }
+
+  const applyBulkNotifyTemplate = (key) => {
+    setBulkNotifyTemplate(key)
+    const tpl = getAdmissionTemplate(key, isArabicLayout)
+    setBulkNotifySubject(tpl.subject)
+    setBulkNotifyBody(tpl.body)
+  }
+
+  const handleBulkNotify = async () => {
+    const targets = bulkNotifyTargets
+    if (!targets.length) {
+      setBulkNotifyError(t('admissions.applicationsPage.bulkNotifyNone', 'No applications with email to notify.'))
+      return
+    }
+    const subject = bulkNotifySubject.trim()
+    const body = bulkNotifyBody.trim()
+    if (!subject || !body) {
+      setBulkNotifyError(
+        t('admissions.applicationsPage.bulkNotifyNeedContent', 'Subject and message are required.'),
+      )
+      return
+    }
+    setBulkNotifySending(true)
+    setBulkNotifyError('')
+    setBulkNotifyOk('')
+    try {
+      let staffId = null
+      if (user?.email) {
+        const { data: u } = await supabase.from('users').select('id').eq('email', user.email).maybeSingle()
+        staffId = u?.id ?? null
+      }
+      let sent = 0
+      let failed = 0
+      for (const app of targets) {
+        try {
+          if (bulkNotifySaveThread) {
+            await supabase.from('application_messages').insert({
+              application_id: app.id,
+              sender_role: 'staff',
+              body,
+              template_key: bulkNotifyTemplate || null,
+              created_by: staffId,
+            })
+          }
+          const { error: fnErr } = await supabase.functions.invoke('send-admission-notification', {
+            body: {
+              scope: 'college',
+              collegeId: app.college_id ?? app.colleges?.id ?? null,
+              to: app.email,
+              type: 'bulk_notify',
+              subject,
+              message: body,
+              applicationId: app.id,
+              application: {
+                id: app.id,
+                application_number: app.application_number,
+              },
+            },
+          })
+          if (fnErr) failed += 1
+          else sent += 1
+        } catch {
+          failed += 1
+        }
+      }
+      setBulkNotifyOk(
+        t('admissions.applicationsPage.bulkNotifyResult', {
+          defaultValue: 'Sent {{sent}} email(s). Failed: {{failed}}.',
+          sent,
+          failed,
+        }),
+      )
+      if (failed === 0) {
+        setTimeout(() => setBulkNotifyOpen(false), 1500)
+      }
+    } catch (e) {
+      setBulkNotifyError(e?.message || t('admissions.applicationsPage.bulkNotifyFailed', 'Bulk notify failed.'))
+    } finally {
+      setBulkNotifySending(false)
+    }
+  }
+
   const buildExportFilterSummary = () => {
     const parts = []
     const allLabel = isArabicLayout ? 'الكل' : 'All'
@@ -1251,6 +1365,15 @@ export default function Applications() {
           <p className="text-gray-600 mt-1">{t('admissions.applicationsPage.subtitle')}</p>
         </div>
         <div className={`flex flex-wrap items-center gap-2 ${isArabicLayout ? 'flex-row-reverse' : ''}`}>
+          <button
+            type="button"
+            disabled={filteredApplications.length === 0}
+            onClick={openBulkNotifyModal}
+            className={`flex items-center gap-2 px-4 py-3 rounded-xl font-semibold border border-violet-200 bg-violet-50 text-violet-900 hover:bg-violet-100 disabled:opacity-50 disabled:cursor-not-allowed transition-all ${iconRow}`}
+          >
+            <Mail className="w-5 h-5 shrink-0" />
+            <span>{t('admissions.applicationsPage.bulkNotify', 'Notify')}</span>
+          </button>
           <button
             type="button"
             disabled={exporting || applications.length === 0}
@@ -2049,6 +2172,139 @@ export default function Applications() {
               ? t('admissions.applicationsPage.emptyFiltered')
               : t('admissions.applicationsPage.emptyNone')}
           </p>
+        </div>
+      )}
+
+      {bulkNotifyOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40">
+          <div
+            className={`bg-white rounded-2xl shadow-xl border border-gray-200 w-full max-w-2xl overflow-hidden ${alignStart}`}
+            role="dialog"
+            aria-modal="true"
+          >
+            <div className="bg-gradient-to-r from-violet-700 to-indigo-600 px-6 py-5 text-white">
+              <div className={`flex items-start justify-between gap-3 ${isArabicLayout ? 'flex-row-reverse' : ''}`}>
+                <div>
+                  <h3 className="text-lg font-bold">
+                    {t('admissions.applicationsPage.bulkNotifyTitle', 'Notify applicants')}
+                  </h3>
+                  <p className="text-sm text-violet-100 mt-1">
+                    {t(
+                      'admissions.applicationsPage.bulkNotifyHint',
+                      'Send an email (and optional portal message) to filtered or selected applications.',
+                    )}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => !bulkNotifySending && setBulkNotifyOpen(false)}
+                  className="p-2 rounded-lg hover:bg-white/10"
+                  aria-label="Close"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+            </div>
+            <div className="p-6 space-y-4 max-h-[70vh] overflow-y-auto">
+              <div className="rounded-xl border border-violet-100 bg-violet-50/60 px-4 py-3 text-sm font-semibold text-violet-900">
+                {t('admissions.applicationsPage.bulkNotifyCount', {
+                  defaultValue: '{{count}} recipient(s)',
+                  count: bulkNotifyTargets.length,
+                })}
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-gray-600 mb-1">
+                  {t('admissions.messages.template', 'Template')}
+                </label>
+                <select
+                  value={bulkNotifyTemplate}
+                  onChange={(e) => applyBulkNotifyTemplate(e.target.value)}
+                  className={`w-full px-3 py-2.5 border border-gray-300 rounded-xl ${alignStart}`}
+                  dir={isArabicLayout ? 'rtl' : 'ltr'}
+                  disabled={bulkNotifySending}
+                >
+                  {ADMISSION_MESSAGE_TEMPLATES.map((tpl) => (
+                    <option key={tpl.key} value={tpl.key}>
+                      {isArabicLayout ? tpl.labelAr : tpl.labelEn}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-gray-600 mb-1">
+                  {t('admissions.messages.emailSubject', 'Email subject')}
+                </label>
+                <input
+                  type="text"
+                  value={bulkNotifySubject}
+                  onChange={(e) => setBulkNotifySubject(e.target.value)}
+                  className={`w-full px-3 py-2.5 border border-gray-300 rounded-xl ${alignStart}`}
+                  dir={isArabicLayout ? 'rtl' : 'ltr'}
+                  disabled={bulkNotifySending}
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-gray-600 mb-1">
+                  {t('admissions.messages.placeholder', 'Write your message…')}
+                </label>
+                <textarea
+                  rows={8}
+                  value={bulkNotifyBody}
+                  onChange={(e) => setBulkNotifyBody(e.target.value)}
+                  className={`w-full px-3 py-2.5 border border-gray-300 rounded-xl ${alignStart}`}
+                  dir={isArabicLayout ? 'rtl' : 'ltr'}
+                  disabled={bulkNotifySending}
+                />
+              </div>
+              <label className={`flex items-center gap-2 text-sm ${iconRow}`}>
+                <input
+                  type="checkbox"
+                  checked={bulkNotifyOnlySelected}
+                  onChange={(e) => setBulkNotifyOnlySelected(e.target.checked)}
+                  disabled={bulkNotifySending || selectedIds.size === 0}
+                />
+                {t('admissions.applicationsPage.bulkNotifySelectedOnly', 'Selected applications only')}
+              </label>
+              <label className={`flex items-center gap-2 text-sm ${iconRow}`}>
+                <input
+                  type="checkbox"
+                  checked={bulkNotifySaveThread}
+                  onChange={(e) => setBulkNotifySaveThread(e.target.checked)}
+                  disabled={bulkNotifySending}
+                />
+                {t('admissions.applicationsPage.bulkNotifySaveThread', 'Also save in application message thread')}
+              </label>
+              {bulkNotifyError && (
+                <div className="rounded-lg border border-red-200 bg-red-50 text-red-700 text-sm px-3 py-2">
+                  {bulkNotifyError}
+                </div>
+              )}
+              {bulkNotifyOk && (
+                <div className="rounded-lg border border-green-200 bg-green-50 text-green-700 text-sm px-3 py-2">
+                  {bulkNotifyOk}
+                </div>
+              )}
+              <div className={`flex flex-wrap gap-2 justify-end ${isArabicLayout ? 'flex-row-reverse' : ''}`}>
+                <button
+                  type="button"
+                  onClick={() => setBulkNotifyOpen(false)}
+                  disabled={bulkNotifySending}
+                  className="px-4 py-2.5 rounded-xl text-sm font-semibold border border-gray-300 hover:bg-gray-50 disabled:opacity-50"
+                >
+                  {t('common.cancel', 'Cancel')}
+                </button>
+                <button
+                  type="button"
+                  onClick={handleBulkNotify}
+                  disabled={bulkNotifySending || bulkNotifyTargets.length === 0}
+                  className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold bg-violet-600 text-white hover:bg-violet-700 disabled:opacity-50 ${iconRow}`}
+                >
+                  {bulkNotifySending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Mail className="w-4 h-4" />}
+                  {t('admissions.applicationsPage.bulkNotifySend', 'Send notifications')}
+                </button>
+              </div>
+            </div>
+          </div>
         </div>
       )}
 

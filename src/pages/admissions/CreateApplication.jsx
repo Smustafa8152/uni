@@ -10,6 +10,7 @@ import { MAJOR_STATUS_FOR_APPLICATION_DROPDOWN } from '../../utils/majorAdmissio
 import { normalizeNationalityCode } from '../../utils/nationalities'
 import NationalitySelect from '../../components/common/NationalitySelect'
 import { getPaymentsEnabled } from '../../utils/getPaymentsEnabled'
+import { notifyApplicationSubmitted } from '../../utils/notifyApplicationSubmitted'
 import { ArrowLeft, ArrowRight, Save, User, Phone, AlertCircle, GraduationCap, FileText, BookOpen, Building2 } from 'lucide-react'
 import { resolveEffectiveCollegeId, hasUniversityWideScope } from '../../utils/menuPermissions'
 
@@ -308,6 +309,10 @@ export default function CreateApplication() {
           })
 
         if (auditError) console.error('Error logging status change:', auditError)
+      }
+
+      if (!formData.submit_as_draft && application?.id) {
+        await notifyApplicationSubmitted(supabase, application, { isDraft: false })
       }
 
       setSuccess(true)

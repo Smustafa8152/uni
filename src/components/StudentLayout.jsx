@@ -56,7 +56,7 @@ const NAV = [
   {
     label: { ar: 'التواصل والدعم', en: 'Support & communication' },
     items: [
-      // Coming-soon items removed from sidebar per request.
+      { href: '/student/messages', label: { ar: 'الرسائل والتحديثات', en: 'Messages' }, icon: '💬' },
     ],
   },
 ]
@@ -91,6 +91,7 @@ export default function StudentLayout({ children }) {
     if (path.startsWith('/student/grades')) return 'الدرجات والنتائج'
     if (path.startsWith('/student/graduation-path')) return 'مسار التخرج'
     if (path.startsWith('/student/requests')) return 'مركز الطلبات'
+    if (path.startsWith('/student/messages')) return 'الرسائل والتحديثات'
     return 'بوابة الطالب'
   }, [location.pathname])
 

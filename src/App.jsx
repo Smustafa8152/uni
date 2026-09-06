@@ -71,6 +71,7 @@ import ExaminationConflicts from './pages/examinations/ExaminationConflicts'
 import Applications from './pages/admissions/Applications'
 import CreateApplication from './pages/admissions/CreateApplication'
 import ViewApplication from './pages/admissions/ViewApplication'
+import StaffCommunication from './pages/admissions/StaffCommunication'
 import UniversitySettings from './pages/admin/UniversitySettings'
 import AdminCurriculumMap from './pages/admin/AdminCurriculumMap'
 import AdminBuildLesson from './pages/admin/AdminBuildLesson'
@@ -97,6 +98,7 @@ import StudentPaymentReceipt from './pages/student/StudentPaymentReceipt'
 import StudentComingSoon from './pages/student/StudentComingSoon'
 import StudentDocuments from './pages/student/StudentDocuments'
 import StudentRequestsCenter from './pages/student/StudentRequestsCenter'
+import StudentMessages from './pages/student/StudentMessages'
 import StudentRequestDetail from './pages/student/StudentRequestDetail'
 import StudentTeamsSessions from './pages/student/StudentTeamsSessions'
 import StudentSessionLobby from './pages/student/StudentSessionLobby'
@@ -157,6 +159,7 @@ import ApplicantPortalLayout from './pages/applicant/ApplicantPortalLayout'
 import ApplicantDashboard from './pages/applicant/ApplicantDashboard'
 import ApplicantSelectMajor from './pages/applicant/ApplicantSelectMajor'
 import ApplicantProfile from './pages/applicant/ApplicantProfile'
+import ApplicantMessages from './pages/applicant/ApplicantMessages'
 import ApplicantRegister from './pages/applicant/ApplicantRegister'
 import LoginApplicant from './pages/applicant/LoginApplicant'
 import ApplicantApplicationStatusPage from './pages/applicant/ApplicantApplicationStatusPage'
@@ -207,6 +210,7 @@ function App() {
             <Route path="apply" element={<ApplicantSelectMajor />} />
             <Route path="apply/new" element={<RegisterApplication portal />} />
             <Route path="profile" element={<ApplicantProfile />} />
+            <Route path="messages" element={<ApplicantMessages />} />
             <Route path="applications/:id" element={<ApplicationStatus />} />
             <Route path="applications/:id/offer-letter" element={<ApplicantOfferLetter />} />
             <Route path="offer-letter" element={<ApplicantOfferLetterIndex />} />
@@ -381,6 +385,16 @@ function App() {
               <ProtectedRoute>
                 <RoleBasedLayout>
                   <CreateExamination />
+                </RoleBasedLayout>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/communication"
+            element={
+              <ProtectedRoute allowedRoles={['admin', 'user']}>
+                <RoleBasedLayout>
+                  <StaffCommunication />
                 </RoleBasedLayout>
               </ProtectedRoute>
             }
@@ -1050,6 +1064,16 @@ function App() {
               <ProtectedRoute allowedRoles={['student']}>
                 <RoleBasedLayout>
                   <StudentDocuments />
+                </RoleBasedLayout>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/student/messages"
+            element={
+              <ProtectedRoute allowedRoles={['student']}>
+                <RoleBasedLayout>
+                  <StudentMessages />
                 </RoleBasedLayout>
               </ProtectedRoute>
             }
