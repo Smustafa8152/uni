@@ -1810,6 +1810,7 @@
         "verifying": "Verifying…",
         "openRequests": "Open requests",
         "academicInfo": "Academic Information",
+        "applicationDetails": "Application form details",
         "testScores": "Test Scores",
         "transferInfo": "Transfer Information",
         "additionalInfo": "Additional Information",
@@ -6495,6 +6496,153 @@
     "examAnswersNav": "Exam answers",
     "examAnswersPageTopbarTitle": "Exam answers"
   },
+  "applyForm": {
+    "steps": {
+      "program": "Course selection",
+      "education": "Education background",
+      "personal": "Personal details",
+      "identity": "Identity information",
+      "contact": "Contact details",
+      "additional": "Additional information"
+    },
+    "progress": {
+      "stepOf": "Step {{current}} of {{total}}"
+    },
+    "sections": {
+      "program": "Program preference",
+      "firstChoice": "First choice",
+      "secondChoice": "Second choice (optional)",
+      "formerStudent": "Returning student",
+      "prevEducation": "Previous education",
+      "languageCert": "Language certificate",
+      "referral": "How you found us"
+    },
+    "fields": {
+      "intake": "Intake",
+      "workload": "Workload",
+      "academicLevel": "Academic level",
+      "faculty": "Faculty",
+      "firstChoice": "First choice",
+      "faculty2": "Faculty (second choice)",
+      "secondChoice": "Second choice",
+      "isFormerStudent": "Are you a former student of the university?",
+      "matricNo": "Matric no.",
+      "highestEducationLevel": "Highest education level",
+      "certificateName": "Certificate name",
+      "institutionName": "Institution name",
+      "graduationYear": "Year of graduation",
+      "gpa": "Grade / GPA",
+      "specialization": "Specialization",
+      "languageOfStudy": "Language of study",
+      "educationCountry": "Country",
+      "hasLanguageCertificate": "Do you have a language certificate?",
+      "languageCertificateName": "Certificate name",
+      "languageCertificateOther": "Please state the certificate name",
+      "languageCertificateResult": "Certificate result",
+      "title": "Title",
+      "firstName": "First name (as in ID)",
+      "lastName": "Last name (as in ID)",
+      "nameAr": "Full name in Arabic",
+      "dateOfBirth": "Date of birth",
+      "gender": "Gender",
+      "race": "Race / ethnicity",
+      "religion": "Religion",
+      "citizenship": "Citizenship",
+      "idType": "Identity type",
+      "idNumber": "Passport / ID number",
+      "idIssueCountry": "Country of issue",
+      "idIssueDate": "Date of issue",
+      "idExpiryDate": "Expiry date",
+      "email": "Email",
+      "mobile": "Mobile number",
+      "homePhone": "Home phone number",
+      "country": "Country",
+      "state": "State / province",
+      "city": "City",
+      "postCode": "Post code",
+      "address": "Street address",
+      "referralSource": "How did you hear about us?",
+      "accountEmail": "Account email",
+      "password": "Password (at least 8 characters)",
+      "passwordConfirm": "Confirm password"
+    },
+    "account": {
+      "title": "Create your applicant account",
+      "intro": "Set a password to track this application and receive updates. Use the email you entered in Contact details.",
+      "alreadyHave": "Already have an account?",
+      "signIn": "Sign in"
+    },
+    "hints": {
+      "gpa": "On a 4.00 scale"
+    },
+    "workload": {
+      "full_time": "Full-time",
+      "part_time": "Part-time"
+    },
+    "degreeLevels": {
+      "diploma": "Diploma",
+      "bachelor": "Bachelor",
+      "master": "Master",
+      "phd": "PhD"
+    },
+    "educationLevels": {
+      "high_school": "High school",
+      "diploma": "Diploma",
+      "bachelor": "Bachelor",
+      "master": "Master",
+      "phd": "PhD"
+    },
+    "languages": {
+      "arabic": "Arabic",
+      "english": "English",
+      "french": "French",
+      "other": "Other"
+    },
+    "languageCertificates": {
+      "toefl": "TOEFL",
+      "ielts": "IELTS",
+      "muet": "MUET",
+      "arabic_proficiency": "Arabic proficiency",
+      "other": "Other"
+    },
+    "titles": {
+      "mr": "Mr.",
+      "mrs": "Mrs.",
+      "ms": "Ms.",
+      "dr": "Dr."
+    },
+    "idTypes": {
+      "passport": "Passport",
+      "national_id": "National ID",
+      "residence_permit": "Residence permit",
+      "birth_certificate": "Birth certificate"
+    },
+    "referralSources": {
+      "website": "University website",
+      "social_media": "Social media",
+      "agent": "Agent",
+      "staff": "Staff member",
+      "student": "Current student",
+      "friend": "Friend or family",
+      "advertisement": "Advertisement",
+      "other": "Other"
+    },
+    "documentsIntro": "Optional now — you can upload them later from your application page.",
+    "empty": {
+      "intakes": "No intake is open for applications right now.",
+      "majors": "This faculty has no programs at the selected academic level."
+    },
+    "errors": {
+      "selectDegreeLevel": "Please select an academic level.",
+      "selectIntake": "Please select an intake.",
+      "personalRequired": "Please enter your full name and date of birth.",
+      "contactRequired": "Email and mobile number are required.",
+      "passwordShort": "Password must be at least 8 characters.",
+      "passwordMismatch": "Passwords do not match.",
+      "accountExistsWrongPassword": "An account with this email already exists. Enter the correct password, or sign in to the applicant portal first.",
+      "accountExists": "An account with this email already exists. Please sign in to the applicant portal, then apply from there."
+    }
+  },
   "registerApplication": {
     "headerTitle": "Student application",
     "headerSubtitle": "Complete the form below to apply for admission",
@@ -6528,6 +6676,7 @@
       "step2": "You will receive an email confirmation shortly.",
       "step3": "Check your application status at any time from your dashboard.",
       "track": "Track application status",
+      "goToPortal": "Go to applicant portal",
       "another": "Submit another application",
       "copied": "Application number copied to clipboard!"
     },

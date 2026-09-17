@@ -44,8 +44,8 @@ export default function ApplicantMessages() {
             exam_timezone,
             exam_location_or_link,
             exam_instructions,
-            majors (name_en, name_ar),
-            colleges (name_en, name_ar)
+            majors!major_id (name_en, name_ar),
+            colleges!college_id (name_en, name_ar)
           `,
           )
           .order('created_at', { ascending: false })

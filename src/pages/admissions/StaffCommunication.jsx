@@ -79,8 +79,8 @@ export default function StaffCommunication() {
           email,
           status_code,
           college_id,
-          majors (name_en, name_ar),
-          colleges (name_en, name_ar)
+          majors!major_id (name_en, name_ar),
+          colleges!college_id (name_en, name_ar)
         `,
         )
         .in('id', appIds)

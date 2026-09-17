@@ -103,19 +103,22 @@ export function buildInstructorCommunicationEmailHtml(params: {
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="x-apple-disable-message-reformatting" />
     <title>${escapeHtml(title)}</title>
+    <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
     <style>
-      body { font-family: 'Segoe UI', Tahoma, Arial, sans-serif; margin: 0; padding: 0; background: #f0f4fa; color: #1e293b; direction: ${dir}; }
+      @import url('https://fonts.googleapis.com/css2?family=Cairo:wght@400;500;600;700;800&display=swap');
+      body, table, td, div, p, a, span { font-family: 'Cairo', 'Segoe UI', Tahoma, Arial, sans-serif !important; }
+      body { margin: 0; padding: 0; background: #f0f4fa; color: #1e293b; direction: ${dir}; text-align: ${align}; }
       .preheader { display:none !important; visibility:hidden; opacity:0; height:0; width:0; overflow:hidden; }
-      .wrap { max-width: 640px; margin: 0 auto; padding: 32px 16px; }
-      .card { background: #ffffff; border: 1px solid #d8e0ef; border-radius: 14px; overflow: hidden; box-shadow: 0 4px 24px rgba(26,58,107,0.08); }
+      .wrap { max-width: 640px; margin: 0 auto; padding: 32px 16px; direction: ${dir}; }
+      .card { background: #ffffff; border: 1px solid #d8e0ef; border-radius: 14px; overflow: hidden; box-shadow: 0 4px 24px rgba(26,58,107,0.08); direction: ${dir}; }
       .header { background: #ffffff; padding: 28px 24px 16px; text-align: center; border-bottom: 3px solid #1a3a6b; }
       .logo img { height: 64px; width: auto; max-width: 320px; display: inline-block; object-fit: contain; }
       .brand { color: #1a3a6b; font-size: 13px; font-weight: 700; margin-top: 10px; letter-spacing: 0.02em; }
-      .body { padding: 28px 28px 20px; text-align: ${align}; }
+      .body { padding: 28px 28px 20px; text-align: ${align}; direction: ${dir}; }
       .category { display: inline-block; padding: 5px 14px; border-radius: 999px; font-size: 12px; font-weight: 700; background: ${catStyle.bg}; color: ${catStyle.color}; margin-bottom: 14px; }
-      .title { font-size: 22px; font-weight: 800; color: #1a3a6b; margin: 0 0 12px; line-height: 1.35; }
+      .title { font-size: 22px; font-weight: 800; color: #1a3a6b; margin: 0 0 12px; line-height: 1.35; direction: ${dir}; text-align: ${align}; }
       .meta { display: flex; flex-wrap: wrap; gap: 12px 20px; font-size: 13px; color: #64748b; margin-bottom: 20px; padding-bottom: 16px; border-bottom: 1px solid #eef2fb; }
-      .content { font-size: 15px; line-height: 1.75; color: #334155; }
+      .content { font-size: 15px; line-height: 1.85; color: #334155; direction: ${dir}; text-align: ${align}; }
       .foot { padding: 16px 28px 22px; background: #f8fafc; border-top: 1px solid #eef2fb; font-size: 12px; color: #94a3b8; line-height: 1.6; text-align: center; }
     </style>
   </head>

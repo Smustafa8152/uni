@@ -44,8 +44,8 @@ export default function ApplicantApplicationStatusPage() {
             application_number,
             status_code,
             created_at,
-            majors (name_en, name_ar),
-            colleges (name_en, name_ar)
+            majors!major_id (name_en, name_ar),
+            colleges!college_id (name_en, name_ar)
           `
           )
           .or(`applicant_user_id.eq.${user.id},email.eq.${em}`)

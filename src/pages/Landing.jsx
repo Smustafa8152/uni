@@ -57,7 +57,7 @@ export default function Landing() {
 
             <div className="mt-6 flex flex-col sm:flex-row gap-3">
               <Link
-                to="/register"
+                to="/apply"
                 className="flex-1 rounded-2xl bg-slate-900 text-white px-5 py-3 text-center font-extrabold shadow-lg shadow-slate-900/10 transition hover:bg-slate-800"
               >
                 {t('landing.applyButton', 'Apply for admission')}

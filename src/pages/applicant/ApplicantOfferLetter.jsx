@@ -39,9 +39,9 @@ export default function ApplicantOfferLetter() {
           .select(
             `
             *,
-            majors (name_en, name_ar, code, degree_level),
+            majors!major_id (name_en, name_ar, code, degree_level),
             semesters (name_en, name_ar, code),
-            colleges (name_en, name_ar, code)
+            colleges!college_id (name_en, name_ar, code)
           `
           )
           .eq('id', applicationId)

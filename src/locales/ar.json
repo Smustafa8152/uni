@@ -2600,6 +2600,7 @@
         "verifying": "جارٍ التحقق…",
         "openRequests": "طلبات مفتوحة",
         "academicInfo": "المعلومات الأكاديمية",
+        "applicationDetails": "تفاصيل نموذج الطلب",
         "testScores": "درجات الاختبارات",
         "transferInfo": "معلومات التحويل",
         "additionalInfo": "معلومات إضافية",
@@ -6413,6 +6414,153 @@
     "examAnswersNav": "إجابات الاختبار",
     "examAnswersPageTopbarTitle": "إجابات الاختبار"
   },
+  "applyForm": {
+    "steps": {
+      "program": "اختيار البرنامج",
+      "education": "المؤهل العلمي",
+      "personal": "البيانات الشخصية",
+      "identity": "بيانات الهوية",
+      "contact": "بيانات الاتصال",
+      "additional": "معلومات إضافية"
+    },
+    "progress": {
+      "stepOf": "الخطوة {{current}} من {{total}}"
+    },
+    "sections": {
+      "program": "تفضيل البرنامج",
+      "firstChoice": "الرغبة الأولى",
+      "secondChoice": "الرغبة الثانية (اختياري)",
+      "formerStudent": "طالب سابق",
+      "prevEducation": "المؤهل السابق",
+      "languageCert": "شهادة اللغة",
+      "referral": "كيف عرفت عنا"
+    },
+    "fields": {
+      "intake": "الفصل الدراسي",
+      "workload": "نظام الدراسة",
+      "academicLevel": "المرحلة الدراسية",
+      "faculty": "الكلية",
+      "firstChoice": "الرغبة الأولى",
+      "faculty2": "الكلية (الرغبة الثانية)",
+      "secondChoice": "الرغبة الثانية",
+      "isFormerStudent": "هل سبق لك الدراسة في الجامعة؟",
+      "matricNo": "الرقم الجامعي السابق",
+      "highestEducationLevel": "أعلى مؤهل علمي",
+      "certificateName": "اسم الشهادة",
+      "institutionName": "اسم المؤسسة التعليمية",
+      "graduationYear": "سنة التخرج",
+      "gpa": "المعدل التراكمي",
+      "specialization": "التخصص",
+      "languageOfStudy": "لغة الدراسة",
+      "educationCountry": "الدولة",
+      "hasLanguageCertificate": "هل لديك شهادة لغة؟",
+      "languageCertificateName": "اسم الشهادة",
+      "languageCertificateOther": "اذكر اسم الشهادة",
+      "languageCertificateResult": "نتيجة الشهادة",
+      "title": "اللقب",
+      "firstName": "الاسم الأول (كما في الهوية)",
+      "lastName": "اسم العائلة (كما في الهوية)",
+      "nameAr": "الاسم الكامل بالعربية",
+      "dateOfBirth": "تاريخ الميلاد",
+      "gender": "الجنس",
+      "race": "العرق",
+      "religion": "الديانة",
+      "citizenship": "الجنسية",
+      "idType": "نوع الهوية",
+      "idNumber": "رقم الجواز / الهوية",
+      "idIssueCountry": "دولة الإصدار",
+      "idIssueDate": "تاريخ الإصدار",
+      "idExpiryDate": "تاريخ الانتهاء",
+      "email": "البريد الإلكتروني",
+      "mobile": "رقم الجوال",
+      "homePhone": "هاتف المنزل",
+      "country": "الدولة",
+      "state": "المنطقة / الولاية",
+      "city": "المدينة",
+      "postCode": "الرمز البريدي",
+      "address": "العنوان",
+      "referralSource": "كيف عرفت عنا؟",
+      "accountEmail": "البريد الإلكتروني للحساب",
+      "password": "كلمة المرور (8 أحرف على الأقل)",
+      "passwordConfirm": "تأكيد كلمة المرور"
+    },
+    "account": {
+      "title": "إنشاء حساب المتقدم",
+      "intro": "عيّن كلمة مرور لمتابعة هذا الطلب واستلام التحديثات. استخدم البريد الذي أدخلته في بيانات الاتصال.",
+      "alreadyHave": "لديك حساب بالفعل؟",
+      "signIn": "تسجيل الدخول"
+    },
+    "hints": {
+      "gpa": "من 4.00"
+    },
+    "workload": {
+      "full_time": "انتظام كامل",
+      "part_time": "انتظام جزئي"
+    },
+    "degreeLevels": {
+      "diploma": "دبلوم",
+      "bachelor": "بكالوريوس",
+      "master": "ماجستير",
+      "phd": "دكتوراه"
+    },
+    "educationLevels": {
+      "high_school": "الثانوية العامة",
+      "diploma": "دبلوم",
+      "bachelor": "بكالوريوس",
+      "master": "ماجستير",
+      "phd": "دكتوراه"
+    },
+    "languages": {
+      "arabic": "العربية",
+      "english": "الإنجليزية",
+      "french": "الفرنسية",
+      "other": "أخرى"
+    },
+    "languageCertificates": {
+      "toefl": "TOEFL",
+      "ielts": "IELTS",
+      "muet": "MUET",
+      "arabic_proficiency": "شهادة إتقان العربية",
+      "other": "أخرى"
+    },
+    "titles": {
+      "mr": "السيد",
+      "mrs": "السيدة",
+      "ms": "الآنسة",
+      "dr": "الدكتور"
+    },
+    "idTypes": {
+      "passport": "جواز سفر",
+      "national_id": "هوية وطنية",
+      "residence_permit": "إقامة",
+      "birth_certificate": "شهادة ميلاد"
+    },
+    "referralSources": {
+      "website": "موقع الجامعة",
+      "social_media": "وسائل التواصل الاجتماعي",
+      "agent": "وكيل",
+      "staff": "أحد الموظفين",
+      "student": "طالب حالي",
+      "friend": "صديق أو قريب",
+      "advertisement": "إعلان",
+      "other": "أخرى"
+    },
+    "documentsIntro": "اختياري الآن — يمكنك رفعها لاحقاً من صفحة الطلب.",
+    "empty": {
+      "intakes": "لا يوجد فصل دراسي مفتوح للتقديم حالياً.",
+      "majors": "لا توجد برامج في هذه الكلية ضمن المرحلة الدراسية المختارة."
+    },
+    "errors": {
+      "selectDegreeLevel": "يرجى اختيار المرحلة الدراسية.",
+      "selectIntake": "يرجى اختيار الفصل الدراسي.",
+      "personalRequired": "يرجى إدخال الاسم الكامل وتاريخ الميلاد.",
+      "contactRequired": "البريد الإلكتروني ورقم الجوال مطلوبان.",
+      "passwordShort": "يجب أن تكون كلمة المرور 8 أحرف على الأقل.",
+      "passwordMismatch": "كلمتا المرور غير متطابقتين.",
+      "accountExistsWrongPassword": "يوجد حساب بهذا البريد مسبقاً. أدخل كلمة المرور الصحيحة، أو سجّل الدخول إلى بوابة المتقدم أولاً.",
+      "accountExists": "يوجد حساب بهذا البريد مسبقاً. سجّل الدخول إلى بوابة المتقدم ثم قدّم الطلب من هناك."
+    }
+  },
   "registerApplication": {
     "headerTitle": "طلب القبول",
     "headerSubtitle": "أكمل النموذج أدناه للتقديم للقبول",
@@ -6446,6 +6594,7 @@
       "step2": "ستصلك رسالة تأكيد على بريدك قريباً.",
       "step3": "يمكنك متابعة حالة الطلب في أي وقت من لوحة التحكم.",
       "track": "متابعة الطلب",
+      "goToPortal": "الذهاب إلى بوابة المتقدم",
       "another": "تقديم طلب آخر",
       "copied": "تم نسخ رقم الطلب!"
     },

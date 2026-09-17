@@ -160,7 +160,6 @@ import ApplicantDashboard from './pages/applicant/ApplicantDashboard'
 import ApplicantSelectMajor from './pages/applicant/ApplicantSelectMajor'
 import ApplicantProfile from './pages/applicant/ApplicantProfile'
 import ApplicantMessages from './pages/applicant/ApplicantMessages'
-import ApplicantRegister from './pages/applicant/ApplicantRegister'
 import LoginApplicant from './pages/applicant/LoginApplicant'
 import ApplicantApplicationStatusPage from './pages/applicant/ApplicantApplicationStatusPage'
 import ApplicantOfferLetter from './pages/applicant/ApplicantOfferLetter'
@@ -195,8 +194,9 @@ function App() {
           <Route path="/login/instructor" element={<LoginInstructor />} />
           <Route path="/login/student" element={<LoginStudent />} />
           <Route path="/signup" element={<Signup />} />
-          {/* Applicant portal (pre-enrollment): email + password register / login */}
-          <Route path="/register" element={<ApplicantRegister />} />
+          {/* Public apply first; account is created at the end of the form */}
+          <Route path="/apply" element={<RegisterApplication />} />
+          <Route path="/register" element={<Navigate to="/apply" replace />} />
           <Route path="/login/applicant" element={<LoginApplicant />} />
           <Route
             path="/portal"

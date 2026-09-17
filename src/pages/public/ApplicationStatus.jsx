@@ -329,9 +329,9 @@ export default function ApplicationStatus() {
         .from('applications')
         .select(`
           *,
-          majors (name_en, name_ar, code),
+          majors!major_id (name_en, name_ar, code),
           semesters (name_en, name_ar, code),
-          colleges (name_en, name_ar, code)
+          colleges!college_id (name_en, name_ar, code)
         `)
         .eq('id', parseInt(id))
         .single()

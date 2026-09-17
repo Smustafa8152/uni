@@ -143,7 +143,7 @@ export default function RoleSelection() {
               <div className="rounded-3xl bg-white/80 backdrop-blur shadow-sm ring-1 ring-slate-200 px-5 py-4 sm:px-6 sm:py-5 flex flex-col sm:flex-row gap-3 sm:items-center sm:justify-between">
                 <button
                   type="button"
-                  onClick={() => navigate('/register')}
+                  onClick={() => navigate('/apply')}
                   className="w-full sm:w-auto rounded-2xl bg-slate-900 text-white px-6 py-3 font-extrabold shadow-lg shadow-slate-900/10 transition hover:bg-slate-800"
                 >
                   {t('roleSelection.applyForAdmission')}

@@ -1,24 +1,23 @@
 import { createContext, useContext, useState, useEffect } from 'react'
 import i18n from '../i18n'
 
-const LanguageContext = createContext()
+const defaultLanguageValue = {
+  language: typeof localStorage !== 'undefined' ? localStorage.getItem('language') || 'ar' : 'ar',
+  isRTL: true,
+  changeLanguage: () => {},
+}
+
+const LanguageContext = createContext(defaultLanguageValue)
 
 export function LanguageProvider({ children }) {
-  const [language, setLanguage] = useState(() => {
-    // Get language from localStorage or default to 'ar'
-    return localStorage.getItem('language') || 'ar'
-  })
-  const [isRTL, setIsRTL] = useState(language === 'ar')
+  const [language, setLanguage] = useState(() => localStorage.getItem('language') || 'ar')
+  const [isRTL, setIsRTL] = useState(() => (localStorage.getItem('language') || 'ar') === 'ar')
 
   useEffect(() => {
-    // Update i18n language
     i18n.changeLanguage(language)
-    // Update RTL state
     setIsRTL(language === 'ar')
-    // Update document direction
     document.documentElement.dir = language === 'ar' ? 'rtl' : 'ltr'
     document.documentElement.lang = language
-    // Save to localStorage
     localStorage.setItem('language', language)
   }, [language])
 
@@ -34,16 +33,5 @@ export function LanguageProvider({ children }) {
 }
 
 export function useLanguage() {
-  const context = useContext(LanguageContext)
-  if (!context) {
-    throw new Error('useLanguage must be used within a LanguageProvider')
-  }
-  return context
+  return useContext(LanguageContext)
 }
-
-
-
-
-
-
-

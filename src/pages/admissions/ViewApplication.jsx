@@ -781,9 +781,30 @@ export default function ViewApplication() {
   
   const [loading, setLoading] = useState(true)
   const [application, setApplication] = useState(null)
+  const [secondChoiceMajor, setSecondChoiceMajor] = useState(null)
   const [paymentsEnabled, setPaymentsEnabled] = useState(true)
   const [error, setError] = useState('')
   const [updating, setUpdating] = useState(false)
+
+  useEffect(() => {
+    const majorId = application?.second_choice_major_id
+    if (!majorId) {
+      setSecondChoiceMajor(null)
+      return
+    }
+    let alive = true
+    supabase
+      .from('majors')
+      .select('id, name_en, name_ar, code')
+      .eq('id', majorId)
+      .maybeSingle()
+      .then(({ data }) => {
+        if (alive) setSecondChoiceMajor(data || null)
+      })
+    return () => {
+      alive = false
+    }
+  }, [application?.second_choice_major_id])
   
   // Status management state
   const [statusCodes, setStatusCodes] = useState([])
@@ -1074,7 +1095,7 @@ export default function ViewApplication() {
         .from('applications')
         .select(`
           *,
-          majors (
+          majors!major_id (
             id,
             name_en,
             name_ar,
@@ -1087,7 +1108,7 @@ export default function ViewApplication() {
             name_ar,
             code
           ),
-          colleges (
+          colleges!college_id (
             id,
             name_en,
             name_ar,
@@ -3102,6 +3123,67 @@ export default function ViewApplication() {
               </div>
             </div>
           </div>
+
+          {/* Application form details (simplified public form) */}
+          {(() => {
+            const rows = [
+              [t('applyForm.fields.secondChoice'), secondChoiceMajor ? getLocalizedName(secondChoiceMajor, isArabicLayout) || secondChoiceMajor.name_en : null],
+              [t('applyForm.fields.workload'), application?.study_type ? t(`applyForm.workload.${application.study_type}`, application.study_type) : null],
+              [t('applyForm.fields.matricNo'), application?.is_former_student ? application?.matric_no || '—' : null],
+              [
+                t('applyForm.fields.highestEducationLevel'),
+                application?.highest_education_level
+                  ? t(`applyForm.educationLevels.${application.highest_education_level}`, application.highest_education_level)
+                  : null,
+              ],
+              [t('applyForm.fields.specialization'), application?.specialization],
+              [
+                t('applyForm.fields.languageOfStudy'),
+                application?.language_of_study ? t(`applyForm.languages.${application.language_of_study}`, application.language_of_study) : null,
+              ],
+              [
+                t('applyForm.fields.languageCertificateName'),
+                application?.language_certificate_name
+                  ? `${t(`applyForm.languageCertificates.${application.language_certificate_name}`, application.language_certificate_name)}${
+                      application?.language_certificate_result ? ` — ${application.language_certificate_result}` : ''
+                    }`
+                  : null,
+              ],
+              [t('applyForm.fields.title'), application?.title ? t(`applyForm.titles.${application.title}`, application.title) : null],
+              [t('applyForm.fields.race'), application?.race],
+              [t('applyForm.fields.idType'), application?.id_type ? t(`applyForm.idTypes.${application.id_type}`, application.id_type) : null],
+              [t('applyForm.fields.idNumber'), application?.id_number],
+              [t('applyForm.fields.idIssueCountry'), application?.id_issue_country],
+              [t('applyForm.fields.idIssueDate'), application?.id_issue_date ? formatViewDate(application.id_issue_date) : null],
+              [t('applyForm.fields.idExpiryDate'), application?.id_expiry_date ? formatViewDate(application.id_expiry_date) : null],
+              [t('applyForm.fields.homePhone'), application?.home_phone],
+              [
+                t('applyForm.fields.referralSource'),
+                application?.referral_source ? t(`applyForm.referralSources.${application.referral_source}`, application.referral_source) : null,
+              ],
+            ].filter(([, value]) => value)
+
+            if (rows.length === 0) return null
+
+            return (
+              <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6">
+                <div className={`flex items-center gap-2 mb-6 ${isArabicLayout ? 'justify-start flex-row-reverse' : ''}`}>
+                  <FileText className="w-5 h-5 text-gray-600 shrink-0" />
+                  <h2 className={`text-xl font-bold text-gray-900 ${alignStart}`}>
+                    {t('admissions.viewApplication.detail.applicationDetails', 'Application form details')}
+                  </h2>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  {rows.map(([label, value]) => (
+                    <div key={label}>
+                      <label className={`block text-sm font-medium text-gray-500 mb-1 ${alignStart}`}>{label}</label>
+                      <p className={`text-gray-900 ${alignStart}`}>{value}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )
+          })()}
 
           {/* Test Scores */}
           {(application?.toefl_score || application?.ielts_score || application?.sat_score || application?.gmat_score || application?.gre_score) && (

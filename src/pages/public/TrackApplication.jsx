@@ -28,7 +28,7 @@ export default function TrackApplication() {
         .from('applications')
         .select(`
           *,
-          majors (
+          majors!major_id (
             name_en,
             code
           ),
@@ -36,7 +36,7 @@ export default function TrackApplication() {
             name_en,
             code
           ),
-          colleges (
+          colleges!college_id (
             name_en,
             code
           )
@@ -160,7 +160,7 @@ export default function TrackApplication() {
           <p className="text-sm text-gray-600 text-center">
             Don't have an application number?{' '}
             <button
-              onClick={() => navigate('/register')}
+              onClick={() => navigate('/apply')}
               className="text-blue-600 hover:text-blue-700 font-medium"
             >
               Register here

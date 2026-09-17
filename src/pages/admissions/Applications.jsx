@@ -197,7 +197,7 @@ export default function Applications() {
           major_id,
           semester_id,
           academic_year_id,
-          majors (
+          majors!major_id (
             id,
             name_en,
             name_ar,
@@ -225,7 +225,7 @@ export default function Applications() {
             code,
             start_date
           ),
-          colleges (
+          colleges!college_id (
             id,
             name_en,
             name_ar

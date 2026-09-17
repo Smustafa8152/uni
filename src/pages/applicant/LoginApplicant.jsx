@@ -246,8 +246,8 @@ export default function LoginApplicant() {
 
                   <p className="text-center text-sm text-slate-600">
                     {t('applicantLogin.noAccount', "Don't have an account?")}{' '}
-                    <Link to="/register" className="font-extrabold text-slate-900 hover:underline">
-                      {t('applicantLogin.createAccount', 'Create account')}
+                    <Link to="/apply" className="font-extrabold text-slate-900 hover:underline">
+                      {t('applicantLogin.createAccount', 'Apply for admission')}
                     </Link>
                   </p>
                 </form>

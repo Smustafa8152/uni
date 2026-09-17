@@ -45,7 +45,7 @@ export default function ApplicantPortalLayout() {
 
   const handleSignOut = async () => {
     await signOut()
-    navigate('/register', { replace: true })
+    navigate('/login/applicant', { replace: true })
   }
 
   return (
