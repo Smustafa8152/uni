@@ -7,8 +7,9 @@ import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
 import {
   Plus, BookMarked, Search, Eye, Edit, Users, GraduationCap,
-  TrendingUp, FileText, CheckCircle
+  TrendingUp, FileText, CheckCircle, Download, Loader2
 } from 'lucide-react'
+import { exportMajorsList } from '../../utils/exportMajors'
 
 export default function Majors() {
   const { t } = useTranslation()
@@ -32,6 +33,7 @@ export default function Majors() {
     critical: 0
   })
   const [majorStats, setMajorStats] = useState({})
+  const [exporting, setExporting] = useState(false)
 
   useEffect(() => {
     fetchMajors()
@@ -173,6 +175,23 @@ export default function Majors() {
     return matchesSearch && matchesStatus && matchesCollege && matchesDegree
   })
 
+  const handleExportExcel = () => {
+    if (!filteredMajors.length || exporting) return
+    try {
+      setExporting(true)
+      exportMajorsList({
+        majors: filteredMajors,
+        majorStats,
+        isArabic: isRTL,
+      })
+    } catch (err) {
+      console.error('Export majors failed:', err)
+      alert(err?.message || t('academic.majors.exportFailed', 'Export failed.'))
+    } finally {
+      setExporting(false)
+    }
+  }
+
   return (
     <div className="space-y-6">
       <div className={`flex items-center ${isRTL ? 'flex-row-reverse justify-between' : 'justify-between'}`}>
@@ -180,13 +199,24 @@ export default function Majors() {
           <h1 className="text-3xl font-bold text-gray-900">{t('academic.majors.title')}</h1>
           <p className="text-gray-600 mt-1">{t('academic.majors.subtitle')}</p>
         </div>
-        <button
-          onClick={() => navigate('/academic/majors/create')}
-          className={`flex items-center ${isRTL ? 'flex-row-reverse space-x-reverse' : 'space-x-2'} bg-primary-gradient text-white px-6 py-3 rounded-xl font-semibold shadow-lg hover:shadow-xl transform hover:-translate-y-0.5 transition-all`}
-        >
-          <Plus className="w-5 h-5" />
-          <span>{t('academic.majors.create')}</span>
-        </button>
+        <div className={`flex flex-wrap items-center gap-2 ${isRTL ? 'flex-row-reverse' : ''}`}>
+          <button
+            type="button"
+            disabled={exporting || loading || filteredMajors.length === 0}
+            onClick={handleExportExcel}
+            className={`flex items-center ${isRTL ? 'flex-row-reverse space-x-reverse' : 'space-x-2'} px-5 py-3 rounded-xl font-semibold border border-gray-300 bg-white text-gray-800 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-all`}
+          >
+            {exporting ? <Loader2 className="w-5 h-5 animate-spin" /> : <Download className="w-5 h-5" />}
+            <span>{t('academic.majors.exportExcel', 'Export Excel')}</span>
+          </button>
+          <button
+            onClick={() => navigate('/academic/majors/create')}
+            className={`flex items-center ${isRTL ? 'flex-row-reverse space-x-reverse' : 'space-x-2'} bg-primary-gradient text-white px-6 py-3 rounded-xl font-semibold shadow-lg hover:shadow-xl transform hover:-translate-y-0.5 transition-all`}
+          >
+            <Plus className="w-5 h-5" />
+            <span>{t('academic.majors.create')}</span>
+          </button>
+        </div>
       </div>
 
       {/* Tier 1 KPIs */}

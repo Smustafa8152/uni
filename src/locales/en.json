@@ -2342,6 +2342,8 @@
       "title": "Majors",
       "subtitle": "Manage academic majors",
       "create": "Create Major",
+      "exportExcel": "Export Excel",
+      "exportFailed": "Export failed.",
       "createTitle": "Create Major",
       "createSubtitle": "Add a new academic major to the system",
       "createdSuccess": "Major created successfully! Redirecting...",
@@ -6573,7 +6575,9 @@
       "signIn": "Sign in"
     },
     "hints": {
-      "gpa": "On a 4.00 scale"
+      "gpa": "On a 4.00 scale",
+      "selectLevelFirst": "Select an academic level first.",
+      "selectFacultyFirst": "Select a faculty first."
     },
     "workload": {
       "full_time": "Full-time",
@@ -6630,7 +6634,8 @@
     "documentsIntro": "Optional now — you can upload them later from your application page.",
     "empty": {
       "intakes": "No intake is open for applications right now.",
-      "majors": "This faculty has no programs at the selected academic level."
+      "majors": "This faculty has no programs at the selected academic level.",
+      "faculties": "No faculty offers programs at this academic level."
     },
     "errors": {
       "selectDegreeLevel": "Please select an academic level.",

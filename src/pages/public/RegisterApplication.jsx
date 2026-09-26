@@ -413,8 +413,43 @@ export default function RegisterApplication({ portal = false }) {
 
   const majorsFor = (collegeId) =>
     majors.filter(
-      (m) => (!formData.degree_level || m.degree_level === formData.degree_level) && belongsToCollege(m, collegeId)
+      (m) =>
+        Boolean(collegeId) &&
+        (!formData.degree_level || m.degree_level === formData.degree_level) &&
+        belongsToCollege(m, collegeId)
     )
+
+  // Faculties that actually offer a program at the selected academic level
+  const collegesForDegreeLevel = useMemo(() => {
+    if (!formData.degree_level) return []
+    const collegeIds = new Set(
+      majors
+        .filter((m) => m.degree_level === formData.degree_level && m.college_id != null)
+        .map((m) => String(m.college_id))
+    )
+    return colleges.filter((c) => collegeIds.has(String(c.id)))
+  }, [colleges, majors, formData.degree_level])
+
+  // Drop faculty / program picks that no longer match the academic level
+  useEffect(() => {
+    if (!formData.degree_level) return
+    const validIds = new Set(collegesForDegreeLevel.map((c) => String(c.id)))
+    if (selectedCollegeId && !validIds.has(String(selectedCollegeId))) {
+      setSelectedCollegeId('')
+      setFormData((prev) => ({
+        ...prev,
+        major_id: '',
+        ...(prev.second_choice_college_id && !validIds.has(String(prev.second_choice_college_id))
+          ? { second_choice_college_id: '', second_choice_major_id: '' }
+          : {}),
+      }))
+      return
+    }
+    if (formData.second_choice_college_id && !validIds.has(String(formData.second_choice_college_id))) {
+      setFormData((prev) => ({ ...prev, second_choice_college_id: '', second_choice_major_id: '' }))
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [formData.degree_level, collegesForDegreeLevel])
 
   const firstChoiceMajors = useMemo(
     () => majorsFor(selectedCollegeId),
@@ -958,7 +993,17 @@ export default function RegisterApplication({ portal = false }) {
                       <select
                         name="degree_level"
                         value={formData.degree_level}
-                        onChange={(e) => setFormData((prev) => ({ ...prev, degree_level: e.target.value, major_id: '', second_choice_major_id: '' }))}
+                        onChange={(e) => {
+                          setSelectedCollegeId('')
+                          setFormData((prev) => ({
+                            ...prev,
+                            degree_level: e.target.value,
+                            major_id: '',
+                            second_choice_college_id: '',
+                            second_choice_major_id: '',
+                          }))
+                          if (error) setError('')
+                        }}
                         disabled={programLocked}
                         className={inputClass}
                       >
@@ -975,7 +1020,17 @@ export default function RegisterApplication({ portal = false }) {
 
                 <SectionCard title={t('applyForm.sections.firstChoice', 'First choice')}>
                   <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-                    <Field label={t('applyForm.fields.faculty', 'Faculty')} required>
+                    <Field
+                      label={t('applyForm.fields.faculty', 'Faculty')}
+                      required
+                      hint={
+                        formData.degree_level && !loadingColleges && collegesForDegreeLevel.length === 0
+                          ? t('applyForm.empty.faculties', 'No faculty offers programs at this academic level.')
+                          : !formData.degree_level
+                            ? t('applyForm.hints.selectLevelFirst', 'Select an academic level first.')
+                            : null
+                      }
+                    >
                       <select
                         value={selectedCollegeId}
                         onChange={(e) => {
@@ -983,11 +1038,11 @@ export default function RegisterApplication({ portal = false }) {
                           setFormData((prev) => ({ ...prev, major_id: '' }))
                           if (error) setError('')
                         }}
-                        disabled={loadingColleges || programLocked}
+                        disabled={loadingColleges || programLocked || !formData.degree_level}
                         className={inputClass}
                       >
                         <option value="">{loadingColleges ? t('registerApplication.loadingColleges') : t('common.select', 'Please select')}</option>
-                        {colleges.map((c) => (
+                        {collegesForDegreeLevel.map((c) => (
                           <option key={c.id} value={c.id}>
                             {localizedName(c)}
                           </option>
@@ -999,12 +1054,20 @@ export default function RegisterApplication({ portal = false }) {
                       label={t('applyForm.fields.firstChoice', 'First choice')}
                       required
                       hint={
-                        selectedCollegeId && formData.degree_level && firstChoiceMajors.length === 0
-                          ? t('applyForm.empty.majors', 'This faculty has no programs at the selected academic level.')
-                          : null
+                        !selectedCollegeId
+                          ? t('applyForm.hints.selectFacultyFirst', 'Select a faculty first.')
+                          : selectedCollegeId && formData.degree_level && firstChoiceMajors.length === 0
+                            ? t('applyForm.empty.majors', 'This faculty has no programs at the selected academic level.')
+                            : null
                       }
                     >
-                      <select name="major_id" value={formData.major_id} onChange={handleChange} disabled={portal || programLocked || !selectedCollegeId} className={inputClass}>
+                      <select
+                        name="major_id"
+                        value={formData.major_id}
+                        onChange={handleChange}
+                        disabled={portal || programLocked || !selectedCollegeId || !formData.degree_level}
+                        className={inputClass}
+                      >
                         <option value="">{t('common.select', 'Please select')}</option>
                         {firstChoiceMajors.map((m) => (
                           <option key={m.id} value={m.id}>
@@ -1023,10 +1086,11 @@ export default function RegisterApplication({ portal = false }) {
                         name="second_choice_college_id"
                         value={formData.second_choice_college_id}
                         onChange={(e) => setFormData((prev) => ({ ...prev, second_choice_college_id: e.target.value, second_choice_major_id: '' }))}
+                        disabled={!formData.degree_level}
                         className={inputClass}
                       >
                         <option value="">{t('common.select', 'Please select')}</option>
-                        {colleges.map((c) => (
+                        {collegesForDegreeLevel.map((c) => (
                           <option key={c.id} value={c.id}>
                             {localizedName(c)}
                           </option>
@@ -1046,7 +1110,7 @@ export default function RegisterApplication({ portal = false }) {
                         name="second_choice_major_id"
                         value={formData.second_choice_major_id}
                         onChange={handleChange}
-                        disabled={!formData.second_choice_college_id}
+                        disabled={!formData.second_choice_college_id || !formData.degree_level}
                         className={inputClass}
                       >
                         <option value="">{t('common.select', 'Please select')}</option>
