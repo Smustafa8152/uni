@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useRef } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { useLanguage } from '../../contexts/LanguageContext'
@@ -151,6 +151,67 @@ function formFromDraft(draft) {
   return { ...INITIAL_FORM, ...rest, password: '', password_confirm: '' }
 }
 
+function dateInput(value) {
+  if (!value) return ''
+  return String(value).slice(0, 10)
+}
+
+function formFromLastApplication(app) {
+  const certificate = String(app.language_certificate_name || '').trim()
+  const knownCertificate = LANGUAGE_CERTIFICATES.includes(certificate)
+  const gender = String(app.gender || '').trim().toLowerCase()
+  return {
+    collegeId: app.college_id ? String(app.college_id) : '',
+    form: {
+      ...INITIAL_FORM,
+      study_type: String(app.study_type || '').toLowerCase() === 'online' ? 'online' : 'on_campus',
+      semester_id: app.semester_id ? String(app.semester_id) : '',
+      academic_year_id: app.academic_year_id ? String(app.academic_year_id) : '',
+      major_id: app.major_id ? String(app.major_id) : '',
+      second_choice_college_id: app.second_choice_college_id ? String(app.second_choice_college_id) : '',
+      second_choice_major_id: app.second_choice_major_id ? String(app.second_choice_major_id) : '',
+      is_former_student: Boolean(app.is_former_student),
+      matric_no: app.matric_no || '',
+      highest_education_level: app.highest_education_level || '',
+      certificate_type: app.certificate_type || '',
+      high_school_name: app.high_school_name || '',
+      graduation_year: app.graduation_year ? String(app.graduation_year) : '',
+      gpa: app.gpa == null || app.gpa === '' ? '' : String(app.gpa),
+      specialization: app.specialization || '',
+      language_of_study: app.language_of_study || '',
+      high_school_country: normalizeNationalityCode(app.high_school_country) || '',
+      has_language_certificate: Boolean(certificate),
+      language_certificate_name: certificate ? (knownCertificate ? certificate : 'other') : '',
+      language_certificate_other: certificate && !knownCertificate ? certificate : '',
+      language_certificate_result: app.language_certificate_result || '',
+      title: app.title || '',
+      first_name: app.first_name || '',
+      last_name: app.last_name || '',
+      name_ar: app.first_name_ar || '',
+      date_of_birth: dateInput(app.date_of_birth),
+      gender: gender === 'male' || gender === 'female' ? gender : '',
+      religion: app.religion || '',
+      nationality: normalizeNationalityCode(app.nationality) || '',
+      id_type: ID_TYPES.includes(app.id_type) ? app.id_type : 'passport',
+      id_number: app.id_number || '',
+      id_issue_country: normalizeNationalityCode(app.id_issue_country) || '',
+      id_issue_date: dateInput(app.id_issue_date),
+      id_expiry_date: dateInput(app.id_expiry_date),
+      phone: String(app.phone || '').replace(/\s+/g, ''),
+      home_phone: app.home_phone || '',
+      country: app.country || '',
+      state_province: app.state_province || '',
+      city: app.city || '',
+      postal_code: app.postal_code || '',
+      street_address: app.street_address || '',
+      referral_source: app.referral_source || '',
+      scholarship_request: Boolean(app.scholarship_request),
+      scholarship_type: app.scholarship_type || '',
+      scholarship_details: app.scholarship_details || '',
+    },
+  }
+}
+
 const inputClass =
   'w-full rounded-xl border border-slate-200 bg-slate-50/80 px-3.5 py-2.5 text-sm text-slate-900 placeholder:text-slate-400 shadow-sm transition focus:border-[#1a3a6b] focus:bg-white focus:outline-none focus:ring-4 focus:ring-[#1a3a6b]/10 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400'
 
@@ -291,6 +352,7 @@ export default function RegisterApplication({ portal = false }) {
 
   const needsAccount = !portal && !(user && userRole === 'applicant')
   const [showPassword, setShowPassword] = useState(false)
+  const prefilledFromLastApplication = useRef(false)
 
   const steps = useMemo(
     () => [
@@ -478,10 +540,7 @@ export default function RegisterApplication({ portal = false }) {
     const sp = new URLSearchParams(location.search || '')
     const cid = sp.get('collegeId')
     const mid = sp.get('majorId')
-    if (!cid || !mid) {
-      navigate('/portal/apply', { replace: true })
-      return
-    }
+    if (!cid || !mid) return
     setSelectedCollegeId(String(cid))
     setFormData((prev) => ({ ...prev, major_id: String(mid) }))
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -497,6 +556,49 @@ export default function RegisterApplication({ portal = false }) {
   useEffect(() => {
     if (portal && user?.email) setFormData((prev) => ({ ...prev, email: user.email }))
   }, [portal, user?.email])
+
+  // Portal new application starts from the applicant's latest submitted details, still editable.
+  useEffect(() => {
+    if (!portal || !user?.id || !user?.email || forcedProgram == null || prefilledFromLastApplication.current) return
+    let alive = true
+    const em = user.email.trim().replace(/"/g, '')
+    supabase
+      .from('applications')
+      .select('*')
+      .or(`applicant_user_id.eq.${user.id},email.ilike."${em}"`)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .then(({ data, error: qErr }) => {
+        if (!alive) return
+        prefilledFromLastApplication.current = true
+        if (qErr || !data?.[0]) return
+        const mapped = formFromLastApplication(data[0])
+        const params = new URLSearchParams(location.search || '')
+        const queryCollege = params.get('collegeId')
+        const queryMajor = params.get('majorId')
+        const lockProgram = Boolean(forcedProgram?.enabled && forcedProgram?.college_id && forcedProgram?.major_id)
+        if (!lockProgram) {
+          setSelectedCollegeId(queryCollege || mapped.collegeId)
+        }
+        setFormData((prev) => ({
+          ...prev,
+          ...mapped.form,
+          email: user.email,
+          ...(lockProgram
+            ? {
+                major_id: prev.major_id,
+                semester_id: prev.semester_id || mapped.form.semester_id,
+                academic_year_id: prev.academic_year_id || mapped.form.academic_year_id,
+              }
+            : queryMajor
+              ? { major_id: String(queryMajor) }
+              : {}),
+        }))
+      })
+    return () => {
+      alive = false
+    }
+  }, [portal, user?.id, user?.email, forcedProgram, location.search])
 
   // Derive the degree level from a pre-selected major
   useEffect(() => {
@@ -1251,7 +1353,7 @@ export default function RegisterApplication({ portal = false }) {
                         name="major_id"
                         value={formData.major_id}
                         onChange={handleChange}
-                        disabled={portal || programLocked || !selectedCollegeId || !formData.degree_level}
+                        disabled={programLocked || !selectedCollegeId || !formData.degree_level}
                         className={inputClass}
                       >
                         <option value="">{t('common.select', 'Please select')}</option>

@@ -2,6 +2,39 @@
 
 export const ADMISSION_MESSAGE_TEMPLATES = [
   {
+    key: 'finish_application',
+    labelEn: 'Finish the application',
+    labelAr: 'إكمال الطلب',
+    subjectEn: 'Action required: finish your application',
+    subjectAr: 'مطلوب إجراء: أكمل طلبك',
+    bodyEn:
+      'Dear applicant,\n\nYour application is still a draft. Please log in to the applicant portal and complete it so admissions can start the review.\n\nThank you.',
+    bodyAr:
+      'عزيزي المتقدم،\n\nطلبك ما زال مسودة. يرجى تسجيل الدخول إلى بوابة المتقدم وإكماله حتى تبدأ المراجعة.\n\nشكرًا لك.',
+  },
+  {
+    key: 'correct_application',
+    labelEn: 'Correct the application',
+    labelAr: 'تصحيح الطلب',
+    subjectEn: 'Action required: correct your application',
+    subjectAr: 'مطلوب إجراء: صحّح طلبك',
+    bodyEn:
+      'Dear applicant,\n\nAdmissions could not accept the application as submitted. Please log in to the applicant portal and update the details that were requested.\n\nThank you.',
+    bodyAr:
+      'عزيزي المتقدم،\n\nتعذّر قبول الطلب كما هو. يرجى تسجيل الدخول إلى بوابة المتقدم وتحديث البيانات المطلوبة.\n\nشكرًا لك.',
+  },
+  {
+    key: 'payment_due',
+    labelEn: 'Registration fee due',
+    labelAr: 'رسوم التسجيل مستحقة',
+    subjectEn: 'Action required: registration fee',
+    subjectAr: 'مطلوب إجراء: رسوم التسجيل',
+    bodyEn:
+      'Dear applicant,\n\nThe registration fee is due before the review can continue. Please log in to the applicant portal and complete the payment.\n\nThank you.',
+    bodyAr:
+      'عزيزي المتقدم،\n\nرسوم التسجيل مستحقة قبل متابعة المراجعة. يرجى تسجيل الدخول إلى بوابة المتقدم وإتمام الدفع.\n\nشكرًا لك.',
+  },
+  {
     key: 'missing_documents',
     labelEn: 'Request missing documents',
     labelAr: 'طلب مستندات ناقصة',
@@ -68,6 +101,17 @@ export const ADMISSION_MESSAGE_TEMPLATES = [
       'عزيزي المتقدم الدولي،\n\nيرجى مراجعة قائمة التحقق التالية بخصوص قرار القبول والتأشيرة وترتيبات السفر:\n\n1) تأكيد حالة القبول في بوابة المتقدم.\n2) تجهيز جواز السفر والمستندات المطلوبة للتأشيرة.\n3) التخطيط للسفر بعد التأكيد الرسمي وتعليمات الرسوم.\n4) التواصل مع القبول عبر رسائل البوابة عند الحاجة.\n\nشكرًا لك.',
   },
   {
+    key: 'complete_enrollment',
+    labelEn: 'Complete enrollment',
+    labelAr: 'إكمال التسجيل',
+    subjectEn: 'Action required: complete your enrollment',
+    subjectAr: 'مطلوب إجراء: أكمل التسجيل',
+    bodyEn:
+      'Dear applicant,\n\nYou have been accepted. Please log in and finish enrollment so your student account can be activated.\n\nThank you.',
+    bodyAr:
+      'عزيزي المتقدم،\n\nتم قبولك. يرجى تسجيل الدخول وإكمال التسجيل لتفعيل حساب الطالب.\n\nشكرًا لك.',
+  },
+  {
     key: 'general_update',
     labelEn: 'General application update',
     labelAr: 'تحديث عام للطلب',
@@ -85,5 +129,27 @@ export function getAdmissionTemplate(key, isArabic = false) {
     label: isArabic ? tpl.labelAr : tpl.labelEn,
     subject: isArabic ? tpl.subjectAr : tpl.subjectEn,
     body: isArabic ? tpl.bodyAr : tpl.bodyEn,
+  }
+}
+
+/** Statuses where the applicant must do something. Each one has an email template. */
+export const ACTION_STATUS_TEMPLATE = {
+  APDR: 'finish_application',
+  APIV: 'correct_application',
+  APPN: 'payment_due',
+  RVRI: 'missing_documents',
+  RVIV: 'interview_invite',
+  RVEX: 'exam_invite',
+  ENPN: 'complete_enrollment',
+}
+
+export function emailForActionStatus(statusCode, isArabic = false, extraNote = '') {
+  const key = ACTION_STATUS_TEMPLATE[String(statusCode || '').toUpperCase()]
+  if (!key) return null
+  const tpl = getAdmissionTemplate(key, isArabic)
+  const note = String(extraNote || '').trim()
+  return {
+    ...tpl,
+    body: note && note !== tpl.body.trim() ? `${tpl.body}\n\n${note}` : tpl.body,
   }
 }

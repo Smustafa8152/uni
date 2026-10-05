@@ -7,7 +7,6 @@ import { useAuth } from '../../contexts/AuthContext'
 import {
   LayoutDashboard,
   FilePlus2,
-  ListChecks,
   LogOut,
   Home,
   User,
@@ -20,7 +19,6 @@ const nav = [
   { to: '/portal/profile', icon: User, labelKey: 'applicantPortal.nav.profile' },
   { to: '/portal/messages', icon: MessageSquare, labelKey: 'applicantPortal.nav.messages' },
   { to: '/portal/apply', icon: FilePlus2, labelKey: 'applicantPortal.nav.newApplication' },
-  { to: '/application-status', end: true, icon: ListChecks, labelKey: 'applicantPortal.nav.trackPublic' },
   { to: '/portal/offer-letter', icon: Mail, labelKey: 'applicantPortal.nav.offerLetter' },
 ]
 
@@ -199,17 +197,6 @@ export default function ApplicantPortalLayout() {
           >
             <FilePlus2 className="w-5 h-5 mb-0.5" />
             {t('applicantPortal.nav.applyShort')}
-          </NavLink>
-          <NavLink
-            to="/application-status"
-            className={({ isActive }) =>
-              `flex flex-col items-center text-[11px] font-semibold no-underline ${
-                isActive ? 'text-[#1a3a6b]' : 'text-[#6b7a99]'
-              }`
-            }
-          >
-            <ListChecks className="w-5 h-5 mb-0.5" />
-            {t('applicantPortal.nav.trackShort')}
           </NavLink>
         </nav>
       </div>

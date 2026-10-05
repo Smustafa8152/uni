@@ -10,6 +10,8 @@ import { resolveOnboardingFeeAmount } from '../../utils/resolveOnboardingFeeAmou
 import { resolveRegistrationFeeAmount } from '../../utils/resolveRegistrationFeeAmount'
 import { getPaymentsEnabled } from '../../utils/getPaymentsEnabled'
 import { getNationalityLabel, normalizeNationalityCode } from '../../utils/nationalities'
+import { getApplicantStatus } from '../../utils/applicationStatusDisplay'
+import { emailForActionStatus } from '../../utils/admissionMessageTemplates'
 import NationalitySelect from '../../components/common/NationalitySelect'
 import { ArrowLeft, CheckCircle, XCircle, Clock, Mail, Phone, MapPin, Calendar, GraduationCap, FileText, User, AlertCircle, BookOpen, Edit, Save, X, ChevronDown, ChevronUp, ArrowRight, Info, Sparkles, Shield, TrendingUp, ArrowDown, KeyRound, Eye, EyeOff, Loader2 } from 'lucide-react'
 import { invokeAdminPasswordReset } from '../../utils/invokeAdminPasswordReset'
@@ -984,6 +986,17 @@ export default function ViewApplication() {
             }
           : prev
       )
+
+      const paymentEmail = emailForActionStatus('APPN', isArabicLayout)
+      if (paymentEmail) {
+        await sendAdmissionNotification({
+          type: paymentEmail.key,
+          subject: paymentEmail.subject,
+          message: paymentEmail.body,
+          meta: { to_status_code: nextStatus },
+        })
+      }
+
       setShowReceiveFeeModal(false)
     } catch (e) {
       setError(e?.message || 'Failed to record fee')
@@ -1009,27 +1022,38 @@ export default function ViewApplication() {
 
   const sendAdmissionNotification = useCallback(
     async ({ type, subject, message, meta, details } = {}) => {
-      try {
-        if (!application?.email) return
-        const collegeId = application?.college_id ?? null
-        await supabase.functions.invoke('send-admission-notification', {
-          body: {
-            scope: 'college',
-            collegeId,
-            to: application.email,
-            type,
-            subject,
-            message,
-            details: Array.isArray(details) ? details : [],
-            application: {
-              id: application.id,
-              application_number: application.application_number,
-            },
-            meta: meta || {},
+      if (!application?.email) throw new Error('This application has no email address.')
+      const collegeId = application?.college_id ?? null
+      const { data, error } = await supabase.functions.invoke('send-admission-notification', {
+        body: {
+          scope: 'college',
+          collegeId,
+          to: application.email,
+          type,
+          subject,
+          message,
+          details: Array.isArray(details) ? details : [],
+          applicationId: application.id,
+          application: {
+            id: application.id,
+            application_number: application.application_number,
           },
-        })
-      } catch (e) {
-        console.warn('Email notification failed:', e?.message || e)
+          meta: meta || {},
+        },
+      })
+      if (error) {
+        let detail = error.message || 'Email failed'
+        try {
+          const body = await error.context?.json?.()
+          if (body?.error) detail = String(body.error)
+        } catch {
+          /* keep the invoke message */
+        }
+        throw new Error(detail)
+      }
+      if (data?.error) throw new Error(String(data.error))
+      if (data?.skipped) {
+        throw new Error('Email notifications are turned off. Turn them on in the college email settings.')
       }
     },
     [application?.email, application?.college_id, application?.id, application?.application_number]
@@ -1141,7 +1165,7 @@ export default function ViewApplication() {
         const [{ data: docs }, { data: reqs }] = await Promise.all([
           supabase
             .from('application_documents')
-            .select('id, application_id, document_type, file_path, file_name, file_size, content_type, uploaded_at, verified_at, verified_by, verification_notes')
+            .select('id, application_id, document_type, document_label, file_path, file_name, file_size, content_type, uploaded_at, verified_at, verified_by, verification_notes')
             .eq('application_id', applicationId)
             .order('uploaded_at', { ascending: false }),
           supabase
@@ -1378,10 +1402,11 @@ export default function ViewApplication() {
         setApplication((prev) => (prev ? { ...prev, status_code: 'RVRI', status: 'pending' } : prev))
       }
 
+      const docsEmail = emailForActionStatus('RVRI', isArabicLayout, msg)
       await sendAdmissionNotification({
         type: 'request_documents',
-        subject: 'Action required: additional documents needed',
-        message: msg,
+        subject: docsEmail.subject,
+        message: docsEmail.body,
         meta: { request_id: reqRow?.id },
       })
 
@@ -1435,22 +1460,20 @@ export default function ViewApplication() {
           : 'Offer letter sent.',
       })
 
-      // Finalize immediately: create student + move to DCFA via Edge Function flow.
-      // This matches the applicant-accept logic but is triggered by admin.
-      try {
-        await supabase.functions.invoke('accept-offer', {
-          body: { applicationId, forceFinalize: true },
-        })
-      } catch (e) {
-        console.error('Send offer letter: accept-offer failed:', e)
+      // Admit immediately. The applicant does not accept the offer.
+      const { data: acceptData, error: acceptErr } = await supabase.functions.invoke('accept-offer', {
+        body: { applicationId, forceFinalize: true },
+      })
+      if (acceptErr) throw acceptErr
+      if (acceptData?.error || acceptData?.success === false) {
+        throw new Error(acceptData?.error || 'Failed to finalize admission')
       }
 
       setApplication((prev) =>
         prev
           ? {
               ...prev,
-              // UI will refresh from DB; temporarily show offer-sent state.
-              status_code: 'DCCA',
+              status_code: 'DCFA',
               status: 'accepted',
               offer_sent_at: now,
               offer_deadline: deadlineIso,
@@ -1459,21 +1482,20 @@ export default function ViewApplication() {
           : prev,
       )
 
-      // Email applicant (best effort)
       try {
-        const subject = t('offerLetter.emailSentSubject', 'Your offer letter is ready')
-        const message =
-          offerMessage?.trim() ||
-          (paymentsEnabled
-            ? t(
-                'offerLetter.emailSentBody',
-                'Please log in to your applicant portal to view your offer letter and pay the tuition fee before the deadline.',
-              )
-            : t(
-                'offerLetter.emailSentBodyPortal',
-                'Please log in to your applicant portal to view your offer letter.',
-              ))
-        await supabase.functions.invoke('send-admission-notification', {
+        const subject = t('offerLetter.emailSentSubject', 'You have been admitted')
+        const baseMessage = paymentsEnabled
+          ? t(
+              'offerLetter.emailSentBody',
+              'Congratulations. You have been admitted. Your place is confirmed. Log in to the student portal with the same email and password you used to apply. Any remaining fees can be paid from the student portal.',
+            )
+          : t(
+              'offerLetter.emailSentBodyPortal',
+              'Congratulations. You have been admitted. Your place is confirmed. Log in to the student portal with the same email and password you used to apply.',
+            )
+        const note = offerMessage?.trim()
+        const message = note ? `${baseMessage}\n\n${note}` : baseMessage
+        const { error: mailErr } = await supabase.functions.invoke('send-admission-notification', {
           body: {
             scope: 'college',
             type: 'offer_sent',
@@ -1484,8 +1506,10 @@ export default function ViewApplication() {
             application: { application_number: application.application_number },
           },
         })
-      } catch (_) {
-        // ignore email errors
+        if (mailErr) throw mailErr
+      } catch (mailError) {
+        console.error('Admission email failed:', mailError)
+        setError(t('offerLetter.emailFailed', 'The applicant was admitted, but the confirmation email could not be sent.'))
       }
 
       setShowOfferModal(false)
@@ -1560,14 +1584,13 @@ export default function ViewApplication() {
 
       if (updateError) throw updateError
 
-      // Notify applicant by email on key admissions statuses
-      if (selectedStatus === 'RVRI') {
+      // Action statuses always email the matching template. Other decisions keep their own notice.
+      const actionEmail = emailForActionStatus(selectedStatus, isArabicLayout, statusNotes)
+      if (actionEmail) {
         await sendAdmissionNotification({
-          type: 'request_documents',
-          subject: 'Action required: additional documents needed',
-          message:
-            statusNotes?.trim() ||
-            'Admissions has requested additional information/documents. Please check your applicant dashboard and upload the required items.',
+          type: actionEmail.key,
+          subject: actionEmail.subject,
+          message: actionEmail.body,
           meta: { to_status_code: selectedStatus, reason_code: selectedReason || null },
         })
       } else if (selectedStatus === 'DCRJ') {
@@ -1596,24 +1619,6 @@ export default function ViewApplication() {
             statusNotes?.trim() ||
             'Your uploaded documents are now under verification. We will contact you if anything else is required.',
           meta: { to_status_code: selectedStatus, reason_code: selectedReason || null },
-        })
-      } else if (selectedStatus === 'RVIV') {
-        await sendAdmissionNotification({
-          type: 'interview_invite',
-          subject: 'Interview required for your application',
-          message:
-            statusNotes?.trim() ||
-            'An admission interview is required. Please check your applicant portal for the date, time, and meeting link.',
-          meta: { to_status_code: selectedStatus },
-        })
-      } else if (selectedStatus === 'RVEX') {
-        await sendAdmissionNotification({
-          type: 'exam_invite',
-          subject: 'Entrance exam required for your application',
-          message:
-            statusNotes?.trim() ||
-            'An entrance exam / admission test is required. Please check your applicant portal for the date and details.',
-          meta: { to_status_code: selectedStatus },
         })
       } else if (selectedStatus === 'DCWL') {
         await sendAdmissionNotification({
@@ -1763,6 +1768,9 @@ export default function ViewApplication() {
     const status = statusCodes.find(s => s.code === statusCode)
     return status ? (isArabicLayout ? status.name_ar : status.name_en) : statusCode
   }
+
+  const applicantSeesLine = (statusCode) =>
+    t('track.applicantSees', { label: t(getApplicantStatus(statusCode).labelKey) })
 
   // Edit mode functions
   const fetchEditMajors = async () => {
@@ -2078,13 +2086,16 @@ export default function ViewApplication() {
           </div>
         </div>
         <span
-          className={`inline-flex items-center gap-2 px-4 py-2 rounded-lg border font-medium shrink-0 max-w-full ${getStatusColor(
+          className={`inline-flex flex-col items-start gap-1 px-4 py-2 rounded-lg border font-medium shrink-0 max-w-full ${getStatusColor(
             application?.status_code || application?.status
           )}`}
           dir={isArabicLayout ? 'rtl' : 'ltr'}
         >
-          {getStatusIcon(application?.status_code || application?.status)}
-          <span className="truncate">{getStatusDisplayName(application?.status_code || application?.status)}</span>
+          <span className="inline-flex items-center gap-2 min-w-0">
+            {getStatusIcon(application?.status_code || application?.status)}
+            <span className="truncate">{getStatusDisplayName(application?.status_code || application?.status)}</span>
+          </span>
+          <span className="text-xs font-normal opacity-80">{applicantSeesLine(application?.status_code)}</span>
         </span>
       </div>
 
@@ -2261,12 +2272,15 @@ export default function ViewApplication() {
                     <div className="flex items-center justify-between">
                       <div>
                         <label className="block text-xs font-semibold text-gray-500 mb-2 uppercase tracking-wide">{t('admissions.viewApplication.statusModal.currentStatus')}</label>
-                        <div className={`inline-flex items-center gap-2 px-4 py-2 rounded-lg border-2 ${getStatusColor(application?.status_code || application?.status)}`}>
-                          {getStatusIcon(application?.status_code || application?.status)}
-                          <span className="font-bold text-lg">{getStatusDisplayName(application?.status_code || application?.status)}</span>
-                          {application?.status_code && (
-                            <span className="text-xs font-mono opacity-75">({application.status_code})</span>
-                          )}
+                        <div className={`inline-flex flex-col items-start gap-1 px-4 py-2 rounded-lg border-2 ${getStatusColor(application?.status_code || application?.status)}`}>
+                          <span className="inline-flex items-center gap-2">
+                            {getStatusIcon(application?.status_code || application?.status)}
+                            <span className="font-bold text-lg">{getStatusDisplayName(application?.status_code || application?.status)}</span>
+                            {application?.status_code && (
+                              <span className="text-xs font-mono opacity-75">({application.status_code})</span>
+                            )}
+                          </span>
+                          <span className="text-xs font-normal opacity-80">{applicantSeesLine(application?.status_code)}</span>
                         </div>
                       </div>
                       <TrendingUp className="w-8 h-8 text-gray-400" />
@@ -2302,6 +2316,7 @@ export default function ViewApplication() {
                                   <p className="font-semibold text-gray-900 mb-1">
                                     {isArabicLayout ? targetStatus.name_ar : targetStatus.name_en}
                                   </p>
+                                  <p className="text-xs font-medium opacity-80">{applicantSeesLine(targetStatus.code)}</p>
                                   {transition.trigger_name_en && (
                                     <p className="text-xs text-gray-600 mt-1">
                                       {isArabicLayout ? transition.trigger_name_ar : transition.trigger_name_en}
@@ -2381,6 +2396,7 @@ export default function ViewApplication() {
                                           <p className="text-sm font-medium">
                                             {isArabicLayout ? status.name_ar : status.name_en}
                                           </p>
+                                          <p className="text-xs font-normal opacity-80 mt-1">{applicantSeesLine(status.code)}</p>
                                         </div>
                                         {isArabicLayout ? (
                                           <ArrowLeft className="w-4 h-4 opacity-50" />
@@ -2609,11 +2625,11 @@ export default function ViewApplication() {
                   {paymentsEnabled
                     ? t(
                         'admissions.viewApplication.sendOfferLetterHint',
-                        'Set the tuition fee amount and deadline. The applicant will receive an email and can pay tuition from the offer letter screen.',
+                        'The applicant is admitted as soon as you send this, and receives an email confirming that they are in. Set the tuition amount and deadline for any remaining fees.',
                       )
                     : t(
                         'admissions.viewApplication.sendOfferLetterHintPortal',
-                        'The applicant will receive an email with a link to view the offer letter in their portal.',
+                        'The applicant is admitted as soon as you send this, and receives an email confirming that they are in.',
                       )}
                 </p>
               </div>
@@ -2993,14 +3009,17 @@ export default function ViewApplication() {
                     {applicationDocuments.map((doc) => {
                       const url = docPublicUrl(doc.file_path)
                       const verified = !!doc.verified_at
+                      const typeLabel = t(`admissions.viewApplication.documentTypes.${doc.document_type}`, {
+                        defaultValue: doc.document_type,
+                      })
+                      const documentName = String(doc.document_label || '').trim()
+                      const title = documentName || typeLabel
                       return (
                         <li key={doc.id} className={`py-4 flex items-start justify-between gap-4 ${isArabicLayout ? 'flex-row-reverse' : ''}`}>
                           <div className="min-w-0">
                             <div className={`flex items-center gap-2 ${isArabicLayout ? 'flex-row-reverse' : ''}`}>
                               <span className="font-semibold text-gray-900 text-sm">
-                                {t(`admissions.viewApplication.documentTypes.${doc.document_type}`, {
-                                  defaultValue: doc.document_type,
-                                })}
+                                {title}
                               </span>
                               {verified ? (
                                 <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 text-xs font-bold">

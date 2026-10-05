@@ -835,8 +835,9 @@ serve(async (req) => {
       }
       const smtp = normalizeEmailSettings(rawEmail)
       if (smtp?.host && smtp.fromEmail) {
-        const subject = 'Offer accepted'
-        const message = 'Your offer has been accepted successfully. You can now log in as a student using the same email and password.'
+        const subject = 'You have been admitted — تم قبولك'
+        const message =
+          'Congratulations. You have been admitted. Your place is confirmed. Log in to the student portal with the same email and password you used to apply.\n\nتهانينا. تم قبولك. مقعدك مؤكد. سجّل الدخول إلى بوابة الطالب بنفس البريد وكلمة المرور التي استخدمتها في التقديم.'
         const appNo = String(app.application_number || app.id)
         const html = buildBrandedEmailHtml({
           brandName: smtp.fromName,

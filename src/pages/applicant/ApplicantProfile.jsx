@@ -22,6 +22,43 @@ const emptyForm = {
   address: '',
 }
 
+function cleanText(value) {
+  const text = String(value || '').trim()
+  if (!text || text === '-' || text.toLowerCase() === 'n/a' || text.toLowerCase() === 'na') return ''
+  return text
+}
+
+function profileGender(value) {
+  const text = cleanText(value).toLowerCase()
+  if (text === 'male' || text === 'm' || text === 'ذكر') return 'male'
+  if (text === 'female' || text === 'f' || text === 'أنثى' || text === 'انثى') return 'female'
+  return ''
+}
+
+function formFromApplication(app) {
+  if (!app) return emptyForm
+  return {
+    first_name: cleanText(app.first_name),
+    father_name: cleanText(app.middle_name),
+    grandfather_name: '',
+    last_name: cleanText(app.last_name),
+    national_id: cleanText(app.id_number),
+    date_of_birth: app.date_of_birth ? String(app.date_of_birth).slice(0, 10) : '',
+    gender: profileGender(app.gender),
+    nationality: normalizeNationalityCode(app.nationality) || '',
+    phone: cleanText(app.phone),
+    address: cleanText(app.street_address),
+  }
+}
+
+function fillBlanks(current, incoming) {
+  const next = { ...current }
+  for (const key of Object.keys(emptyForm)) {
+    if (!cleanText(next[key]) && incoming[key]) next[key] = incoming[key]
+  }
+  return next
+}
+
 export default function ApplicantProfile() {
   const { t } = useTranslation()
   const { isRTL } = useLanguage()
@@ -71,29 +108,41 @@ export default function ApplicantProfile() {
         .maybeSingle()
       if (pErr) throw pErr
 
-      if (prof) {
-        setForm({
-          first_name: prof.first_name ?? '',
-          father_name: prof.father_name ?? '',
-          grandfather_name: prof.grandfather_name ?? '',
-          last_name: prof.last_name ?? '',
-          national_id: prof.national_id ?? '',
-          date_of_birth: prof.date_of_birth ? String(prof.date_of_birth).slice(0, 10) : '',
-          gender: prof.gender ?? '',
-          nationality: normalizeNationalityCode(prof.nationality) || prof.nationality || '',
-          phone: prof.phone ?? '',
-          address: prof.address ?? '',
-        })
-        setPhotoPath(prof.photo_path || '')
-        if (prof.photo_path) {
-          const { data: pub } = supabase.storage.from(SUPABASE_STORAGE_BUCKET).getPublicUrl(prof.photo_path)
-          setPhotoPreview(pub?.publicUrl || '')
-        } else {
-          setPhotoPreview('')
-        }
+      const saved = prof
+        ? {
+            first_name: prof.first_name ?? '',
+            father_name: prof.father_name ?? '',
+            grandfather_name: prof.grandfather_name ?? '',
+            last_name: prof.last_name ?? '',
+            national_id: prof.national_id ?? '',
+            date_of_birth: prof.date_of_birth ? String(prof.date_of_birth).slice(0, 10) : '',
+            gender: profileGender(prof.gender) || prof.gender || '',
+            nationality: normalizeNationalityCode(prof.nationality) || '',
+            phone: prof.phone ?? '',
+            address: prof.address ?? '',
+          }
+        : { ...emptyForm }
+
+      const needsApplication = Object.values(saved).some((value) => !cleanText(value))
+      let nextForm = saved
+      if (needsApplication && user.email) {
+        const em = user.email.trim().replace(/"/g, '')
+        const { data: apps, error: aErr } = await supabase
+          .from('applications')
+          .select('first_name, middle_name, last_name, date_of_birth, gender, nationality, phone, id_number, street_address')
+          .or(`applicant_user_id.eq.${user.id},email.ilike."${em}"`)
+          .order('created_at', { ascending: false })
+          .limit(1)
+        if (aErr) throw aErr
+        nextForm = fillBlanks(saved, formFromApplication(apps?.[0]))
+      }
+
+      setForm(nextForm)
+      setPhotoPath(prof?.photo_path || '')
+      if (prof?.photo_path) {
+        const { data: pub } = supabase.storage.from(SUPABASE_STORAGE_BUCKET).getPublicUrl(prof.photo_path)
+        setPhotoPreview(pub?.publicUrl || '')
       } else {
-        setForm(emptyForm)
-        setPhotoPath('')
         setPhotoPreview('')
       }
     } catch (e) {
@@ -363,7 +412,7 @@ export default function ApplicantProfile() {
                 <div className="sm:col-span-2">
                   <label className={labelCls}>{t('applicantProfile.email')}</label>
                   <input className={`${inputCls} bg-[#f4f6fb] text-[#6b7a99]`} type="email" value={user?.email || ''} readOnly />
-                  <p className="text-xs text-[#6b7a99] mt-1">{t('applicantProfile.emailReadOnly')}</p>
+                  {/* <p className="text-xs text-[#6b7a99] mt-1">{t('applicantProfile.emailReadOnly')}</p> */}
                 </div>
                 <div>
                   <label className={labelCls}>

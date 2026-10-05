@@ -26,6 +26,18 @@ function notificationsEnabled(raw: unknown): boolean {
   const o = raw as Record<string, unknown>
   if (typeof o.enable_email_notifications === 'boolean') return o.enable_email_notifications
   if (typeof o.enableEmailNotifications === 'boolean') return o.enableEmailNotifications
+  const nested = o.notifications
+  if (nested && typeof nested === 'object') {
+    const n = nested as Record<string, unknown>
+    if (typeof n.enableEmailNotifications === 'boolean') return n.enableEmailNotifications
+    if (typeof n.enable_email_notifications === 'boolean') return n.enable_email_notifications
+  }
+  return true
+}
+
+function smtpReady(cfg: SmtpShape | null): boolean {
+  if (!cfg?.host || !cfg.fromEmail) return false
+  if (!cfg.username || !cfg.password) return false
   return true
 }
 
@@ -360,8 +372,8 @@ serve(async (req) => {
       }
     }
 
-    // Fallback: if college SMTP missing, use university SMTP automatically.
-    if (!smtpCfg?.host || !smtpCfg.fromEmail) {
+    // A college row can store a host with no mailbox. That is not a working account.
+    if (!smtpReady(smtpCfg)) {
       smtpCfg = await loadUniversitySmtp()
     }
     if (!smtpCfg?.host || !smtpCfg.fromEmail) {

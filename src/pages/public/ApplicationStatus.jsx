@@ -6,6 +6,7 @@ import { FlagAr, FlagEn } from '../../components/LanguageFlags'
 import { useAuth } from '../../contexts/AuthContext'
 import { supabase, SUPABASE_STORAGE_BUCKET } from '../../lib/supabase'
 import { getLocalizedName } from '../../utils/localizedName'
+import { APPLICANT_PHASES, applicantStatusClass, getApplicantReasonMeta, getApplicantStatus } from '../../utils/applicationStatusDisplay'
 import { canLoginWithoutSemesterPm10Milestone } from '../../utils/financePermissions'
 import PaymentModal from '../../components/payment/PaymentModal'
 import { getPaymentsEnabled } from '../../utils/getPaymentsEnabled'
@@ -13,15 +14,10 @@ import ApplicationMessagesPanel from '../../components/admissions/ApplicationMes
 import {
   CheckCircle,
   XCircle,
-  Clock,
-  FileText,
   CreditCard,
-  UserCheck,
   GraduationCap,
-  AlertCircle,
   Upload,
   ArrowLeft,
-  RefreshCw,
   AlertTriangle,
   Loader2,
   LogIn,
@@ -40,14 +36,9 @@ const UPLOADABLE_DOCUMENT_TYPES = [
 ]
 const MAX_FILE_SIZE_MB = 10
 
-const STAGE_ORDER = [
-  'APDR', 'APSB', 'APPN', 'APPC', 'RVQU', 'RVIN', 'RVDV', 'RVHL', 'RVRI', 'RVRC', 'RVIV', 'RVEX',
-  'DCPN', 'DCCA', 'DCFA', 'DCWL', 'DCRJ', 'ENPN', 'ENCF', 'ENAC',
-]
-
-function getStageIndex(code) {
-  const i = STAGE_ORDER.indexOf(code || '')
-  return i >= 0 ? i : 0
+function phaseIndex(code) {
+  const idx = APPLICANT_PHASES.indexOf(getApplicantStatus(code).phase)
+  return idx >= 0 ? idx : 0
 }
 
 function getApplicantDisplayName(application, isRTL) {
@@ -63,7 +54,7 @@ function getApplicantDisplayName(application, isRTL) {
 }
 
 export default function ApplicationStatus() {
-  const { t } = useTranslation()
+  const { t, i18n } = useTranslation()
   const { isRTL, language, changeLanguage } = useLanguage()
   const navigate = useNavigate()
   const { id } = useParams()
@@ -72,7 +63,6 @@ export default function ApplicationStatus() {
   const portalMode = Boolean(outletCtx?.applicantPortal)
   const { user } = useAuth()
   const [application, setApplication] = useState(location.state?.application || null)
-  const [activityLog, setActivityLog] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [showPaymentModal, setShowPaymentModal] = useState(false)
@@ -108,14 +98,12 @@ export default function ApplicationStatus() {
     }
   }, [portalMode, user?.id, user?.email, application?.id, application?.email, application?.applicant_user_id, t])
 
-  // Single effect: fetch application by id once, then fetch activity log when we have the matching application
   useEffect(() => {
     if (!id) return
     const idNum = parseInt(id, 10)
     const hasMatchingApplication = application && application.id === idNum
 
     if (hasMatchingApplication) {
-      fetchActivityLog(application.id)
       setLoading(false)
       return
     }
@@ -361,79 +349,9 @@ export default function ApplicationStatus() {
     }
   }
 
-  const fetchActivityLog = async (appId = null) => {
-    const applicationId = appId || application?.id
-    if (!applicationId) return
-    try {
-      const { data: logEntries, error: logError } = await supabase
-        .from('status_change_audit_log')
-        .select('*')
-        .eq('entity_type', 'application')
-        .eq('entity_id', applicationId)
-        .order('created_at', { ascending: false })
-
-      if (logError) throw logError
-
-      if (application?.created_at) {
-        const initialEntry = {
-          id: 'initial',
-          from_status_code: null,
-          to_status_code: application.status_code || 'APDR',
-          trigger_code: 'TRSB',
-          triggered_by: null,
-          notes: 'Application created',
-          created_at: application.created_at,
-        }
-        setActivityLog([initialEntry, ...(logEntries || [])])
-      } else {
-        setActivityLog(logEntries || [])
-      }
-    } catch (err) {
-      console.error('Error fetching activity log:', err)
-    }
-  }
-
-  const getStatusInfo = (statusCode) => {
-    const statusMap = {
-      'APDR': { label: 'Draft', color: 'bg-gray-100 text-gray-800 border-gray-200', icon: FileText },
-      'APSB': { label: 'Submitted', color: 'bg-blue-100 text-blue-800 border-blue-200', icon: Clock },
-      'APIV': { label: 'Invalid', color: 'bg-red-100 text-red-800 border-red-200', icon: XCircle },
-      'APPN': { label: 'Payment Pending', color: 'bg-yellow-100 text-yellow-800 border-yellow-200', icon: CreditCard },
-      'APPC': { label: 'Payment Confirmed', color: 'bg-green-100 text-green-800 border-green-200', icon: CheckCircle },
-      'RVQU': { label: 'Review Queue', color: 'bg-blue-100 text-blue-800 border-blue-200', icon: Clock },
-      'RVIN': { label: 'Under Review', color: 'bg-yellow-100 text-yellow-800 border-yellow-200', icon: RefreshCw },
-      'RVHL': { label: 'On Hold', color: 'bg-orange-100 text-orange-800 border-orange-200', icon: AlertCircle },
-      'RVRI': { label: 'Additional Info Required', color: 'bg-purple-100 text-purple-800 border-purple-200', icon: FileText },
-      'RVRC': { label: 'Info Received', color: 'bg-blue-100 text-blue-800 border-blue-200', icon: CheckCircle },
-      'RVDV': { label: 'Documents Verification', color: 'bg-yellow-100 text-yellow-800 border-yellow-200', icon: FileText },
-      'RVIV': { label: 'Interview Required', color: 'bg-purple-100 text-purple-800 border-purple-200', icon: UserCheck },
-      'RVEX': { label: 'Entrance Exam Required', color: 'bg-purple-100 text-purple-800 border-purple-200', icon: GraduationCap },
-      'DCPN': { label: 'Decision Pending', color: 'bg-yellow-100 text-yellow-800 border-yellow-200', icon: Clock },
-      'DCCA': { label: 'Accepted (Conditional)', color: 'bg-green-100 text-green-800 border-green-200', icon: CheckCircle },
-      'DCFA': { label: 'Accepted (Final)', color: 'bg-green-100 text-green-800 border-green-200', icon: CheckCircle },
-      'DCWL': { label: 'Waitlisted', color: 'bg-blue-100 text-blue-800 border-blue-200', icon: Clock },
-      'DCRJ': { label: 'Rejected', color: 'bg-red-100 text-red-800 border-red-200', icon: XCircle },
-      'ENPN': { label: 'Enrollment Pending', color: 'bg-blue-100 text-blue-800 border-blue-200', icon: Clock },
-      'ENCF': { label: 'Enrollment Confirmed', color: 'bg-green-100 text-green-800 border-green-200', icon: CheckCircle },
-      'ENAC': { label: 'Enrolled (Active)', color: 'bg-green-100 text-green-800 border-green-200', icon: CheckCircle },
-    }
-    return statusMap[statusCode] || { label: statusCode, color: 'bg-gray-100 text-gray-800 border-gray-200', icon: Clock }
-  }
-
-  const activityLogSorted = useMemo(() => {
-    const arr = Array.isArray(activityLog) ? [...activityLog] : []
-    arr.sort((a, b) => new Date(b?.created_at || 0).getTime() - new Date(a?.created_at || 0).getTime())
-    return arr
-  }, [activityLog])
-
-  const latestDocumentsUploadedAt = useMemo(() => {
-    const docs = Array.isArray(applicationDocuments) ? applicationDocuments : []
-    const max = docs.reduce((acc, d) => {
-      const ts = d?.uploaded_at ? new Date(d.uploaded_at).getTime() : 0
-      return ts > acc ? ts : acc
-    }, 0)
-    return max || 0
-  }, [applicationDocuments])
+  const applicantStatus = getApplicantStatus(application?.status_code)
+  const statusLabel = t(applicantStatus.labelKey)
+  const statusClass = applicantStatusClass(applicantStatus)
 
   const coreDocuments = useMemo(
     () => (Array.isArray(applicationDocuments) ? applicationDocuments.filter((d) => d.document_type !== 'additional') : []),
@@ -442,107 +360,26 @@ export default function ApplicationStatus() {
 
   const requiredCoreTypes = useMemo(() => new Set(['id_photo', 'transcript']), [])
 
-  const allRequiredCoreUploaded = useMemo(
-    () => Array.from(requiredCoreTypes).every((k) => coreDocuments.some((d) => d.document_type === k)),
-    [requiredCoreTypes, coreDocuments],
-  )
-
   const allRequiredCoreVerified = useMemo(
     () => Array.from(requiredCoreTypes).every((k) => coreDocuments.some((d) => d.document_type === k && d.verified_at)),
     [requiredCoreTypes, coreDocuments],
   )
 
-  const getProcessingStages = () => {
-    const code = application?.status_code || 'APDR'
-    const currentIdx = getStageIndex(code)
-    const created = application?.created_at
-    const locale = isRTL ? 'ar-u-nu-latn' : 'en-CA'
-    const formatDate = (d) =>
-      d ? new Date(d).toLocaleDateString(locale, { year: 'numeric', month: '2-digit', day: '2-digit' }) : null
-
-    const findLogDate = (codes) => {
-      const set = codes instanceof Set ? codes : new Set(codes || [])
-      const hit = activityLogSorted.find((e) => set.has(String(e?.to_status_code || '').toUpperCase()))
-      return hit?.created_at ? formatDate(hit.created_at) : null
-    }
-
-    const paymentDate = formatDate(application?.registration_fee_paid_at) || findLogDate(['APPC'])
-    const latestUploadAt = latestDocumentsUploadedAt ? formatDate(new Date(latestDocumentsUploadedAt).toISOString()) : null
-    const hasAnyDocs = (Array.isArray(applicationDocuments) ? applicationDocuments.length : 0) > 0
-    // When payments are off, applicants never enter APPN/APPC; treat post-submit as after APSB for doc-flow UI.
-    const docFlowGateIdx = paymentsEnabled ? getStageIndex('APPC') : getStageIndex('APSB')
-
-    const paymentStage = {
-      key: 'payment',
-      title: t('track.stages.paymentConfirmation', 'Payment confirmation'),
-      desc: t('track.stages.paymentConfirmationDesc', 'Your payment is being processed / confirmed'),
-      date: paymentDate,
-      status: application?.registration_fee_paid_at
-        ? 'completed'
-        : String(application?.status_code || '').toUpperCase() === 'APPN'
-          ? 'in_progress'
-          : 'pending',
-    }
-
-    const stages = [
-      {
-        key: 'order',
-        title: t('track.stages.orderReceipt', 'Order receipt'),
-        desc: t('track.stages.orderReceiptDesc', 'Your request has been received and registered in the system'),
-        date: formatDate(created),
-        status: currentIdx >= getStageIndex('APSB') ? 'completed' : currentIdx > getStageIndex('APDR') ? 'in_progress' : 'pending',
-      },
-      ...(paymentsEnabled ? [paymentStage] : []),
-      {
-        key: 'documents',
-        title: t('track.stages.documentVerification', 'Document verification'),
-        desc: t('track.stages.documentVerificationDesc', 'Uploaded documents are being verified'),
-        date: latestUploadAt || findLogDate(['RVDV', 'RVRI', 'RVRC']),
-        status:
-          allRequiredCoreVerified || currentIdx > getStageIndex('RVDV')
-            ? 'completed'
-            : currentIdx >= getStageIndex('RVDV') || (currentIdx >= docFlowGateIdx && hasAnyDocs)
-              ? 'in_progress'
-              : allRequiredCoreUploaded && currentIdx >= docFlowGateIdx
-                ? 'in_progress'
-                : 'pending',
-      },
-      {
-        key: 'review',
-        title: t('track.stages.academicReview', 'Academic Review'),
-        desc: t('track.stages.academicReviewDesc', 'Under review — expected to be completed within 5-7 business days'),
-        date: findLogDate(['RVQU', 'RVIN', 'RVHL', 'RVIV', 'RVEX']) || null,
-        status:
-          currentIdx >= getStageIndex('DCPN')
-            ? 'completed'
-            : currentIdx >= getStageIndex('RVQU')
-              ? 'in_progress'
-              : 'pending',
-      },
-      {
-        key: 'decision',
-        title: t('track.stages.admissionDecision', 'Admission decision'),
-        desc:
-          currentIdx >= getStageIndex('DCFA') || currentIdx >= getStageIndex('DCCA')
-            ? t('track.stages.decisionMade', 'Decision made')
-            : t('track.stages.awaitingReview', 'Awaiting completion of review'),
-        date: findLogDate(['DCPN', 'DCCA', 'DCFA', 'DCWL', 'DCRJ']) || null,
-        status:
-          currentIdx >= getStageIndex('DCCA') || currentIdx >= getStageIndex('DCFA') || currentIdx >= getStageIndex('DCWL') || currentIdx >= getStageIndex('DCRJ')
-            ? 'completed'
-            : currentIdx >= getStageIndex('DCPN')
-              ? 'in_progress'
-              : 'pending',
-      },
-    ]
-    return stages
-  }
+  const progressSteps = useMemo(() => {
+    const current = phaseIndex(application?.status_code)
+    return APPLICANT_PHASES.map((phase, idx) => {
+      let state = 'pending'
+      if (idx < current) state = 'done'
+      else if (idx === current) state = applicantStatus.view === 'outcome' ? applicantStatus.tone : 'current'
+      return { key: phase, state, title: t(`track.steps.${phase}`) }
+    })
+  }, [application?.status_code, applicantStatus.view, applicantStatus.tone, t])
 
   const hasDoc = (type) => applicationDocuments.some((d) => d.document_type === type)
 
   const documentItems = () => {
     const code = application?.status_code
-    const pastDoc = getStageIndex(code) >= getStageIndex('RVDV')
+    const pastDoc = phaseIndex(code) > APPLICANT_PHASES.indexOf('documents')
     const idPhotoDone = hasDoc('id_photo')
     const transcriptDone = hasDoc('transcript')
     const allUploadableDone = idPhotoDone && transcriptDone
@@ -690,8 +527,6 @@ export default function ApplicationStatus() {
     )
   }
 
-  const statusInfo = getStatusInfo(application.status_code)
-  const StatusIcon = statusInfo.icon
   const showRegistrationPayment =
     paymentsEnabled &&
     String(application?.status_code || '').toUpperCase() === 'APPN' &&
@@ -703,9 +538,36 @@ export default function ApplicationStatus() {
   const applicationDate = application.created_at
     ? new Date(application.created_at).toLocaleDateString(dateLocale, { year: 'numeric', month: '2-digit', day: '2-digit' })
     : '—'
-  const processingStages = getProcessingStages()
   const documentRows = documentItems()
   const hasMissingUploadable = documentRows.some((i) => i.uploadable && !i.done)
+  const hintKey = `${applicantStatus.labelKey}Hint`
+  const statusHint = i18n.exists(hintKey) ? t(hintKey) : ''
+  const action = applicantStatus.action
+  const actionButton =
+    applicantStatus.view !== 'action'
+      ? null
+      : action === 'draft'
+        ? { label: t('track.applicant.continueApplication'), to: portalMode ? '/portal/apply' : '/apply' }
+        : action === 'documents'
+          ? { label: t('track.applicant.goToDocuments'), href: '#status-documents-panel' }
+          : action === 'payment'
+            ? { label: t('track.payRegistrationFee'), onClick: () => setShowPaymentModal(true) }
+            : action === 'offer'
+              ? { label: t('track.applicant.viewOffer'), to: `/portal/applications/${id}/offer-letter` }
+              : action === 'enrollment'
+                ? { label: t('track.loginToStudentPortal'), to: '/login/student' }
+                : null
+  const reasonMeta = getApplicantReasonMeta(application.status_code)
+  const reasonCode = String(application.status_reason_code || '').toUpperCase()
+  const reasonGroups = reasonMeta?.group
+    ? [reasonMeta.group, reasonMeta.group === 'reject' ? 'requestInfo' : 'reject']
+    : ['reject', 'requestInfo']
+  const reasonKey = reasonCode
+    ? reasonGroups.map((group) => `admissions.statusReasons.${group}.${reasonCode}`).find((key) => i18n.exists(key))
+    : ''
+  const reasonLabel = reasonKey ? t(reasonKey) : ''
+  const reasonNotes = String(application.review_notes || '').trim()
+  const showReason = Boolean(reasonMeta && (reasonLabel || reasonNotes))
 
   const handlePaymentSuccess = async () => {
     await fetchApplication()
@@ -774,7 +636,7 @@ export default function ApplicationStatus() {
 
       <div className="max-w-6xl mx-auto w-full min-w-0 text-start">
         {!portalMode && (
-          <div className={`flex items-center justify-between gap-4 mb-6 ${isRTL ? 'flex-row-reverse' : ''}`}>
+          <div className="flex items-center justify-between gap-4 mb-6">
             <button
               type="button"
               onClick={() => navigate('/lookup-application')}
@@ -817,214 +679,177 @@ export default function ApplicationStatus() {
           </nav>
         )}
 
-        <header className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3 mb-6">
-          <div>
-            <h1 className="text-2xl font-extrabold text-[#1a3a6b] mb-1">
-              {t('track.pageHeading', 'Admission application status')}
-            </h1>
-            <p className="text-sm text-[#6b7a99]">
-              {t('track.pageSubtitle', 'Follow the processing stages of your application')}
-              {portalMode && (
-                <>
-                  {' · '}
-                  <span className="font-semibold text-[#1e2a3a]">{getApplicantDisplayName(application, isRTL)}</span>
-                </>
-              )}
-            </p>
-          </div>
-        </header>
-
-        <div
-          className={`rounded-md bg-[#e6f7ef] text-[#1a7a4a] border-s-4 border-[#1a7a4a] px-4 py-3.5 mb-6 text-sm flex items-start gap-2.5 ${isRTL ? 'flex-row-reverse' : ''}`}
-          role="status"
-        >
-          <CheckCircle className="w-5 h-5 shrink-0 mt-0.5" aria-hidden />
-          <p className={`leading-relaxed flex-1 min-w-0 ${isRTL ? 'text-end' : 'text-start'}`}>
-            <span className="me-1">{t('track.bannerReceived', 'Your order has been successfully received. Order number:')}</span>
-            <strong className="font-mono font-bold">{application.application_number}</strong>
-          </p>
-        </div>
-
-        {(application.interview_at || application.interview_meeting_url || application.status_code === 'RVIV') && (
-          <div
-            className={`rounded-md bg-violet-50 text-violet-900 border-s-4 border-violet-600 px-4 py-3.5 mb-4 text-sm ${isRTL ? 'text-end' : 'text-start'}`}
-          >
-            <div className={`flex items-start gap-2 ${isRTL ? 'flex-row-reverse' : ''}`}>
-              <Video className="w-5 h-5 shrink-0 mt-0.5" />
-              <div className="min-w-0 flex-1 space-y-1">
-                <p className="font-bold">{t('admissions.interview.portalTitle', 'Admission interview')}</p>
-                {application.interview_at && (
-                  <p>
-                    {t('admissions.interview.when', 'When')}:{' '}
-                    {new Date(application.interview_at).toLocaleString(isRTL ? 'ar-u-nu-latn' : 'en-GB')}
-                    {application.interview_timezone ? ` (${application.interview_timezone})` : ''}
-                  </p>
-                )}
-                {application.interview_meeting_url && (
-                  <p>
-                    <a
-                      href={application.interview_meeting_url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="font-semibold text-violet-800 underline"
-                    >
-                      {t('admissions.interview.joinMeeting', 'Join meeting')}
-                    </a>
-                  </p>
-                )}
-                {application.interview_instructions && (
-                  <p className="whitespace-pre-wrap text-violet-800/90">{application.interview_instructions}</p>
-                )}
+        <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1.45fr)_minmax(280px,0.9fr)] gap-6 items-start">
+          <article className="min-w-0 rounded-2xl border border-[#dde3ef] bg-white shadow-[0_8px_30px_rgba(26,58,107,0.06)] overflow-hidden">
+            <header className="px-5 sm:px-7 py-5 border-b border-[#dde3ef] bg-[#f7f9fd] flex flex-col sm:flex-row sm:items-center gap-4 sm:justify-between">
+              <div className="min-w-0">
+                <p className="text-xs font-semibold text-[#6b7a99]">{t('track.pageHeading', 'Admission application status')}</p>
+                <h1 className="font-mono text-xl sm:text-2xl font-extrabold text-[#1a3a6b] mt-1">
+                  {application.application_number}
+                </h1>
+                <p className="text-sm text-[#1e2a3a] mt-1 leading-snug">{programName}</p>
+                <p className="text-xs text-[#6b7a99] mt-1">
+                  {portalMode && getApplicantDisplayName(application, isRTL) ? (
+                    <span className="font-semibold text-[#1e2a3a]">{getApplicantDisplayName(application, isRTL)} · </span>
+                  ) : null}
+                  {applicationDate}
+                </p>
               </div>
-            </div>
-          </div>
-        )}
-
-        {(application.exam_at || application.exam_location_or_link || application.status_code === 'RVEX') && (
-          <div
-            className={`rounded-md bg-amber-50 text-amber-950 border-s-4 border-amber-500 px-4 py-3.5 mb-6 text-sm ${isRTL ? 'text-end' : 'text-start'}`}
-          >
-            <div className={`flex items-start gap-2 ${isRTL ? 'flex-row-reverse' : ''}`}>
-              <GraduationCap className="w-5 h-5 shrink-0 mt-0.5" />
-              <div className="min-w-0 flex-1 space-y-1">
-                <p className="font-bold">{t('admissions.exam.portalTitle', 'Entrance exam / admission test')}</p>
-                {application.exam_at && (
-                  <p>
-                    {t('admissions.exam.when', 'When')}:{' '}
-                    {new Date(application.exam_at).toLocaleString(isRTL ? 'ar-u-nu-latn' : 'en-GB')}
-                    {application.exam_timezone ? ` (${application.exam_timezone})` : ''}
-                  </p>
-                )}
-                {application.exam_location_or_link && (
-                  <p>
-                    {t('admissions.exam.location', 'Location / link')}:{' '}
-                    {/^https?:\/\//i.test(application.exam_location_or_link) ? (
-                      <a
-                        href={application.exam_location_or_link}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="font-semibold underline"
-                      >
-                        {application.exam_location_or_link}
-                      </a>
-                    ) : (
-                      application.exam_location_or_link
+              <span className={`inline-flex items-center self-start px-3 py-1.5 rounded-full text-sm font-bold border ${statusClass}`}>
+                {statusLabel}
+              </span>
+            </header>
+            <ol className="px-5 sm:px-7 py-6" aria-label={t('track.stagesTitle', 'Application processing stages')}>
+              {progressSteps.map((step, idx) => {
+                const failed = step.state === 'rejected'
+                const accepted = step.state === 'accepted'
+                const waiting = step.state === 'waitlist'
+                const done = step.state === 'done' || accepted
+                const current = step.state === 'current' || failed || waiting
+                const upcoming = step.state === 'pending'
+                const showAction = step.state === 'current' && applicantStatus.view === 'action'
+                const mark = failed ? '!' : done ? '✓' : String(idx + 1)
+                const bubble = failed
+                  ? 'bg-rose-600 text-white ring-4 ring-rose-100'
+                  : accepted
+                    ? 'bg-emerald-600 text-white ring-4 ring-emerald-100'
+                    : current
+                      ? 'bg-[#1a3a6b] text-white ring-4 ring-[#d9e3f5]'
+                      : done
+                        ? 'bg-emerald-600 text-white'
+                        : 'bg-white text-[#8b98b0] border border-[#dde3ef]'
+                const copyKey = upcoming
+                  ? `track.flow.${step.key}Wait`
+                  : current
+                    ? `track.flow.${step.key}Now`
+                    : `track.flow.${step.key}Done`
+                const detail = (current || accepted) && statusHint ? statusHint : t(copyKey)
+                const badge = current || accepted
+                  ? t('track.flow.youAreHere', 'Current step')
+                  : done
+                    ? t('track.flow.completed', 'Completed')
+                    : t('track.flow.upcoming', 'Upcoming')
+                return (
+                  <li key={step.key} className="relative ps-12 pb-8 last:pb-0" aria-current={current ? 'step' : undefined}>
+                    {idx < progressSteps.length - 1 && (
+                      <span className={`absolute top-8 bottom-0 w-0.5 start-[15px] ${done ? 'bg-emerald-400' : 'bg-[#e6ebf4]'}`} aria-hidden />
                     )}
-                  </p>
-                )}
-                {application.exam_instructions && (
-                  <p className="whitespace-pre-wrap">{application.exam_instructions}</p>
-                )}
-              </div>
-            </div>
-          </div>
-        )}
-
-        {portalMode && user && (
-          <div className="mb-6">
-            <ApplicationMessagesPanel
-              application={application}
-              mode="applicant"
-              isArabicLayout={isRTL}
-              alignStart={isRTL ? 'text-right' : 'text-left'}
-              iconRow={isRTL ? 'flex-row-reverse' : 'flex-row'}
-            />
-          </div>
-        )}
-
-        <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)] gap-6">
-          <div className="min-w-0">
-            <div className="rounded-[10px] border border-[#dde3ef] bg-white shadow-[0_2px_12px_rgba(26,58,107,0.1)] p-6">
-              <div className="flex items-center justify-between mb-4 pb-3.5 border-b border-[#dde3ef]">
-                <h2 className="text-base font-bold text-[#1a3a6b]">{t('track.stagesTitle', 'Application processing stages')}</h2>
-              </div>
-              <div className="relative">
-                <div
-                  className={`absolute top-[18px] bottom-[18px] w-0.5 bg-[#dde3ef] rounded-full hidden sm:block ${isRTL ? 'right-[18px] left-auto' : 'left-[18px]'}`}
-                  aria-hidden
-                />
-                <div className="space-y-0">
-                  {processingStages.map((stage, idx) => (
-                    <div
-                      key={stage.key}
-                      className={`relative flex gap-4 ${idx < processingStages.length - 1 ? 'pb-4 mb-4 border-b border-[#dde3ef]' : ''} ${isRTL ? 'flex-row-reverse' : ''}`}
-                    >
-                      <div className="relative z-10 flex flex-col items-center shrink-0 w-9">
-                        {stage.status === 'completed' && (
-                          <div className="w-9 h-9 rounded-full bg-[#1a7a4a] text-white flex items-center justify-center text-sm font-bold shadow-sm" aria-hidden>
-                            ✓
-                          </div>
-                        )}
-                        {stage.status === 'in_progress' && (
-                          <div
-                            className="w-9 h-9 rounded-full bg-[#1a3a6b] text-white flex items-center justify-center shadow-sm"
-                            aria-current="step"
-                          >
-                            <RefreshCw className="w-4 h-4 animate-spin" aria-hidden />
-                          </div>
-                        )}
-                        {stage.status === 'pending' && (
-                          <div className="w-9 h-9 rounded-full bg-[#dde3ef] text-[#6b7a99] flex items-center justify-center text-sm font-bold">{idx + 1}</div>
-                        )}
+                    <span className={`absolute top-0 start-0 z-10 flex h-8 w-8 items-center justify-center rounded-full text-sm font-bold ${bubble}`}>
+                      {mark}
+                    </span>
+                    <div className="min-w-0 pt-1">
+                      <div className="flex items-baseline justify-between gap-3">
+                        <p className={`text-[15px] ${upcoming ? 'font-semibold text-[#8b98b0]' : 'font-bold text-[#1e2a3a]'}`}>{step.title}</p>
+                        <span className={`shrink-0 text-[11px] font-semibold ${failed ? 'text-rose-700' : upcoming ? 'text-[#a8b3c7]' : 'text-[#6b7a99]'}`}>
+                          {badge}
+                        </span>
                       </div>
-                      <div className={`min-w-0 flex-1 pt-0.5 ${isRTL ? 'text-end' : 'text-start'}`}>
-                        <p
-                          className={`text-sm ${
-                            stage.status === 'pending'
-                              ? 'font-semibold text-[#6b7a99]'
-                              : stage.status === 'in_progress'
-                                ? 'font-bold text-[#1a3a6b]'
-                                : 'font-bold text-[#1e2a3a]'
+                      <p className={`mt-1 text-sm leading-relaxed ${failed ? 'text-rose-800' : upcoming ? 'text-[#a8b3c7]' : 'text-[#4b5b78]'}`}>
+                        {detail}
+                      </p>
+                      {current && showReason && (
+                        <div
+                          className={`mt-3 rounded-xl border px-4 py-3 ${
+                            failed
+                              ? 'border-rose-200 bg-rose-50'
+                              : reasonMeta.kind === 'conditions'
+                                ? 'border-blue-200 bg-blue-50'
+                                : 'border-amber-200 bg-amber-50'
                           }`}
                         >
-                          {stage.title}
-                        </p>
-                        <p className="text-xs text-[#6b7a99] mt-1 leading-relaxed">
-                          {stage.date ? `${stage.date} — ` : ''}
-                          {stage.desc}
-                        </p>
-                      </div>
+                          <p className={`text-xs font-bold ${failed ? 'text-rose-800' : reasonMeta.kind === 'conditions' ? 'text-blue-900' : 'text-amber-950'}`}>
+                            {t(`track.reason.${reasonMeta.kind}`)}
+                          </p>
+                          {reasonLabel && <p className="mt-1 text-sm font-semibold text-[#1e2a3a]">{reasonLabel}</p>}
+                          {reasonNotes && reasonNotes !== reasonLabel && (
+                            <p className="mt-1 whitespace-pre-wrap text-sm text-[#3d4d66]">{reasonNotes}</p>
+                          )}
+                        </div>
+                      )}
+                      {showAction && action === 'interview' && (application.interview_at || application.interview_meeting_url || application.interview_instructions) && (
+                        <div className="mt-3 rounded-xl border border-violet-200 bg-violet-50 px-4 py-3 text-sm text-violet-950">
+                          <div className="flex items-start gap-2">
+                            <Video className="mt-0.5 h-5 w-5 shrink-0" />
+                            <div className="min-w-0 flex-1 space-y-1">
+                              <p className="font-bold">{t('admissions.interview.portalTitle', 'Admission interview')}</p>
+                              {application.interview_at && (
+                                <p>
+                                  {t('admissions.interview.when', 'When')}:{' '}
+                                  {new Date(application.interview_at).toLocaleString(isRTL ? 'ar-u-nu-latn' : 'en-GB')}
+                                  {application.interview_timezone ? ` (${application.interview_timezone})` : ''}
+                                </p>
+                              )}
+                              {application.interview_meeting_url && (
+                                <a href={application.interview_meeting_url} target="_blank" rel="noopener noreferrer" className="font-semibold text-violet-800 underline">
+                                  {t('admissions.interview.joinMeeting', 'Join meeting')}
+                                </a>
+                              )}
+                              {application.interview_instructions && (
+                                <p className="whitespace-pre-wrap text-violet-800/90">{application.interview_instructions}</p>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                      {showAction && action === 'exam' && (application.exam_at || application.exam_location_or_link || application.exam_instructions) && (
+                        <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950">
+                          <div className="flex items-start gap-2">
+                            <GraduationCap className="mt-0.5 h-5 w-5 shrink-0" />
+                            <div className="min-w-0 flex-1 space-y-1">
+                              <p className="font-bold">{t('admissions.exam.portalTitle', 'Entrance exam / admission test')}</p>
+                              {application.exam_at && (
+                                <p>
+                                  {t('admissions.exam.when', 'When')}:{' '}
+                                  {new Date(application.exam_at).toLocaleString(isRTL ? 'ar-u-nu-latn' : 'en-GB')}
+                                  {application.exam_timezone ? ` (${application.exam_timezone})` : ''}
+                                </p>
+                              )}
+                              {application.exam_location_or_link && (
+                                <p>
+                                  {t('admissions.exam.location', 'Location / link')}:{' '}
+                                  {/^https?:\/\//i.test(application.exam_location_or_link) ? (
+                                    <a href={application.exam_location_or_link} target="_blank" rel="noopener noreferrer" className="font-semibold underline">
+                                      {application.exam_location_or_link}
+                                    </a>
+                                  ) : (
+                                    application.exam_location_or_link
+                                  )}
+                                </p>
+                              )}
+                              {application.exam_instructions && <p className="whitespace-pre-wrap">{application.exam_instructions}</p>}
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                      {showAction && actionButton && (
+                        <div className="mt-3">
+                          {actionButton.to ? (
+                            <Link to={actionButton.to} className="inline-flex items-center justify-center rounded-lg bg-[#1a3a6b] px-4 py-2.5 text-sm font-semibold text-white no-underline hover:bg-[#2a5298]">
+                              {actionButton.label}
+                            </Link>
+                          ) : actionButton.href ? (
+                            <a href={actionButton.href} className="inline-flex items-center justify-center rounded-lg bg-[#1a3a6b] px-4 py-2.5 text-sm font-semibold text-white no-underline hover:bg-[#2a5298]">
+                              {actionButton.label}
+                            </a>
+                          ) : (
+                            <button type="button" onClick={actionButton.onClick} className="inline-flex items-center justify-center rounded-lg bg-[#1a3a6b] px-4 py-2.5 text-sm font-semibold text-white hover:bg-[#2a5298]">
+                              {actionButton.label}
+                            </button>
+                          )}
+                        </div>
+                      )}
                     </div>
-                  ))}
-                </div>
-              </div>
-            </div>
-          </div>
+                  </li>
+                )
+              })}
+            </ol>
+          </article>
 
           <div className="min-w-0 space-y-6">
-            <div className={`rounded-[10px] border border-[#dde3ef] bg-white shadow-[0_2px_12px_rgba(26,58,107,0.1)] p-6 ${isRTL ? 'text-end' : 'text-start'}`}>
-              <div className={`flex items-center justify-between mb-4 pb-3.5 border-b border-[#dde3ef] ${isRTL ? 'flex-row-reverse' : ''}`}>
-                <h2 className="text-base font-bold text-[#1a3a6b]">{t('track.summaryTitle', 'Application Summary')}</h2>
-              </div>
-              <dl className="space-y-3 text-[13px]">
-                <div>
-                  <dt className="text-[#6b7a99]">{t('track.orderNumber', 'Order number')}</dt>
-                  <dd className="font-mono font-bold text-[#1e2a3a] mt-0.5">{application.application_number}</dd>
-                </div>
-                <div>
-                  <dt className="text-[#6b7a99]">{t('track.program', 'The program')}</dt>
-                  <dd className="font-semibold text-[#1e2a3a] mt-0.5">{programName}</dd>
-                </div>
-                <div>
-                  <dt className="text-[#6b7a99]">{t('track.applicationDate', 'Application date')}</dt>
-                  <dd className="font-semibold text-[#1e2a3a] mt-0.5">{applicationDate}</dd>
-                </div>
-                <div>
-                  <dt className="text-[#6b7a99]">{t('track.currentSituation', 'Current situation')}</dt>
-                  <dd className="mt-1.5">
-                    <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold border-0 ${statusInfo.color} ${isRTL ? 'flex-row-reverse' : ''}`}>
-                      <StatusIcon className="w-3.5 h-3.5 shrink-0" />
-                      {statusInfo.label}
-                    </span>
-                  </dd>
-                </div>
-              </dl>
-            </div>
-
             {student && hasStudentPortalAccess && (
               <div className="rounded-[10px] border border-[#dde3ef] bg-[#f8fafc] shadow-sm p-5">
-                <div className={`flex flex-col gap-3 ${isRTL ? 'text-end' : 'text-start'}`}>
-                  <div className={`flex items-start gap-3 ${isRTL ? 'flex-row-reverse' : ''}`}>
+                <div className={`flex flex-col gap-3 text-start`}>
+                  <div className={`flex items-start gap-3`}>
                     <div className="w-11 h-11 rounded-lg bg-[#1a3a6b]/10 text-[#1a3a6b] flex items-center justify-center shrink-0">
                       <LogIn className="w-5 h-5" />
                     </div>
@@ -1045,7 +870,7 @@ export default function ApplicationStatus() {
             )}
 
             <div id="status-documents-panel" className="rounded-[10px] border border-[#dde3ef] bg-white shadow-[0_2px_12px_rgba(26,58,107,0.1)] p-6">
-              <div className={`flex items-center justify-between mb-4 pb-3.5 border-b border-[#dde3ef] ${isRTL ? 'flex-row-reverse' : ''}`}>
+              <div className={`flex items-center justify-between mb-4 pb-3.5 border-b border-[#dde3ef]`}>
                 <h2 className="text-base font-bold text-[#1a3a6b]">{t('track.documentsTitle', 'Documents')}</h2>
                 {canRequestReview && (
                   <button
@@ -1058,7 +883,7 @@ export default function ApplicationStatus() {
                 )}
               </div>
               {portalMode && applicantRequests.some((r) => r.status === 'open') && (
-                <div className={`mb-3 rounded-md border border-[#93c5fd] bg-[#dbeafe] px-3 py-2 text-sm text-[#1d4ed8] ${isRTL ? 'text-end' : 'text-start'}`}>
+                <div className={`mb-3 rounded-md border border-[#93c5fd] bg-[#dbeafe] px-3 py-2 text-sm text-[#1d4ed8] text-start`}>
                   <div className="font-bold mb-1">{t('track.yourOpenRequestsTitle', 'Your requests')}</div>
                   <div className="text-xs leading-relaxed">
                     {applicantRequests
@@ -1070,7 +895,7 @@ export default function ApplicationStatus() {
                 </div>
               )}
               {portalMode && openStaffRequests.length > 0 && (
-                <div className={`mb-3 rounded-md border border-[#f59e0b]/40 bg-[#fef3c7] px-3 py-2 text-sm text-[#92400e] ${isRTL ? 'text-end' : 'text-start'}`}>
+                <div className={`mb-3 rounded-md border border-[#f59e0b]/40 bg-[#fef3c7] px-3 py-2 text-sm text-[#92400e] text-start`}>
                   <div className="font-bold mb-1">{t('track.documentsRequestedTitle', 'Additional documents requested')}</div>
                   <div className="text-xs leading-relaxed">
                     {openStaffRequests.slice(0, 1).map((r) => r.message).join('')}
@@ -1080,7 +905,7 @@ export default function ApplicationStatus() {
               {documentError && <p className="text-sm text-[#b91c1c] mb-3">{documentError}</p>}
 
               {portalMode && openStaffRequests.length > 0 && (
-                <div className={`mb-3 rounded-md border border-[#dde3ef] bg-[#f4f6fb] px-3 py-3 ${isRTL ? 'text-end' : 'text-start'}`}>
+                <div className={`mb-3 rounded-md border border-[#dde3ef] bg-[#f4f6fb] px-3 py-3 text-start`}>
                   <div className="text-sm font-bold text-[#1a3a6b] mb-2">
                     {t('track.uploadRequestedDocsTitle', 'Upload requested documents')}
                   </div>
@@ -1091,9 +916,10 @@ export default function ApplicationStatus() {
                       className="w-full rounded-md border border-[#dde3ef] px-3 py-2 text-sm"
                       placeholder={t('track.requestedDocNamePlaceholder', 'Document name (e.g. Certificate)')}
                     />
+                    <label className="inline-flex w-full cursor-pointer">
                     <input
                       type="file"
-                      className="w-full text-xs text-[#6b7a99] file:me-2 file:py-1.5 file:px-3 file:rounded-md file:border-0 file:bg-white file:text-[#1a3a6b] file:font-semibold file:cursor-pointer max-w-full"
+                      className="sr-only"
                       onChange={(e) => {
                         const f = e.target.files?.[0]
                         if (!f) return
@@ -1107,6 +933,10 @@ export default function ApplicationStatus() {
                       }}
                       disabled={uploadingDocType !== null}
                     />
+                    <span className="inline-flex w-full items-center justify-center rounded-md border border-[#dde3ef] bg-white px-3 py-2 text-sm font-semibold text-[#1a3a6b]">
+                      {t('track.chooseFile', 'Choose file')}
+                    </span>
+                    </label>
                   </div>
                   <div className="text-xs text-[#6b7a99] mt-2">
                     {t('track.requestedDocsHint', 'You can upload any number of additional documents requested by admissions.')}
@@ -1115,7 +945,7 @@ export default function ApplicationStatus() {
               )}
 
               {portalMode && additionalDocs.length > 0 && (
-                <div className={`mb-2 ${isRTL ? 'text-end' : 'text-start'}`}>
+                <div className={`mb-2 text-start`}>
                   <div className="text-xs font-bold text-[#6b7a99] mb-2">
                     {t('track.additionalUploadsTitle', 'Additional uploads')}
                   </div>
@@ -1140,7 +970,7 @@ export default function ApplicationStatus() {
                 {documentRows.map((item) => (
                   <li
                     key={item.key}
-                    className={`flex flex-col gap-2 py-2.5 border-b border-[#dde3ef] last:border-b-0 ${isRTL ? 'text-end' : 'text-start'}`}
+                    className={`flex flex-col gap-2 py-2.5 border-b border-[#dde3ef] last:border-b-0 text-start`}
                   >
                     <div className="flex items-center justify-between gap-2 text-[13px]">
                       <span className="font-medium text-[#1e2a3a]">{item.label}</span>
@@ -1153,11 +983,12 @@ export default function ApplicationStatus() {
                       </span>
                     </div>
                     {item.uploadable && !item.done && (
-                      <div className={`flex flex-wrap items-center gap-2 ${isRTL ? 'justify-end' : ''}`}>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <label className="inline-flex cursor-pointer">
                         <input
                           type="file"
                           accept={UPLOADABLE_DOCUMENT_TYPES.find((d) => d.key === item.key)?.accept || '*'}
-                          className="text-xs text-[#6b7a99] file:me-2 file:py-1.5 file:px-3 file:rounded-md file:border-0 file:bg-[#f0f4fb] file:text-[#1a3a6b] file:font-semibold file:cursor-pointer max-w-full"
+                          className="sr-only"
                           onChange={(e) => {
                             const f = e.target.files?.[0]
                             if (f) {
@@ -1171,6 +1002,10 @@ export default function ApplicationStatus() {
                           }}
                           disabled={uploadingDocType !== null}
                         />
+                        <span className="inline-flex items-center rounded-md bg-[#f0f4fb] px-3 py-1.5 text-xs font-semibold text-[#1a3a6b]">
+                          {t('track.chooseFile', 'Choose file')}
+                        </span>
+                        </label>
                         {uploadingDocType === item.key && <Loader2 className="w-4 h-4 animate-spin text-[#1a3a6b]" />}
                       </div>
                     )}
@@ -1206,8 +1041,8 @@ export default function ApplicationStatus() {
             {portalMode && showApplicantRequestModal && (
               <div className="fixed inset-0 bg-black/40 flex items-center justify-center p-4 z-[200]">
                 <div className="w-full max-w-lg rounded-xl border border-[#dde3ef] bg-white shadow-xl p-5">
-                  <div className={`flex items-start justify-between gap-3 mb-3 ${isRTL ? 'flex-row-reverse' : ''}`}>
-                    <div className={isRTL ? 'text-end' : 'text-start'}>
+                  <div className={`flex items-start justify-between gap-3 mb-3`}>
+                    <div className="text-start">
                       <div className="font-extrabold text-[#1a3a6b]">{t('track.requestReviewAction', 'Request review')}</div>
                       <div className="text-xs text-[#6b7a99] mt-1">
                         {t('track.requestReviewHint', 'Ask admissions to allow resubmission or re-verify your documents.')}
@@ -1268,7 +1103,7 @@ export default function ApplicationStatus() {
                     />
                   </div>
 
-                  <div className={`flex items-center justify-end gap-2 mt-4 ${isRTL ? 'flex-row-reverse' : ''}`}>
+                  <div className={`flex items-center justify-end gap-2 mt-4`}>
                     <button
                       type="button"
                       onClick={() => setShowApplicantRequestModal(false)}
@@ -1291,7 +1126,7 @@ export default function ApplicationStatus() {
 
             {mergedInvoices.length > 0 && (
               <div className="rounded-[10px] border border-[#dde3ef] bg-white shadow-[0_2px_12px_rgba(26,58,107,0.1)] p-6">
-                <div className={`flex items-center justify-between mb-4 pb-3.5 border-b border-[#dde3ef] ${isRTL ? 'flex-row-reverse' : ''}`}>
+                <div className={`flex items-center justify-between mb-4 pb-3.5 border-b border-[#dde3ef]`}>
                   <h2 className="text-base font-bold text-[#1a3a6b]">{t('track.invoicesTitle', 'Invoices')}</h2>
                 </div>
                 <ul className="space-y-2">
@@ -1300,9 +1135,9 @@ export default function ApplicationStatus() {
                     return (
                       <li
                         key={inv.id}
-                        className={`flex flex-wrap items-center justify-between gap-3 rounded-lg py-3 px-2 bg-[#f4f6fb] ${isRTL ? 'flex-row-reverse' : ''}`}
+                        className={`flex flex-wrap items-center justify-between gap-3 rounded-lg py-3 px-2 bg-[#f4f6fb]`}
                       >
-                        <div className={`flex items-center gap-2 min-w-0 ${isRTL ? 'flex-row-reverse' : ''}`}>
+                        <div className={`flex items-center gap-2 min-w-0`}>
                           {inv.status === 'paid' ? (
                             <div className="w-8 h-8 rounded-full bg-[#e6f7ef] flex items-center justify-center shrink-0">
                               <CheckCircle className="w-4 h-4 text-[#1a7a4a]" />
@@ -1312,14 +1147,14 @@ export default function ApplicationStatus() {
                               <AlertTriangle className="w-4 h-4 text-[#b45309]" />
                             </div>
                           )}
-                          <div className={`min-w-0 ${isRTL ? 'text-end' : 'text-start'}`}>
+                          <div className={`min-w-0 text-start`}>
                             <p className="font-semibold text-[#1e2a3a] truncate text-sm">{inv.invoice_number}</p>
                             <p className="text-xs text-[#6b7a99]">
                               {inv.invoice_type?.replace(/_/g, ' ')} — {inv.status === 'paid' ? t('payments.paid', 'Paid') : `${inv.pending_amount ?? inv.total_amount} ${t('track.currency', 'SAR')}`}
                             </p>
                           </div>
                         </div>
-                        <div className={`flex items-center gap-2 ${isRTL ? 'flex-row-reverse' : ''}`}>
+                        <div className={`flex items-center gap-2`}>
                           {inv.status === 'paid' && (
                             <button
                               type="button"
@@ -1345,6 +1180,16 @@ export default function ApplicationStatus() {
                   })}
                 </ul>
               </div>
+            )}
+
+            {portalMode && user && (
+              <ApplicationMessagesPanel
+                application={application}
+                mode="applicant"
+                isArabicLayout={isRTL}
+                alignStart="text-start"
+                iconRow="flex-row"
+              />
             )}
           </div>
         </div>
