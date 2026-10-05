@@ -118,11 +118,21 @@ export default function ViewDepartment() {
 
   const handleWorkflowAction = async (action) => {
     if (!department) return
+    if (action === 'activate' || action === 'deactivate') {
+      const confirmed = window.confirm(
+        action === 'deactivate'
+          ? t('academic.departments.confirmDeactivate')
+          : t('academic.departments.confirmActivate')
+      )
+      if (!confirmed) return
+    }
     try {
       if (action === 'activate') {
-        await supabase.from('departments').update({ status: 'active' }).eq('id', id)
+        const { error: updateError } = await supabase.from('departments').update({ status: 'active' }).eq('id', id)
+        if (updateError) throw updateError
       } else if (action === 'deactivate') {
-        await supabase.from('departments').update({ status: 'inactive' }).eq('id', id)
+        const { error: updateError } = await supabase.from('departments').update({ status: 'inactive' }).eq('id', id)
+        if (updateError) throw updateError
       } else if (action === 'clone') {
         const cloneData = {
           code: `${department.code}-copy`,

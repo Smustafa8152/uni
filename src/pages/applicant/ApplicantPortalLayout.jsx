@@ -50,9 +50,10 @@ export default function ApplicantPortalLayout() {
 
   return (
     <div
-      className="min-h-screen flex bg-[#f4f6fb] text-[#1e2a3a]"
+      className="applicant-latin-digits min-h-screen flex bg-[#f4f6fb] text-[#1e2a3a]"
       dir={isRTL ? 'rtl' : 'ltr'}
-      style={{ fontFamily: "'Cairo', system-ui, sans-serif" }}
+      lang={language === 'ar' ? 'ar-u-nu-latn' : 'en'}
+      style={{ fontFamily: "'Cairo', system-ui, sans-serif", fontFeatureSettings: '"locl" 0' }}
     >
       <aside
         className={`hidden md:flex w-[260px] shrink-0 bg-[#1a3a6b] text-[#cdd8f0] flex-col fixed top-0 h-screen z-[100] overflow-y-auto ${

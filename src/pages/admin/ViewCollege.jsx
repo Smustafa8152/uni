@@ -14,6 +14,8 @@ export default function ViewCollege() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [expandedSettings, setExpandedSettings] = useState({})
+  const [updatingStatus, setUpdatingStatus] = useState(false)
+  const [statusError, setStatusError] = useState('')
 
   useEffect(() => {
     fetchCollege()
@@ -43,6 +45,28 @@ export default function ViewCollege() {
         <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-600"></div>
       </div>
     )
+  }
+
+  const toggleCollegeStatus = async () => {
+    if (!college || updatingStatus) return
+    const nextStatus = college.status === 'active' ? 'inactive' : 'active'
+    const confirmed = window.confirm(
+      nextStatus === 'inactive' ? t('colleges.confirmDeactivate') : t('colleges.confirmActivate')
+    )
+    if (!confirmed) return
+
+    setUpdatingStatus(true)
+    setStatusError('')
+    try {
+      const { error: updateError } = await supabase.from('colleges').update({ status: nextStatus }).eq('id', id)
+      if (updateError) throw updateError
+      setCollege((prev) => (prev ? { ...prev, status: nextStatus } : prev))
+    } catch (err) {
+      console.error('Error updating college status:', err)
+      setStatusError(err.message || t('colleges.statusUpdateFailed'))
+    } finally {
+      setUpdatingStatus(false)
+    }
   }
 
   const toggleSetting = (settingType) => {
@@ -118,14 +142,32 @@ export default function ViewCollege() {
           <ArrowLeft className="w-5 h-5" />
           <span>{t('colleges.back')}</span>
         </button>
-        <button
-          onClick={() => navigate(`/admin/colleges/${id}/edit`)}
-          className={`flex items-center ${isRTL ? 'flex-row-reverse space-x-reverse' : 'space-x-2'} bg-primary-gradient text-white px-6 py-2 rounded-xl font-semibold hover:shadow-lg transition-all`}
-        >
-          <Edit className="w-5 h-5" />
-          <span>{t('colleges.edit')}</span>
-        </button>
+        <div className={`flex items-center gap-3 ${isRTL ? 'flex-row-reverse' : ''}`}>
+          <button
+            type="button"
+            onClick={toggleCollegeStatus}
+            disabled={updatingStatus}
+            className={`px-5 py-2 rounded-xl font-semibold transition-colors disabled:opacity-50 ${
+              college.status === 'active'
+                ? 'bg-amber-50 text-amber-700 hover:bg-amber-100'
+                : 'bg-green-50 text-green-700 hover:bg-green-100'
+            }`}
+          >
+            {college.status === 'active' ? t('colleges.deactivate') : t('colleges.activate')}
+          </button>
+          <button
+            onClick={() => navigate(`/admin/colleges/${id}/edit`)}
+            className={`flex items-center ${isRTL ? 'flex-row-reverse space-x-reverse' : 'space-x-2'} bg-primary-gradient text-white px-6 py-2 rounded-xl font-semibold hover:shadow-lg transition-all`}
+          >
+            <Edit className="w-5 h-5" />
+            <span>{t('colleges.edit')}</span>
+          </button>
+        </div>
       </div>
+
+      {statusError && (
+        <div className="bg-red-50 border border-red-200 rounded-xl p-4 text-red-700 text-sm">{statusError}</div>
+      )}
 
       {/* College Header Card */}
       <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-8">
@@ -157,7 +199,7 @@ export default function ViewCollege() {
                     : 'bg-gray-100 text-gray-800'
                 }`}
               >
-                {college.status}
+                {t(`common.${String(college.status || '').toLowerCase()}`, college.status)}
               </span>
             </div>
           </div>

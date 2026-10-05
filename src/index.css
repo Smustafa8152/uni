@@ -79,6 +79,14 @@ html[lang="ar"] a {
   font-family: 'Azer', 'Segoe UI', 'Tahoma', 'Arial', sans-serif;
 }
 
+/* Applicant portal stays in Arabic, but digits stay Western (0-9).
+   Azer and Cairo turn 0-9 into Arabic-Indic digits through the locl feature when lang is ar. */
+.applicant-latin-digits,
+.applicant-latin-digits * {
+  font-feature-settings: "locl" 0;
+  font-variant-numeric: lining-nums;
+}
+
 /* RTL Support */
 [dir="rtl"] {
   direction: rtl;

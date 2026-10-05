@@ -3,7 +3,7 @@ import { Link, useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { useLanguage } from '../../contexts/LanguageContext'
 import { supabase } from '../../lib/supabase'
-import { MAJOR_STATUS_FOR_APPLICATION_DROPDOWN } from '../../utils/majorAdmissionStatus'
+import { MAJOR_STATUS_FOR_APPLICATION_DROPDOWN, filterMajorsForRegistration, inactiveDepartmentIdSet } from '../../utils/majorAdmissionStatus'
 import { getLocalizedName } from '../../utils/localizedName'
 import { getApplicationFormDefaults } from '../../utils/getApplicationFormDefaults'
 import { GraduationCap, ArrowRight, Loader2, Building2, Info } from 'lucide-react'
@@ -79,14 +79,24 @@ export default function ApplicantSelectMajor() {
       setLoading(true)
       setError('')
       try {
-        const { data, error: qErr } = await supabase
-          .from('majors')
-          .select('id, name_en, name_ar, code, degree_level, college_id, is_university_wide')
-          .in('major_status', MAJOR_STATUS_FOR_APPLICATION_DROPDOWN)
-          .or(`college_id.eq.${selectedCollegeId},is_university_wide.eq.true`)
-          .order('name_en')
-        if (qErr) throw qErr
-        if (!cancelled) setMajors(data || [])
+        const [majorsRes, departmentsRes] = await Promise.all([
+          supabase
+            .from('majors')
+            .select('id, name_en, name_ar, code, degree_level, college_id, department_id, is_university_wide, status, major_status')
+            .in('major_status', MAJOR_STATUS_FOR_APPLICATION_DROPDOWN)
+            .or(`college_id.eq.${selectedCollegeId},is_university_wide.eq.true`)
+            .order('name_en'),
+          supabase.from('departments').select('id, status'),
+        ])
+        if (majorsRes.error) throw majorsRes.error
+        if (!cancelled) {
+          setMajors(
+            filterMajorsForRegistration(majorsRes.data, {
+              activeCollegeIds: new Set([String(selectedCollegeId)]),
+              inactiveDepartmentIds: departmentsRes.error ? null : inactiveDepartmentIdSet(departmentsRes.data),
+            })
+          )
+        }
       } catch (e) {
         if (!cancelled) setError(e.message || 'Failed to load programs')
       } finally {

@@ -190,7 +190,11 @@ export default function ApplicationMessagesPanel({
                       ? t('admissions.messages.fromStaff', 'Admissions')
                       : t('admissions.messages.fromApplicant', 'Applicant')}
                     {' · '}
-                    {m.created_at ? new Date(m.created_at).toLocaleString() : ''}
+                    {m.created_at
+                      ? new Date(m.created_at).toLocaleString(
+                          mode === 'applicant' && isArabicLayout ? 'ar-u-nu-latn' : undefined,
+                        )
+                      : ''}
                   </div>
                   {m.body}
                 </div>

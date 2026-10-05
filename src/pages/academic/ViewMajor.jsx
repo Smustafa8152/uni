@@ -4,7 +4,7 @@ import { useTranslation } from 'react-i18next'
 import { useLanguage } from '../../contexts/LanguageContext'
 import { getLocalizedName } from '../../utils/localizedName'
 import { supabase } from '../../lib/supabase'
-import { legacyMajorRecordStatus } from '../../utils/majorAdmissionStatus'
+import { isMajorOfferedOnRegistrationForm, legacyMajorRecordStatus } from '../../utils/majorAdmissionStatus'
 import { getGraduationCreditTotal } from '../../utils/academicRequirementsHierarchy'
 import {
   ArrowLeft, Edit, BookMarked, GraduationCap, Users, BarChart3,
@@ -71,8 +71,9 @@ export default function ViewMajor() {
     }
   }
 
-  const updateMajorLifecycle = async (nextMajorStatus) => {
+  const updateMajorLifecycle = async (nextMajorStatus, { successText, confirmText } = {}) => {
     if (!id || lifecycleBusy) return
+    if (confirmText && !window.confirm(confirmText)) return
     setLifecycleBusy(true)
     setLifecycleMessage({ type: '', text: '' })
     try {
@@ -89,9 +90,10 @@ export default function ViewMajor() {
       setLifecycleMessage({
         type: 'success',
         text:
-          nextMajorStatus === 'open_for_admission'
+          successText ||
+          (nextMajorStatus === 'open_for_admission'
             ? t('academic.majors.lifecycleOpenSuccess', 'Admissions are now open for this major. It will appear on the public registration form.')
-            : t('academic.majors.lifecycleCloseSuccess', 'Admissions are closed. The major remains active for enrolled students.'),
+            : t('academic.majors.lifecycleCloseSuccess', 'Admissions are closed. The major remains active for enrolled students.')),
       })
     } catch (err) {
       console.error('Lifecycle update failed:', err)
@@ -336,6 +338,37 @@ export default function ViewMajor() {
             <Users className="w-4 h-4" />
             {t('academic.majors.openAdmissions', 'Open Admissions')}
           </button>
+          {isMajorOfferedOnRegistrationForm(major) ? (
+            <button
+              type="button"
+              disabled={lifecycleBusy}
+              onClick={() =>
+                updateMajorLifecycle('suspended', {
+                  confirmText: t('academic.majors.confirmDeactivate'),
+                  successText: t('academic.majors.deactivateSuccess'),
+                })
+              }
+              className={`flex items-center gap-2 px-4 py-2.5 border border-amber-200 bg-amber-50 rounded-lg text-amber-700 text-sm font-medium hover:bg-amber-100 disabled:opacity-50 ${isRTL ? 'flex-row-reverse' : ''}`}
+            >
+              <AlertTriangle className="w-4 h-4" />
+              {t('academic.majors.deactivate')}
+            </button>
+          ) : ['suspended', 'archived'].includes(major?.major_status) || major?.status === 'inactive' ? (
+            <button
+              type="button"
+              disabled={lifecycleBusy}
+              onClick={() =>
+                updateMajorLifecycle('active', {
+                  confirmText: t('academic.majors.confirmActivate'),
+                  successText: t('academic.majors.activateSuccess'),
+                })
+              }
+              className={`flex items-center gap-2 px-4 py-2.5 border border-green-200 bg-green-50 rounded-lg text-green-700 text-sm font-medium hover:bg-green-100 disabled:opacity-50 ${isRTL ? 'flex-row-reverse' : ''}`}
+            >
+              <AlertTriangle className="w-4 h-4" />
+              {t('academic.majors.activate')}
+            </button>
+          ) : null}
           <button
             type="button"
             disabled={lifecycleBusy || (major?.major_status || major?.status) !== 'open_for_admission'}

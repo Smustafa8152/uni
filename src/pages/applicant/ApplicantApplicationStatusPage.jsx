@@ -181,7 +181,7 @@ export default function ApplicantApplicationStatusPage() {
                         <div className="text-xs text-[#6b7a99] truncate">
                           {getLocalizedName(r.majors, isRTL) || r.majors?.name_en || '—'} ·{' '}
                           {r.created_at
-                            ? new Date(r.created_at).toLocaleDateString(undefined, {
+                            ? new Date(r.created_at).toLocaleDateString(isRTL ? 'ar-u-nu-latn' : 'en-GB', {
                                 year: 'numeric',
                                 month: 'short',
                                 day: 'numeric',

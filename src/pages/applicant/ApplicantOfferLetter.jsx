@@ -91,7 +91,9 @@ export default function ApplicantOfferLetter() {
   }, [application, isRTL])
 
   const deadline = application?.offer_deadline || application?.created_at
-  const deadlineText = deadline ? new Date(deadline).toLocaleDateString(isRTL ? 'ar' : undefined) : '—'
+  const deadlineText = deadline
+    ? new Date(deadline).toLocaleDateString(isRTL ? 'ar-u-nu-latn' : 'en-GB')
+    : '—'
   const hasPaidRegistration = paymentsEnabled ? !!application?.registration_fee_paid_at : true
   const hasPaidTuition = paymentsEnabled ? !!application?.tuition_fee_paid_at : true
   const tuitionAmount = useMemo(() => Number(application?.tuition_fee_amount || 0), [application?.tuition_fee_amount])
