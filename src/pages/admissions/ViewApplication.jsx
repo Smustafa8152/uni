@@ -11,7 +11,8 @@ import { resolveRegistrationFeeAmount } from '../../utils/resolveRegistrationFee
 import { getPaymentsEnabled } from '../../utils/getPaymentsEnabled'
 import { getNationalityLabel, normalizeNationalityCode } from '../../utils/nationalities'
 import NationalitySelect from '../../components/common/NationalitySelect'
-import { ArrowLeft, CheckCircle, XCircle, Clock, Mail, Phone, MapPin, Calendar, GraduationCap, FileText, User, AlertCircle, BookOpen, Edit, Save, X, ChevronDown, ChevronUp, ArrowRight, Info, Sparkles, Shield, TrendingUp, ArrowDown } from 'lucide-react'
+import { ArrowLeft, CheckCircle, XCircle, Clock, Mail, Phone, MapPin, Calendar, GraduationCap, FileText, User, AlertCircle, BookOpen, Edit, Save, X, ChevronDown, ChevronUp, ArrowRight, Info, Sparkles, Shield, TrendingUp, ArrowDown, KeyRound, Eye, EyeOff, Loader2 } from 'lucide-react'
+import { invokeAdminPasswordReset } from '../../utils/invokeAdminPasswordReset'
 import ApplicationMessagesPanel from '../../components/admissions/ApplicationMessagesPanel'
 import InterviewExamInvitePanel from '../../components/admissions/InterviewExamInvitePanel'
 
@@ -812,6 +813,13 @@ export default function ViewApplication() {
   const [requestReasons, setRequestReasons] = useState([])
   const [rejectReasons, setRejectReasons] = useState([])
   const [showStatusModal, setShowStatusModal] = useState(false)
+  const [showPasswordReset, setShowPasswordReset] = useState(false)
+  const [newPassword, setNewPassword] = useState('')
+  const [confirmPassword, setConfirmPassword] = useState('')
+  const [showNewPassword, setShowNewPassword] = useState(false)
+  const [resettingPassword, setResettingPassword] = useState(false)
+  const [passwordResetError, setPasswordResetError] = useState('')
+  const [passwordResetSuccess, setPasswordResetSuccess] = useState('')
   const [selectedStatus, setSelectedStatus] = useState('')
   const [selectedReason, setSelectedReason] = useState('')
   const [statusNotes, setStatusNotes] = useState('')
@@ -1895,6 +1903,49 @@ export default function ViewApplication() {
     if (error) setError('')
   }
 
+  const openPasswordReset = () => {
+    setShowPasswordReset((open) => !open)
+    setNewPassword('')
+    setConfirmPassword('')
+    setShowNewPassword(false)
+    setPasswordResetError('')
+    setPasswordResetSuccess('')
+  }
+
+  const submitPasswordReset = async (event) => {
+    event.preventDefault()
+    setPasswordResetError('')
+    setPasswordResetSuccess('')
+    if (!application?.email) {
+      setPasswordResetError(t('admissions.viewApplication.resetPasswordNoEmail'))
+      return
+    }
+    if (newPassword.length < 6) {
+      setPasswordResetError(t('admissions.viewApplication.passwordMin'))
+      return
+    }
+    if (newPassword !== confirmPassword) {
+      setPasswordResetError(t('admissions.viewApplication.passwordMismatch'))
+      return
+    }
+    setResettingPassword(true)
+    try {
+      await invokeAdminPasswordReset({ applicationId: application.id, newPassword })
+      setNewPassword('')
+      setConfirmPassword('')
+      setPasswordResetSuccess(t('admissions.viewApplication.passwordResetSuccess'))
+    } catch (err) {
+      const msg = err?.message || String(err)
+      setPasswordResetError(
+        msg.includes('Failed to fetch') || msg.includes('Function not found')
+          ? t('adminAccount.functionNotDeployed')
+          : msg
+      )
+    } finally {
+      setResettingPassword(false)
+    }
+  }
+
   if (loading) {
     return (
       <div className="flex items-center justify-center min-h-screen">
@@ -1984,6 +2035,15 @@ export default function ViewApplication() {
           </button>
           <button
             type="button"
+            onClick={openPasswordReset}
+            disabled={updating || resettingPassword}
+            className="flex items-center space-x-2 px-4 py-2 bg-white text-gray-800 border border-gray-300 rounded-lg font-medium hover:bg-gray-50 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            <KeyRound className="w-4 h-4" />
+            <span>{t('admissions.viewApplication.resetPassword')}</span>
+          </button>
+          <button
+            type="button"
             onClick={() => {
               setModalStep(1)
               setSelectedStatus('')
@@ -2031,6 +2091,87 @@ export default function ViewApplication() {
         <div className="bg-red-50 border border-red-200 rounded-lg p-4 text-red-700">
           {error}
         </div>
+      )}
+
+      {showPasswordReset && (
+        <form
+          onSubmit={submitPasswordReset}
+          className="bg-white border border-gray-200 rounded-xl p-5 shadow-sm"
+        >
+          <h2 className={`text-lg font-semibold text-gray-900 ${alignStart}`}>
+            {t('admissions.viewApplication.resetPasswordTitle')}
+          </h2>
+          <p className={`text-sm text-gray-600 mt-1 ${alignStart}`}>
+            {application?.email
+              ? t('admissions.viewApplication.resetPasswordHint', { email: application.email })
+              : t('admissions.viewApplication.resetPasswordNoEmail')}
+          </p>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
+            <label className="block">
+              <span className={`block text-sm font-medium text-gray-700 mb-1 ${alignStart}`}>
+                {t('admissions.viewApplication.newPassword')}
+              </span>
+              <span className="relative block">
+                <input
+                  type={showNewPassword ? 'text' : 'password'}
+                  autoComplete="new-password"
+                  value={newPassword}
+                  onChange={(e) => setNewPassword(e.target.value)}
+                  className={`w-full py-2 border border-gray-300 rounded-lg ${isArabicLayout ? 'pl-10 pr-4' : 'pr-10 pl-4'}`}
+                  dir="ltr"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowNewPassword((visible) => !visible)}
+                  className={`absolute top-1/2 -translate-y-1/2 ${isArabicLayout ? 'left-3' : 'right-3'} text-gray-500`}
+                  aria-label={showNewPassword ? 'Hide password' : 'Show password'}
+                >
+                  {showNewPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                </button>
+              </span>
+            </label>
+            <label className="block">
+              <span className={`block text-sm font-medium text-gray-700 mb-1 ${alignStart}`}>
+                {t('admissions.viewApplication.confirmPassword')}
+              </span>
+              <input
+                type={showNewPassword ? 'text' : 'password'}
+                autoComplete="new-password"
+                value={confirmPassword}
+                onChange={(e) => setConfirmPassword(e.target.value)}
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg"
+                dir="ltr"
+              />
+            </label>
+          </div>
+          {passwordResetError && (
+            <div className="mt-3 text-sm text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
+              {passwordResetError}
+            </div>
+          )}
+          {passwordResetSuccess && (
+            <div className="mt-3 text-sm text-green-800 bg-green-50 border border-green-200 rounded-lg px-3 py-2">
+              {passwordResetSuccess}
+            </div>
+          )}
+          <div className={`flex gap-3 mt-4 ${isArabicLayout ? 'flex-row-reverse' : ''}`}>
+            <button
+              type="submit"
+              disabled={resettingPassword || !application?.email}
+              className="inline-flex items-center gap-2 px-4 py-2 bg-primary-600 text-white rounded-lg font-medium hover:bg-primary-700 disabled:opacity-50"
+            >
+              {resettingPassword ? <Loader2 className="w-4 h-4 animate-spin" /> : <KeyRound className="w-4 h-4" />}
+              {t('admissions.viewApplication.savePassword')}
+            </button>
+            <button
+              type="button"
+              onClick={() => setShowPasswordReset(false)}
+              className="px-4 py-2 border border-gray-300 rounded-lg font-medium hover:bg-gray-50"
+            >
+              {t('common.cancel')}
+            </button>
+          </div>
+        </form>
       )}
 
       {/* Enhanced Status Change Modal */}

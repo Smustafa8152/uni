@@ -4,7 +4,7 @@ import { useTranslation } from 'react-i18next'
 import { useLanguage } from '../../contexts/LanguageContext'
 import { useAuth } from '../../contexts/AuthContext'
 import { supabase, SUPABASE_STORAGE_BUCKET } from '../../lib/supabase'
-import { MAJOR_STATUS_FOR_APPLICATION_DROPDOWN } from '../../utils/majorAdmissionStatus'
+import { MAJOR_STATUS_FOR_APPLICATION_DROPDOWN, filterMajorsForRegistration, inactiveDepartmentIdSet } from '../../utils/majorAdmissionStatus'
 import { getApplicationFormDefaults } from '../../utils/getApplicationFormDefaults'
 import { normalizeNationalityCode } from '../../utils/nationalities'
 import { notifyApplicationSubmitted } from '../../utils/notifyApplicationSubmitted'
@@ -93,7 +93,6 @@ const INITIAL_FORM = {
   name_ar: '',
   date_of_birth: '',
   gender: '',
-  race: '',
   religion: '',
   nationality: '',
 
@@ -294,22 +293,30 @@ export default function RegisterApplication({ portal = false }) {
     const load = async () => {
       setLoadingColleges(true)
       try {
-        const [collegesRes, majorsRes, semestersRes] = await Promise.all([
+        const [collegesRes, majorsRes, semestersRes, departmentsRes] = await Promise.all([
           supabase.from('colleges').select('id, name_en, name_ar, code, abbreviation').eq('status', 'active').order('name_en'),
           supabase
             .from('majors')
-            .select('id, name_en, name_ar, code, degree_level, college_id, is_university_wide, validation_rules')
+            .select('id, name_en, name_ar, code, degree_level, college_id, department_id, is_university_wide, validation_rules, status, major_status')
             .in('major_status', MAJOR_STATUS_FOR_APPLICATION_DROPDOWN)
             .order('name_en'),
           supabase
             .from('semesters')
             .select('id, name_en, name_ar, code, start_date, end_date, academic_year_id, status, college_id, is_university_wide')
             .order('start_date', { ascending: true }),
+          supabase.from('departments').select('id, status'),
         ])
         if (!alive) return
         if (collegesRes.error) throw collegesRes.error
-        setColleges(collegesRes.data || [])
-        setMajors(majorsRes.data || [])
+        if (majorsRes.error) throw majorsRes.error
+        const activeColleges = collegesRes.data || []
+        setColleges(activeColleges)
+        setMajors(
+          filterMajorsForRegistration(majorsRes.data, {
+            activeCollegeIds: new Set(activeColleges.map((college) => String(college.id))),
+            inactiveDepartmentIds: departmentsRes.error ? null : inactiveDepartmentIdSet(departmentsRes.data),
+          })
+        )
         setSemesters((semestersRes.data || []).filter((s) => isUpcomingSemester(s)))
       } catch (err) {
         console.error('Error loading program data:', err)
@@ -323,6 +330,32 @@ export default function RegisterApplication({ portal = false }) {
       alive = false
     }
   }, [t])
+
+  // Drop a saved default program when its college or major is no longer offered
+  useEffect(() => {
+    if (loadingColleges) return
+    if (selectedCollegeId && !colleges.some((college) => String(college.id) === String(selectedCollegeId))) {
+      setSelectedCollegeId('')
+    }
+    if (formData.major_id && !majors.some((major) => String(major.id) === String(formData.major_id))) {
+      setFormData((prev) => ({ ...prev, major_id: '' }))
+      if (forcedProgram?.enabled) setForcedProgram({ enabled: false })
+    }
+    if (
+      formData.second_choice_major_id &&
+      !majors.some((major) => String(major.id) === String(formData.second_choice_major_id))
+    ) {
+      setFormData((prev) => ({ ...prev, second_choice_major_id: '' }))
+    }
+  }, [
+    loadingColleges,
+    colleges,
+    majors,
+    selectedCollegeId,
+    formData.major_id,
+    formData.second_choice_major_id,
+    forcedProgram?.enabled,
+  ])
 
   // Optional university-wide default program
   useEffect(() => {
@@ -737,7 +770,6 @@ export default function RegisterApplication({ portal = false }) {
           first_name_ar: formData.name_ar.trim() || null,
           date_of_birth: formData.date_of_birth,
           gender: formData.gender || null,
-          race: formData.race.trim() || null,
           religion: formData.religion.trim() || null,
           nationality: normalizeNationalityCode(formData.nationality) || null,
 
@@ -1275,9 +1307,6 @@ export default function RegisterApplication({ portal = false }) {
                         { v: 'female', label: t('registerApplication.gender.female') },
                       ]}
                     />
-                  </Field>
-                  <Field label={t('applyForm.fields.race', 'Race / ethnicity')}>
-                    <input type="text" name="race" value={formData.race} onChange={handleChange} className={inputClass} />
                   </Field>
                   <Field label={t('applyForm.fields.religion', 'Religion')}>
                     <input type="text" name="religion" value={formData.religion} onChange={handleChange} className={inputClass} />

@@ -67,7 +67,7 @@ serve(async (req) => {
       })
     }
 
-    let body: { studentId?: number; instructorId?: number; newPassword?: string }
+    let body: { studentId?: number; instructorId?: number; applicationId?: number; newPassword?: string }
     try {
       body = await req.json()
     } catch {
@@ -77,7 +77,7 @@ serve(async (req) => {
       })
     }
 
-    const { studentId, instructorId, newPassword } = body
+    const { studentId, instructorId, applicationId, newPassword } = body
     if (!newPassword || typeof newPassword !== 'string' || newPassword.length < 6) {
       return new Response(JSON.stringify({ error: 'Password must be at least 6 characters' }), {
         status: 400,
@@ -87,9 +87,127 @@ serve(async (req) => {
 
     const hasStudent = studentId != null && Number.isFinite(Number(studentId))
     const hasInstructor = instructorId != null && Number.isFinite(Number(instructorId))
-    if (hasStudent === hasInstructor) {
-      return new Response(JSON.stringify({ error: 'Provide exactly one of studentId or instructorId' }), {
+    const hasApplication = applicationId != null && Number.isFinite(Number(applicationId))
+    const targetCount = [hasStudent, hasInstructor, hasApplication].filter(Boolean).length
+    if (targetCount !== 1) {
+      return new Response(JSON.stringify({ error: 'Provide exactly one of studentId, instructorId, or applicationId' }), {
         status: 400,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      })
+    }
+
+    if (hasApplication) {
+      const { data: app, error: appErr } = await supabaseAdmin
+        .from('applications')
+        .select('id, email, applicant_user_id, college_id')
+        .eq('id', Number(applicationId))
+        .single()
+
+      if (appErr || !app) {
+        return new Response(JSON.stringify({ error: 'Application not found' }), {
+          status: 404,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        })
+      }
+
+      if (callerRow.role === 'user' && app.college_id !== callerRow.college_id) {
+        return new Response(JSON.stringify({ error: 'Not allowed for this college' }), {
+          status: 403,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        })
+      }
+
+      const email = String(app.email || '').trim().toLowerCase()
+      if (!email && !app.applicant_user_id) {
+        return new Response(JSON.stringify({ error: 'This application has no email, so there is no login to reset.' }), {
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        })
+      }
+
+      let authId: string | null = app.applicant_user_id || null
+      if (authId) {
+        const { data: linkedAuth, error: linkedErr } = await supabaseAdmin.auth.admin.getUserById(authId)
+        const linkedEmail = linkedAuth?.user?.email?.trim().toLowerCase()
+        if (linkedErr || !linkedAuth?.user || (email && linkedEmail && linkedEmail !== email)) {
+          authId = null
+        }
+      }
+
+      if (!authId && email) {
+        const { data: userRow, error: userRowErr } = await supabaseAdmin
+          .from('users')
+          .select('openId, role')
+          .ilike('email', email)
+          .maybeSingle()
+
+        if (userRowErr) {
+          return new Response(JSON.stringify({ error: userRowErr.message }), {
+            status: 400,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          })
+        }
+
+        if (userRow?.role && ['admin', 'user', 'instructor'].includes(userRow.role)) {
+          return new Response(JSON.stringify({ error: 'This email belongs to a staff account and cannot be reset from an application.' }), {
+            status: 403,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          })
+        }
+        if (userRow?.openId) authId = userRow.openId
+      }
+
+      if (!authId && email) {
+        const lookup = await fetch(
+          `${supabaseUrl}/auth/v1/admin/users?filter=${encodeURIComponent(email)}`,
+          {
+            headers: {
+              Authorization: `Bearer ${serviceRoleKey}`,
+              apikey: serviceRoleKey,
+            },
+          },
+        )
+        if (lookup.ok) {
+          const payload = await lookup.json()
+          const users = Array.isArray(payload) ? payload : payload?.users || []
+          const match = users.find((row: { email?: string; id?: string }) =>
+            String(row.email || '').trim().toLowerCase() === email
+          )
+          if (match?.id) authId = match.id
+        }
+      }
+
+      if (!authId) {
+        return new Response(
+          JSON.stringify({ error: 'No applicant login was found for this email. The applicant must have an account before the password can be reset.' }),
+          { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+        )
+      }
+
+      const { data: linkedRow } = await supabaseAdmin
+        .from('users')
+        .select('role')
+        .eq('openId', authId)
+        .maybeSingle()
+      if (linkedRow?.role && ['admin', 'user', 'instructor'].includes(linkedRow.role)) {
+        return new Response(JSON.stringify({ error: 'This login belongs to a staff account and cannot be reset from an application.' }), {
+          status: 403,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        })
+      }
+
+      const { error: updErr } = await supabaseAdmin.auth.admin.updateUserById(authId, {
+        password: newPassword,
+      })
+      if (updErr) {
+        return new Response(JSON.stringify({ error: updErr.message }), {
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        })
+      }
+
+      return new Response(JSON.stringify({ success: true }), {
+        status: 200,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       })
     }

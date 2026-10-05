@@ -455,7 +455,7 @@ export default function ApplicationStatus() {
     const code = application?.status_code || 'APDR'
     const currentIdx = getStageIndex(code)
     const created = application?.created_at
-    const locale = isRTL ? 'ar-SA' : 'en-CA'
+    const locale = isRTL ? 'ar-u-nu-latn' : 'en-CA'
     const formatDate = (d) =>
       d ? new Date(d).toLocaleDateString(locale, { year: 'numeric', month: '2-digit', day: '2-digit' }) : null
 
@@ -698,7 +698,7 @@ export default function ApplicationStatus() {
     !application?.registration_fee_paid_at &&
     !showPaymentModal
   const programName = getLocalizedName(application.majors, isRTL) || application.majors?.name_en || 'N/A'
-  const dateLocale = isRTL ? 'ar-SA' : 'en-CA'
+  const dateLocale = isRTL ? 'ar-u-nu-latn' : 'en-CA'
   const applicationDate = application.created_at
     ? new Date(application.created_at).toLocaleDateString(dateLocale, { year: 'numeric', month: '2-digit', day: '2-digit' })
     : '—'
@@ -853,7 +853,7 @@ export default function ApplicationStatus() {
                 {application.interview_at && (
                   <p>
                     {t('admissions.interview.when', 'When')}:{' '}
-                    {new Date(application.interview_at).toLocaleString(isRTL ? 'ar' : undefined)}
+                    {new Date(application.interview_at).toLocaleString(isRTL ? 'ar-u-nu-latn' : 'en-GB')}
                     {application.interview_timezone ? ` (${application.interview_timezone})` : ''}
                   </p>
                 )}
@@ -888,7 +888,7 @@ export default function ApplicationStatus() {
                 {application.exam_at && (
                   <p>
                     {t('admissions.exam.when', 'When')}:{' '}
-                    {new Date(application.exam_at).toLocaleString(isRTL ? 'ar' : undefined)}
+                    {new Date(application.exam_at).toLocaleString(isRTL ? 'ar-u-nu-latn' : 'en-GB')}
                     {application.exam_timezone ? ` (${application.exam_timezone})` : ''}
                   </p>
                 )}

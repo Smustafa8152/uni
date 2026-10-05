@@ -12,6 +12,8 @@ export default function Colleges() {
   const [colleges, setColleges] = useState([])
   const [loading, setLoading] = useState(true)
   const [searchQuery, setSearchQuery] = useState('')
+  const [updatingId, setUpdatingId] = useState(null)
+  const [statusError, setStatusError] = useState('')
   const navigate = useNavigate()
 
   useEffect(() => {
@@ -37,6 +39,27 @@ export default function Colleges() {
   const getStatusLabel = (status) => {
     if (!status) return '-'
     return t(`common.${String(status).toLowerCase()}`, status)
+  }
+
+  const toggleCollegeStatus = async (college) => {
+    const nextStatus = college.status === 'active' ? 'inactive' : 'active'
+    const confirmed = window.confirm(
+      nextStatus === 'inactive' ? t('colleges.confirmDeactivate') : t('colleges.confirmActivate')
+    )
+    if (!confirmed) return
+
+    setUpdatingId(college.id)
+    setStatusError('')
+    try {
+      const { error } = await supabase.from('colleges').update({ status: nextStatus }).eq('id', college.id)
+      if (error) throw error
+      setColleges((prev) => prev.map((row) => (row.id === college.id ? { ...row, status: nextStatus } : row)))
+    } catch (error) {
+      console.error('Error updating college status:', error)
+      setStatusError(error.message || t('colleges.statusUpdateFailed'))
+    } finally {
+      setUpdatingId(null)
+    }
   }
 
   return (
@@ -67,6 +90,10 @@ export default function Colleges() {
           />
         </div>
       </div>
+
+      {statusError && (
+        <div className="bg-red-50 border border-red-200 rounded-xl p-4 text-red-700 text-sm">{statusError}</div>
+      )}
 
       {loading ? (
         <div className="text-center py-12">
@@ -132,6 +159,18 @@ export default function Colleges() {
                 >
                   <BarChart3 className="w-4 h-4" />
                   <span>{t('colleges.graphs') || 'Graphs'}</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => toggleCollegeStatus(college)}
+                  disabled={updatingId === college.id}
+                  className={`w-full py-2 rounded-xl font-medium transition-colors disabled:opacity-50 ${
+                    college.status === 'active'
+                      ? 'bg-amber-50 text-amber-700 hover:bg-amber-100'
+                      : 'bg-green-50 text-green-700 hover:bg-green-100'
+                  }`}
+                >
+                  {college.status === 'active' ? t('colleges.deactivate') : t('colleges.activate')}
                 </button>
               </div>
             </div>

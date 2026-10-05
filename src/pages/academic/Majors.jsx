@@ -10,6 +10,7 @@ import {
   TrendingUp, FileText, CheckCircle, Download, Loader2
 } from 'lucide-react'
 import { exportMajorsList } from '../../utils/exportMajors'
+import { isMajorOfferedOnRegistrationForm, legacyMajorRecordStatus } from '../../utils/majorAdmissionStatus'
 
 export default function Majors() {
   const { t } = useTranslation()
@@ -34,6 +35,8 @@ export default function Majors() {
   })
   const [majorStats, setMajorStats] = useState({})
   const [exporting, setExporting] = useState(false)
+  const [updatingId, setUpdatingId] = useState(null)
+  const [statusError, setStatusError] = useState('')
 
   useEffect(() => {
     fetchMajors()
@@ -140,6 +143,40 @@ export default function Majors() {
       setKpis(prev => ({ ...prev, totalEnrolled, graduationReady }))
     }
   }, [majorStats, majors])
+
+  const toggleMajorStatus = async (major) => {
+    const offered = isMajorOfferedOnRegistrationForm(major)
+    const nextMajorStatus = offered ? 'suspended' : 'active'
+    const confirmed = window.confirm(
+      offered ? t('academic.majors.confirmDeactivate') : t('academic.majors.confirmActivate')
+    )
+    if (!confirmed) return
+
+    setUpdatingId(major.id)
+    setStatusError('')
+    try {
+      const { error } = await supabase
+        .from('majors')
+        .update({
+          major_status: nextMajorStatus,
+          status: legacyMajorRecordStatus(nextMajorStatus),
+        })
+        .eq('id', major.id)
+      if (error) throw error
+      const next = majors.map((row) =>
+        row.id === major.id
+          ? { ...row, major_status: nextMajorStatus, status: legacyMajorRecordStatus(nextMajorStatus) }
+          : row
+      )
+      setMajors(next)
+      calculateKPIs(next)
+    } catch (error) {
+      console.error('Error updating major status:', error)
+      setStatusError(error.message || t('academic.majors.lifecycleUpdateFailed'))
+    } finally {
+      setUpdatingId(null)
+    }
+  }
 
   const getStatusBadge = (major) => {
     const status = major.major_status || major.status
@@ -337,6 +374,10 @@ export default function Majors() {
         </div>
       </div>
 
+      {statusError && (
+        <div className="bg-red-50 border border-red-200 rounded-xl p-4 text-red-700 text-sm">{statusError}</div>
+      )}
+
       {loading ? (
         <div className="flex justify-center py-12">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-600"></div>
@@ -408,6 +449,18 @@ export default function Majors() {
                   </div>
                 </div>
 
+                <button
+                  type="button"
+                  onClick={() => toggleMajorStatus(major)}
+                  disabled={updatingId === major.id}
+                  className={`w-full mb-3 py-2.5 rounded-lg text-sm font-medium disabled:opacity-50 ${
+                    isMajorOfferedOnRegistrationForm(major)
+                      ? 'bg-amber-50 border border-amber-200 text-amber-700 hover:bg-amber-100'
+                      : 'bg-green-50 border border-green-200 text-green-700 hover:bg-green-100'
+                  }`}
+                >
+                  {isMajorOfferedOnRegistrationForm(major) ? t('academic.majors.deactivate') : t('academic.majors.activate')}
+                </button>
                 <div className={`flex gap-2 ${isRTL ? 'flex-row-reverse' : ''}`}>
                   <button
                     onClick={() => navigate(`/academic/majors/${major.id}`)}

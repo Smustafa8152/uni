@@ -6,7 +6,7 @@ import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
 import { useCollege } from '../../contexts/CollegeContext'
 import { getLocalizedName } from '../../utils/localizedName'
-import { MAJOR_STATUS_FOR_APPLICATION_DROPDOWN } from '../../utils/majorAdmissionStatus'
+import { MAJOR_STATUS_FOR_APPLICATION_DROPDOWN, filterMajorsForRegistration, inactiveDepartmentIdSet } from '../../utils/majorAdmissionStatus'
 import { normalizeNationalityCode } from '../../utils/nationalities'
 import NationalitySelect from '../../components/common/NationalitySelect'
 import { getPaymentsEnabled } from '../../utils/getPaymentsEnabled'
@@ -133,7 +133,7 @@ export default function CreateApplication() {
     try {
       let query = supabase
         .from('majors')
-        .select('id, name_en, name_ar, code, degree_level')
+        .select('id, name_en, name_ar, code, degree_level, college_id, department_id, is_university_wide, status, major_status')
         .in('major_status', MAJOR_STATUS_FOR_APPLICATION_DROPDOWN)
         .order('name_en')
 
@@ -141,9 +141,17 @@ export default function CreateApplication() {
         query = query.or(`college_id.eq.${collegeId},is_university_wide.eq.true`)
       }
 
-      const { data, error } = await query
-      if (error) throw error
-      setMajors(data || [])
+      const [majorsRes, departmentsRes] = await Promise.all([
+        query,
+        supabase.from('departments').select('id, status'),
+      ])
+      if (majorsRes.error) throw majorsRes.error
+      setMajors(
+        filterMajorsForRegistration(majorsRes.data, {
+          activeCollegeIds: collegeId ? new Set([String(collegeId)]) : null,
+          inactiveDepartmentIds: departmentsRes.error ? null : inactiveDepartmentIdSet(departmentsRes.data),
+        })
+      )
     } catch (err) {
       console.error('Error fetching majors:', err)
     }

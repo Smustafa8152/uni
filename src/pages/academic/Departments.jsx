@@ -30,6 +30,8 @@ export default function Departments() {
     departmentHealth: 'unknown'
   })
   const [deptStats, setDeptStats] = useState({})
+  const [updatingId, setUpdatingId] = useState(null)
+  const [statusError, setStatusError] = useState('')
 
   useEffect(() => {
     fetchDepartments()
@@ -167,6 +169,31 @@ export default function Departments() {
       .map(d => [d.colleges.id, d.colleges])
   ).values()]
 
+  const toggleDepartmentStatus = async (department) => {
+    const nextStatus = department.status === 'active' ? 'inactive' : 'active'
+    const confirmed = window.confirm(
+      nextStatus === 'inactive'
+        ? t('academic.departments.confirmDeactivate')
+        : t('academic.departments.confirmActivate')
+    )
+    if (!confirmed) return
+
+    setUpdatingId(department.id)
+    setStatusError('')
+    try {
+      const { error } = await supabase.from('departments').update({ status: nextStatus }).eq('id', department.id)
+      if (error) throw error
+      const next = departments.map((row) => (row.id === department.id ? { ...row, status: nextStatus } : row))
+      setDepartments(next)
+      calculateKPIs(next)
+    } catch (error) {
+      console.error('Error updating department status:', error)
+      setStatusError(error.message || t('academic.departments.statusUpdateFailed'))
+    } finally {
+      setUpdatingId(null)
+    }
+  }
+
   const getStatusBadge = (status) => {
     const map = {
       active: { bg: 'bg-green-100', text: 'text-green-700', label: 'Active' },
@@ -277,6 +304,10 @@ export default function Departments() {
         </div>
       </div>
 
+      {statusError && (
+        <div className="bg-red-50 border border-red-200 rounded-xl p-4 text-red-700 text-sm">{statusError}</div>
+      )}
+
       {loading ? (
         <div className="flex justify-center py-12">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-600" />
@@ -371,6 +402,18 @@ export default function Departments() {
                     {t('academic.departments.edit')}
                   </button>
                 </div>
+                <button
+                  type="button"
+                  onClick={() => toggleDepartmentStatus(dept)}
+                  disabled={updatingId === dept.id}
+                  className={`w-full mb-3 py-2.5 rounded-lg text-sm font-medium disabled:opacity-50 ${
+                    dept.status === 'active'
+                      ? 'bg-amber-50 border border-amber-200 text-amber-700 hover:bg-amber-100'
+                      : 'bg-green-50 border border-green-200 text-green-700 hover:bg-green-100'
+                  }`}
+                >
+                  {dept.status === 'active' ? t('academic.departments.deactivate') : t('academic.departments.activate')}
+                </button>
                 <div className="grid grid-cols-2 gap-2">
                   <button
                     type="button"
