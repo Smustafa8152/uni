@@ -106,40 +106,84 @@ export default function InterviewExamInvitePanel({
         })
       }
 
+      const applicantName =
+        [application?.first_name, application?.last_name].filter(Boolean).join(' ').trim() ||
+        t('admissions.exam.applicantFallback', 'Applicant')
+      const formatWhen = (localValue, tbaKey) => {
+        if (!localValue) return t(tbaKey, 'To be announced')
+        const d = new Date(localValue)
+        if (Number.isNaN(d.getTime())) return localValue
+        return d.toLocaleString(isArabicLayout ? 'ar-u-nu-latn' : 'en-GB', {
+          dateStyle: 'full',
+          timeStyle: 'short',
+        })
+      }
+
       if ((kind === 'interview' || kind === 'both') && form.emailInterview && sendAdmissionNotification) {
-        const when = form.interview_at ? new Date(form.interview_at).toLocaleString() : 'TBA'
         const link = form.interview_meeting_url.trim()
         await sendAdmissionNotification({
           type: 'interview_invite',
           subject: t('admissions.interview.emailSubject', 'Interview invitation for your admission application'),
           message: [
-            t('admissions.interview.emailIntro', 'You are invited to an admission interview.'),
-            `${t('admissions.interview.when', 'When')}: ${when} (${form.interview_timezone || 'local'})`,
-            link ? `${t('admissions.interview.link', 'Meeting link')}: ${link}` : '',
-            form.interview_instructions.trim() || '',
-            t('admissions.interview.emailFooter', 'Please join on time. Details are also in your applicant portal.'),
-          ]
-            .filter(Boolean)
-            .join('\n\n'),
+            t('admissions.interview.emailGreeting', { name: applicantName, defaultValue: 'Dear {{name}},' }),
+            '',
+            t(
+              'admissions.interview.emailIntro',
+              'You are invited to an admission interview for your application. The details are below.',
+            ),
+            '',
+            t('admissions.interview.emailFooter', 'Please join on time. The same details are in your applicant portal.'),
+          ].join('\n'),
+          details: [
+            {
+              label: t('admissions.interview.when', 'When'),
+              value: formatWhen(form.interview_at, 'admissions.interview.tba'),
+            },
+            {
+              label: t('admissions.interview.timezone', 'Timezone'),
+              value: form.interview_timezone || 'UTC',
+            },
+            link ? { label: t('admissions.interview.link', 'Meeting link'), value: link } : null,
+            form.interview_instructions.trim()
+              ? { label: t('admissions.interview.instructions', 'Instructions'), value: form.interview_instructions.trim() }
+              : null,
+          ].filter(Boolean),
         })
       }
 
       if ((kind === 'exam' || kind === 'both') && form.emailExam && sendAdmissionNotification) {
-        const when = form.exam_at ? new Date(form.exam_at).toLocaleString() : 'TBA'
+        const location = form.exam_location_or_link.trim()
         await sendAdmissionNotification({
           type: 'exam_invite',
           subject: t('admissions.exam.emailSubject', 'Entrance exam / admission test details'),
           message: [
-            t('admissions.exam.emailIntro', 'Please note your entrance exam / admission test details.'),
-            `${t('admissions.exam.when', 'When')}: ${when} (${form.exam_timezone || 'local'})`,
-            form.exam_location_or_link.trim()
-              ? `${t('admissions.exam.location', 'Location / link')}: ${form.exam_location_or_link.trim()}`
-              : '',
-            form.exam_instructions.trim() || '',
-            t('admissions.exam.emailFooter', 'Details are also available in your applicant portal.'),
-          ]
-            .filter(Boolean)
-            .join('\n\n'),
+            t('admissions.exam.emailGreeting', { name: applicantName, defaultValue: 'Dear {{name}},' }),
+            '',
+            t(
+              'admissions.exam.emailIntro',
+              'You are invited to sit the entrance exam / admission test for your application. The details are below.',
+            ),
+            '',
+            t(
+              'admissions.exam.emailBringId',
+              'Please arrive on time and bring a valid photo ID (passport or national ID).',
+            ),
+            t('admissions.exam.emailFooter', 'The same details are available in your applicant portal.'),
+          ].join('\n'),
+          details: [
+            {
+              label: t('admissions.exam.when', 'When'),
+              value: formatWhen(form.exam_at, 'admissions.exam.tba'),
+            },
+            {
+              label: t('admissions.exam.timezone', 'Timezone'),
+              value: form.exam_timezone || 'UTC',
+            },
+            location ? { label: t('admissions.exam.location', 'Location / link'), value: location } : null,
+            form.exam_instructions.trim()
+              ? { label: t('admissions.exam.instructions', 'Instructions'), value: form.exam_instructions.trim() }
+              : null,
+          ].filter(Boolean),
         })
       }
 

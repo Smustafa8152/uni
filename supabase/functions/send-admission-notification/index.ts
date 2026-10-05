@@ -386,6 +386,13 @@ serve(async (req) => {
 
     const brandName = smtpCfg?.fromName || ''
     const brandEmail = smtpCfg?.fromEmail || ''
+    const details = (Array.isArray(body.details) ? body.details : [])
+      .map((row) => {
+        if (!row || typeof row !== 'object') return null
+        const item = row as Record<string, unknown>
+        return { label: String(item.label || ''), value: String(item.value || '') }
+      })
+      .filter((row): row is { label: string; value: string } => Boolean(row))
     const html = buildBrandedEmailHtml({
       brandName,
       brandEmail,
@@ -393,11 +400,13 @@ serve(async (req) => {
       message,
       metaLabel: resolvedAppNo ? 'Application' : '',
       metaValue: resolvedAppNo || '',
+      details,
     })
     const text = buildPlainTextEmail({
       subject,
       message,
       metaLine: resolvedAppNo ? `Application: ${resolvedAppNo}` : '',
+      details,
     })
     await sendSmtpMessage(smtpCfg, to, subject, text, html)
 

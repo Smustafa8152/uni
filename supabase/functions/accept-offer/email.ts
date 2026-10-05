@@ -1,5 +1,3 @@
-import { CAIRO_AR_400, CAIRO_AR_700, CAIRO_LAT_400, CAIRO_LAT_700 } from './cairoFonts.ts'
-
 export function escapeHtml(s: string) {
   return String(s ?? '')
     .replaceAll('&', '&amp;')
@@ -11,38 +9,11 @@ export function escapeHtml(s: string) {
 
 const DEFAULT_LOGO_URL = 'https://qalam.nuzum.tech/assets/IBU%20Logo.png'
 
-/** Cairo first — embedded via @font-face so Gmail/Outlook cannot strip the CDN link. */
-const FONT_STACK = "'Cairo', Tahoma, 'Segoe UI', Arial, sans-serif"
+/** System fonts only. Embedded web fonts push the message over Gmail's ~102KB clip limit. */
+const FONT_STACK = "Tahoma, 'Segoe UI', Arial, sans-serif"
 
 function hasArabicScript(text: string) {
   return /[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF]/.test(String(text || ''))
-}
-
-function cairoFontFaceCss() {
-  const face = (weight: number, ar: string, lat: string) => `
-@font-face {
-  font-family: 'Cairo';
-  font-style: normal;
-  font-weight: ${weight};
-  font-display: swap;
-  src: url(data:font/woff2;base64,${ar}) format('woff2');
-  unicode-range: U+0600-06FF, U+0750-077F, U+08A0-08FF, U+FB50-FDFF, U+FE70-FEFC;
-}
-@font-face {
-  font-family: 'Cairo';
-  font-style: normal;
-  font-weight: ${weight};
-  font-display: swap;
-  src: url(data:font/woff2;base64,${lat}) format('woff2');
-  unicode-range: U+0000-00FF, U+0100-024F, U+2000-206F, U+20AC, U+2122;
-}`
-  return (
-    face(400, CAIRO_AR_400, CAIRO_LAT_400) +
-    face(500, CAIRO_AR_400, CAIRO_LAT_400) +
-    face(600, CAIRO_AR_700, CAIRO_LAT_700) +
-    face(700, CAIRO_AR_700, CAIRO_LAT_700) +
-    face(800, CAIRO_AR_700, CAIRO_LAT_700)
-  )
 }
 
 export function buildPlainTextEmail(params: { subject: string; message: string; metaLine?: string }) {
@@ -106,8 +77,6 @@ export function buildBrandedEmailHtml(params: {
     .map((l) => `<div style="font-family:${FONT_STACK};">${escapeHtml(l)}</div>`)
     .join('')
 
-  const fontFaces = cairoFontFaceCss()
-
   return `<!doctype html>
 <html lang="${lang}" dir="${dir}">
   <head>
@@ -117,7 +86,6 @@ export function buildBrandedEmailHtml(params: {
     <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
     <title>${escapeHtml(subject)}</title>
     <style type="text/css">
-${fontFaces}
       body, table, td, div, p, a, span, h1, h2, h3 {
         font-family: ${FONT_STACK} !important;
       }
