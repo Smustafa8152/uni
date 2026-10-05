@@ -226,7 +226,7 @@ export function getApplicationExportColumnDefs(isArabic, getStatusLabel) {
     { key: 'race', header: L('Race', 'العرق'), get: (a) => a.race, width: 12 },
     { key: 'id_type', header: L('Identity type', 'نوع الهوية'), get: (a) => a.id_type, width: 14 },
     { key: 'id_number', header: L('Passport / ID number', 'رقم الجواز / الهوية'), get: (a) => a.id_number, width: 18 },
-    { key: 'id_issue_country', header: L('Country of issue', 'دولة الإصدار'), get: (a) => a.id_issue_country, width: 16 },
+    { key: 'id_issue_country', header: L('Country of issue', 'دولة الإصدار'), get: (a) => getNationalityLabel(a.id_issue_country, isArabic), width: 16 },
     { key: 'id_issue_date', header: L('Date of issue', 'تاريخ الإصدار'), get: (a) => formatDate(a.id_issue_date), width: 12 },
     { key: 'id_expiry_date', header: L('Expiry date', 'تاريخ الانتهاء'), get: (a) => formatDate(a.id_expiry_date), width: 12 },
     { key: 'home_phone', header: L('Home phone', 'هاتف المنزل'), get: (a) => a.home_phone, width: 16 },

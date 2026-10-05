@@ -5,8 +5,10 @@ import { useLanguage } from '../../contexts/LanguageContext'
 import { useAuth } from '../../contexts/AuthContext'
 import { supabase, SUPABASE_STORAGE_BUCKET } from '../../lib/supabase'
 import { MAJOR_STATUS_FOR_APPLICATION_DROPDOWN, filterMajorsForRegistration, inactiveDepartmentIdSet } from '../../utils/majorAdmissionStatus'
-import { getApplicationFormDefaults } from '../../utils/getApplicationFormDefaults'
+import { APPLICATION_DEGREE_LEVELS, getApplicationFormDefaults } from '../../utils/getApplicationFormDefaults'
 import { getNationalityLabel, normalizeNationalityCode } from '../../utils/nationalities'
+import { formatStoredPhone } from '../../utils/callingCodes'
+import ApplyPhoneInput from '../../components/common/ApplyPhoneInput'
 import { notifyApplicationSubmitted } from '../../utils/notifyApplicationSubmitted'
 import { syncApplicantProfile } from '../../utils/syncApplicantProfile'
 import { resolvePortalAccountByEmail } from '../../utils/resolvePortalAccountByEmail'
@@ -26,8 +28,14 @@ const SCHOLARSHIP_DOCUMENT_SPECS = [
 ]
 const ALL_DOCUMENT_SPECS = [...CORE_DOCUMENT_SPECS, ...SCHOLARSHIP_DOCUMENT_SPECS]
 
-const DEGREE_LEVELS = ['diploma', 'bachelor', 'master', 'phd']
 const EDUCATION_LEVELS = ['high_school', 'diploma', 'bachelor', 'master', 'phd']
+
+/** Previous qualifications that sit below the program the applicant is applying for. */
+function previousEducationFor(degreeLevel) {
+  const idx = EDUCATION_LEVELS.indexOf(degreeLevel)
+  if (idx <= 0) return []
+  return EDUCATION_LEVELS.slice(0, idx)
+}
 const ID_TYPES = ['passport', 'national_id', 'residence_permit', 'birth_certificate']
 const STUDY_LANGUAGES = ['arabic', 'english', 'french', 'other']
 const LANGUAGE_CERTIFICATES = ['toefl', 'ielts', 'muet', 'arabic_proficiency', 'other']
@@ -118,11 +126,29 @@ const INITIAL_FORM = {
   referral_source: '',
   scholarship_request: false,
   scholarship_type: '',
-  scholarship_percentage: '',
   scholarship_details: '',
   password: '',
   password_confirm: '',
   submit_as_draft: false,
+}
+
+const APPLY_DRAFT_KEY = 'apply-form-draft'
+
+function readApplyDraft() {
+  try {
+    const raw = sessionStorage.getItem(APPLY_DRAFT_KEY)
+    if (!raw) return null
+    const parsed = JSON.parse(raw)
+    return parsed && typeof parsed === 'object' ? parsed : null
+  } catch {
+    return null
+  }
+}
+
+function formFromDraft(draft) {
+  if (!draft?.formData || typeof draft.formData !== 'object') return { ...INITIAL_FORM }
+  const { password, password_confirm, ...rest } = draft.formData
+  return { ...INITIAL_FORM, ...rest, password: '', password_confirm: '' }
 }
 
 const inputClass =
@@ -281,9 +307,17 @@ export default function RegisterApplication({ portal = false }) {
   const [colleges, setColleges] = useState([])
   const [majors, setMajors] = useState([])
   const [semesters, setSemesters] = useState([])
-  const [selectedCollegeId, setSelectedCollegeId] = useState('')
+  const [selectedCollegeId, setSelectedCollegeId] = useState(() => {
+    if (portal) return ''
+    const saved = readApplyDraft()?.selectedCollegeId
+    return saved ? String(saved) : ''
+  })
   const [forcedProgram, setForcedProgram] = useState(null)
-  const [currentStep, setCurrentStep] = useState(1)
+  const [currentStep, setCurrentStep] = useState(() => {
+    if (portal) return 1
+    const step = Number(readApplyDraft()?.currentStep)
+    return step >= 1 && step <= 6 ? step : 1
+  })
   const [loading, setLoading] = useState(false)
   const [loadingColleges, setLoadingColleges] = useState(true)
   const [error, setError] = useState('')
@@ -293,9 +327,31 @@ export default function RegisterApplication({ portal = false }) {
   const [documentFiles, setDocumentFiles] = useState(() =>
     Object.fromEntries(ALL_DOCUMENT_SPECS.map((s) => [s.key, null]))
   )
-  const [formData, setFormData] = useState(INITIAL_FORM)
+  const [formData, setFormData] = useState(() => (portal ? { ...INITIAL_FORM } : formFromDraft(readApplyDraft())))
+  const [activeDegreeLevels, setActiveDegreeLevels] = useState(() => [...APPLICATION_DEGREE_LEVELS])
 
   const programLocked = Boolean(forcedProgram?.enabled && forcedProgram?.lock_fields !== false)
+
+  useEffect(() => {
+    if (portal) return
+    if (applicationNumber) {
+      sessionStorage.removeItem(APPLY_DRAFT_KEY)
+      return
+    }
+    const { password, password_confirm, ...safeForm } = formData
+    try {
+      sessionStorage.setItem(
+        APPLY_DRAFT_KEY,
+        JSON.stringify({
+          formData: safeForm,
+          currentStep,
+          selectedCollegeId,
+        })
+      )
+    } catch {
+      // Session storage can be unavailable or full; the form still works in memory.
+    }
+  }, [portal, applicationNumber, formData, currentStep, selectedCollegeId])
 
   const clearInvalid = (names) => {
     const list = Array.isArray(names) ? names : [names]
@@ -391,6 +447,9 @@ export default function RegisterApplication({ portal = false }) {
     getApplicationFormDefaults()
       .then((cfg) => {
         if (!alive) return
+        if (Array.isArray(cfg?.active_degree_levels)) {
+          setActiveDegreeLevels(cfg.active_degree_levels)
+        }
         if (cfg?.enabled && cfg.college_id && cfg.major_id) {
           setForcedProgram(cfg)
           setSelectedCollegeId(String(cfg.college_id))
@@ -443,8 +502,27 @@ export default function RegisterApplication({ portal = false }) {
   useEffect(() => {
     if (formData.degree_level || !formData.major_id) return
     const major = majors.find((m) => String(m.id) === String(formData.major_id))
-    if (major?.degree_level) setFormData((prev) => ({ ...prev, degree_level: major.degree_level }))
-  }, [majors, formData.major_id, formData.degree_level])
+    if (!major?.degree_level) return
+    if (!programLocked && !activeDegreeLevels.includes(major.degree_level)) return
+    setFormData((prev) => ({ ...prev, degree_level: major.degree_level }))
+  }, [majors, formData.major_id, formData.degree_level, programLocked, activeDegreeLevels])
+
+  // Drop a choice whose academic level was closed, unless the program is locked by admissions.
+  useEffect(() => {
+    if (programLocked) return
+    const major = majors.find((m) => String(m.id) === String(formData.major_id))
+    const majorLevelClosed = Boolean(major?.degree_level && !activeDegreeLevels.includes(major.degree_level))
+    const selectedClosed = Boolean(formData.degree_level && !activeDegreeLevels.includes(formData.degree_level))
+    if (!majorLevelClosed && !selectedClosed) return
+    setSelectedCollegeId('')
+    setFormData((prev) => ({
+      ...prev,
+      degree_level: '',
+      major_id: '',
+      second_choice_college_id: '',
+      second_choice_major_id: '',
+    }))
+  }, [programLocked, majors, formData.major_id, formData.degree_level, activeDegreeLevels])
 
   // Intake carries its own academic year
   useEffect(() => {
@@ -465,12 +543,13 @@ export default function RegisterApplication({ portal = false }) {
 
   // Drop an intake that the newly chosen faculty does not offer
   useEffect(() => {
+    if (loadingColleges) return
     setFormData((prev) =>
       prev.semester_id && !availableSemesters.some((s) => String(s.id) === String(prev.semester_id))
         ? { ...prev, semester_id: '' }
         : prev
     )
-  }, [availableSemesters])
+  }, [availableSemesters, loadingColleges])
 
   const majorsFor = (collegeId) =>
     majors.filter(
@@ -493,7 +572,7 @@ export default function RegisterApplication({ portal = false }) {
 
   // Drop faculty / program picks that no longer match the academic level
   useEffect(() => {
-    if (!formData.degree_level) return
+    if (loadingColleges || !formData.degree_level) return
     const validIds = new Set(collegesForDegreeLevel.map((c) => String(c.id)))
     if (selectedCollegeId && !validIds.has(String(selectedCollegeId))) {
       setSelectedCollegeId('')
@@ -552,10 +631,18 @@ export default function RegisterApplication({ portal = false }) {
     if (step === 1) {
       if (!formData.semester_id) fields.push('semester_id')
       if (!formData.degree_level) fields.push('degree_level')
+      else if (!programLocked && !activeDegreeLevels.includes(formData.degree_level)) fields.push('degree_level_inactive')
       if (!selectedCollegeId) fields.push('college_id')
       if (!formData.major_id) fields.push('major_id')
     }
     if (step === 2) {
+      const allowedEducation = previousEducationFor(formData.degree_level)
+      if (!formData.highest_education_level || !allowedEducation.includes(formData.highest_education_level)) {
+        fields.push('highest_education_level')
+      }
+      const year = String(formData.graduation_year ?? '').trim()
+      const yearNum = Number(year)
+      if (!year || !Number.isInteger(yearNum) || yearNum < 1950 || yearNum > 2100) fields.push('graduation_year')
       const g = parseDecimalField(formData.gpa, { scale: 2, min: 0, max: 4 })
       if (g.error) fields.push('gpa')
     }
@@ -566,16 +653,15 @@ export default function RegisterApplication({ portal = false }) {
     }
     if (step === 5) {
       if (!formData.email.trim()) fields.push('email')
-      if (!formData.phone.trim()) fields.push('phone')
+      if (!formatStoredPhone(formData.phone)) fields.push('phone')
     }
     if (step === 6) {
       if (needsAccount) {
         if (!formData.password || formData.password.length < 8) fields.push('password')
         if (formData.password !== formData.password_confirm) fields.push('password_confirm')
       }
-      if (formData.scholarship_request) {
-        const sp = parseDecimalField(formData.scholarship_percentage, { scale: 2, min: 0, max: 100 })
-        if (sp.error) fields.push('scholarship_percentage')
+      for (const { key } of CORE_DOCUMENT_SPECS) {
+        if (!documentFiles[key]) fields.push(`doc:${key}`)
       }
     }
     return fields
@@ -587,11 +673,15 @@ export default function RegisterApplication({ portal = false }) {
     switch (step) {
       case 1:
         if (missing.includes('college_id')) return t('registerApplication.errors.selectCollegeFirst')
+        if (missing.includes('degree_level_inactive')) return t('applyForm.errors.degreeLevelInactive', 'This academic level is not open for applications.')
         if (missing.includes('degree_level')) return t('applyForm.errors.selectDegreeLevel', 'Please select an academic level.')
         if (missing.includes('major_id')) return t('registerApplication.errors.selectMajor')
         if (missing.includes('semester_id')) return t('applyForm.errors.selectIntake', 'Please select a semester.')
         break
       case 2: {
+        if (missing.includes('highest_education_level') || missing.includes('graduation_year')) {
+          return t('applyForm.errors.educationRequired', 'Please select your highest education level and year of graduation.')
+        }
         const g = parseDecimalField(formData.gpa, { scale: 2, min: 0, max: 4 })
         if (g.error) return `${t('registerApplication.errors.gpaPrefix')}: ${g.error}`
         break
@@ -603,8 +693,9 @@ export default function RegisterApplication({ portal = false }) {
       case 6: {
         if (missing.includes('password')) return t('applyForm.errors.passwordShort', 'Password must be at least 8 characters.')
         if (missing.includes('password_confirm')) return t('applyForm.errors.passwordMismatch', 'Passwords do not match.')
-        const sp = parseDecimalField(formData.scholarship_percentage, { scale: 2, min: 0, max: 100 })
-        if (sp.error) return `${t('registerApplication.errors.scholarshipPctPrefix')}: ${sp.error}`
+        if (missing.some((field) => field.startsWith('doc:'))) {
+          return t('applyForm.errors.documentsRequired', 'Please upload your ID, certificate, and transcript.')
+        }
         break
       }
     }
@@ -786,7 +877,6 @@ export default function RegisterApplication({ portal = false }) {
       }
 
       const gpaParsed = parseDecimalField(formData.gpa, { scale: 2, min: 0, max: 4 }).value
-      const scholarshipParsed = parseDecimalField(formData.scholarship_percentage, { scale: 2, min: 0, max: 100 }).value
       const certificateName =
         formData.language_certificate_name === 'other'
           ? formData.language_certificate_other.trim()
@@ -839,7 +929,7 @@ export default function RegisterApplication({ portal = false }) {
 
           // Contact
           email: formData.email.trim(),
-          phone: formData.phone.trim() || null,
+          phone: formatStoredPhone(formData.phone),
           home_phone: formData.home_phone.trim() || null,
           country: formData.country.trim() || null,
           state_province: formData.state_province.trim() || null,
@@ -851,7 +941,7 @@ export default function RegisterApplication({ portal = false }) {
           referral_source: formData.referral_source || null,
           scholarship_request: formData.scholarship_request,
           scholarship_type: formData.scholarship_request ? formData.scholarship_type.trim() || null : null,
-          scholarship_percentage: formData.scholarship_request ? scholarshipParsed : null,
+          scholarship_percentage: null,
           scholarship_details: formData.scholarship_request ? formData.scholarship_details.trim() || null : null,
 
           // Workflow
@@ -947,31 +1037,34 @@ export default function RegisterApplication({ portal = false }) {
             </div>
 
             <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:justify-center">
-              <button
-                onClick={() =>
-                  submittedApplication?.id
-                    ? navigate(portal || userRole === 'applicant' ? `/portal/applications/${submittedApplication.id}` : `/portal`)
-                    : navigate('/lookup-application')
-                }
-                className="rounded-xl bg-[#1a3a6b] px-6 py-3 text-sm font-bold text-white shadow-lg shadow-[#1a3a6b]/20 transition hover:bg-[#152f56]"
-              >
-                {portal || userRole === 'applicant'
-                  ? t('applicantPortal.viewApplication', 'View application')
-                  : t('registerApplication.success.goToPortal', 'Go to applicant portal')}
-              </button>
-              <button
-                onClick={() => {
-                  setApplicationNumber(null)
-                  setSubmittedApplication(null)
-                  setDocumentFiles(Object.fromEntries(ALL_DOCUMENT_SPECS.map((s) => [s.key, null])))
-                  setFormData({ ...INITIAL_FORM, email: portal && user?.email ? user.email : '' })
-                  setSelectedCollegeId('')
-                  setCurrentStep(1)
-                }}
-                className="rounded-xl border border-slate-200 bg-white px-6 py-3 text-sm font-bold text-slate-700 transition hover:bg-slate-50"
-              >
-                {t('registerApplication.success.another')}
-              </button>
+              {portal ? (
+                <button
+                  onClick={() =>
+                    submittedApplication?.id
+                      ? navigate(`/portal/applications/${submittedApplication.id}`)
+                      : navigate('/portal')
+                  }
+                  className="rounded-xl bg-[#1a3a6b] px-6 py-3 text-sm font-bold text-white shadow-lg shadow-[#1a3a6b]/20 transition hover:bg-[#152f56]"
+                >
+                  {t('applicantPortal.viewApplication', 'View application')}
+                </button>
+              ) : (
+                <button
+                  onClick={() =>
+                    navigate('/login/applicant', {
+                      state: {
+                        from: submittedApplication?.id
+                          ? `/portal/applications/${submittedApplication.id}`
+                          : '/portal',
+                        email: submittedApplication?.email || formData.email || '',
+                      },
+                    })
+                  }
+                  className="rounded-xl bg-[#1a3a6b] px-6 py-3 text-sm font-bold text-white shadow-lg shadow-[#1a3a6b]/20 transition hover:bg-[#152f56]"
+                >
+                  {t('registerApplication.success.signInPortal', 'Sign in to the applicant portal')}
+                </button>
+              )}
             </div>
           </div>
         </div>
@@ -1080,21 +1173,27 @@ export default function RegisterApplication({ portal = false }) {
                         value={formData.degree_level}
                         onChange={(e) => {
                           setSelectedCollegeId('')
-                          setFormData((prev) => ({
-                            ...prev,
-                            degree_level: e.target.value,
-                            major_id: '',
-                            second_choice_college_id: '',
-                            second_choice_major_id: '',
-                          }))
-                          clearInvalid(['degree_level', 'college_id', 'major_id'])
+                          setFormData((prev) => {
+                            const allowedEducation = previousEducationFor(e.target.value)
+                            return {
+                              ...prev,
+                              degree_level: e.target.value,
+                              major_id: '',
+                              second_choice_college_id: '',
+                              second_choice_major_id: '',
+                              highest_education_level: allowedEducation.includes(prev.highest_education_level)
+                                ? prev.highest_education_level
+                                : '',
+                            }
+                          })
+                          clearInvalid(['degree_level', 'college_id', 'major_id', 'highest_education_level'])
                         }}
                         disabled={programLocked}
                         className={inputClass}
                       >
                         <option value="">{t('common.select', 'Please select')}</option>
-                        {DEGREE_LEVELS.map((lvl) => (
-                          <option key={lvl} value={lvl}>
+                        {APPLICATION_DEGREE_LEVELS.map((lvl) => (
+                          <option key={lvl} value={lvl} disabled={!activeDegreeLevels.includes(lvl)}>
                             {t(`applyForm.degreeLevels.${lvl}`)}
                           </option>
                         ))}
@@ -1236,10 +1335,15 @@ export default function RegisterApplication({ portal = false }) {
 
                 <SectionCard title={t('applyForm.sections.prevEducation', 'Previous education')}>
                   <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-                    <Field label={t('applyForm.fields.highestEducationLevel', 'Highest education level')}>
+                    <Field
+                      label={t('applyForm.fields.highestEducationLevel', 'Highest education level')}
+                      required
+                      invalid={invalidFields.includes('highest_education_level')}
+                      hint={t('applyForm.hints.educationForLevel', 'Qualifications below the academic level you selected.')}
+                    >
                       <select name="highest_education_level" value={formData.highest_education_level} onChange={handleChange} className={inputClass}>
                         <option value="">{t('common.select', 'Please select')}</option>
-                        {EDUCATION_LEVELS.map((lvl) => (
+                        {previousEducationFor(formData.degree_level).map((lvl) => (
                           <option key={lvl} value={lvl}>
                             {t(`applyForm.educationLevels.${lvl}`)}
                           </option>
@@ -1263,7 +1367,7 @@ export default function RegisterApplication({ portal = false }) {
                     <Field label={t('applyForm.fields.institutionName', 'Institution name')}>
                       <input type="text" name="high_school_name" value={formData.high_school_name} onChange={handleChange} className={inputClass} />
                     </Field>
-                    <Field label={t('applyForm.fields.graduationYear', 'Year of graduation')}>
+                    <Field label={t('applyForm.fields.graduationYear', 'Year of graduation')} required invalid={invalidFields.includes('graduation_year')}>
                       <input type="number" name="graduation_year" value={formData.graduation_year} onChange={handleChange} min="1950" max="2100" placeholder="YYYY" className={inputClass} />
                     </Field>
                       <Field label={t('applyForm.fields.gpa', 'Grade / GPA')} invalid={invalidFields.includes('gpa')} hint={t('applyForm.hints.gpa', 'On a 4.00 scale')}>
@@ -1401,7 +1505,13 @@ export default function RegisterApplication({ portal = false }) {
                     <input type="text" name="id_number" value={formData.id_number} onChange={handleChange} dir="ltr" className={inputClass} />
                   </Field>
                   <Field label={t('applyForm.fields.idIssueCountry', 'Country of issue')}>
-                    <input type="text" name="id_issue_country" value={formData.id_issue_country} onChange={handleChange} className={inputClass} />
+                    <NationalitySelect
+                      name="id_issue_country"
+                      value={formData.id_issue_country}
+                      onChange={(code) => setField('id_issue_country', code)}
+                      placeholder={t('common.select', 'Please select')}
+                      className={inputClass}
+                    />
                   </Field>
                   <div className="hidden md:block" />
                   <Field label={t('applyForm.fields.idIssueDate', 'Date of issue')}>
@@ -1421,7 +1531,7 @@ export default function RegisterApplication({ portal = false }) {
                     <input type="email" name="email" value={formData.email} onChange={handleChange} disabled={portal} dir="ltr" className={inputClass} />
                   </Field>
                   <Field label={t('applyForm.fields.mobile', 'Mobile number')} required invalid={invalidFields.includes('phone')}>
-                    <input type="tel" name="phone" value={formData.phone} onChange={handleChange} dir="ltr" className={inputClass} />
+                    <ApplyPhoneInput value={formData.phone} onChange={(phone) => setField('phone', phone)} />
                   </Field>
                   <Field label={t('applyForm.fields.homePhone', 'Home phone number')}>
                     <input type="tel" name="home_phone" value={formData.home_phone} onChange={handleChange} dir="ltr" className={inputClass} />
@@ -1506,16 +1616,6 @@ export default function RegisterApplication({ portal = false }) {
                         />
                       </Field>
                     </div>
-                    <p className="mt-3 text-xs text-slate-500">
-                      {t('applyForm.account.alreadyHave', 'Already have an account?')}{' '}
-                      <button
-                        type="button"
-                        onClick={() => navigate('/login/applicant', { state: { from: '/apply' } })}
-                        className="font-bold text-[#1a3a6b] underline underline-offset-2"
-                      >
-                        {t('applyForm.account.signIn', 'Sign in')}
-                      </button>
-                    </p>
                   </SectionCard>
                 )}
 
@@ -1535,9 +1635,6 @@ export default function RegisterApplication({ portal = false }) {
                       <Field label={t('registerApplication.scholarship.typeLabel')}>
                         <input type="text" name="scholarship_type" value={formData.scholarship_type} onChange={handleChange} className={inputClass} />
                       </Field>
-                      <Field label={t('registerApplication.scholarship.pctLabel')} invalid={invalidFields.includes('scholarship_percentage')}>
-                        <input type="number" name="scholarship_percentage" value={formData.scholarship_percentage} onChange={handleChange} min="0" max="100" step="0.01" className={inputClass} />
-                      </Field>
                       <Field label={t('registerApplication.scholarship.detailsLabel')} className="md:col-span-2">
                         <textarea name="scholarship_details" value={formData.scholarship_details} onChange={handleChange} rows={4} className={`${inputClass} resize-none`} />
                       </Field>
@@ -1546,26 +1643,38 @@ export default function RegisterApplication({ portal = false }) {
                 </SectionCard>
 
                 <SectionCard title={t('registerApplication.documents.title')}>
-                  <p className="mb-4 text-sm text-slate-500">{t('applyForm.documentsIntro', 'Optional now — you can upload them later from your application page.')}</p>
+                  <p className="mb-4 text-sm text-slate-500">{t('applyForm.documentsIntro', 'ID, certificate, and transcript are required.')}</p>
                   <div className="space-y-2.5">
-                    {[...CORE_DOCUMENT_SPECS, ...(formData.scholarship_request ? SCHOLARSHIP_DOCUMENT_SPECS : [])].map(({ key, labelKey, accept }) => (
-                      <div
-                        key={key}
-                        className="flex flex-col gap-2 rounded-xl border border-dashed border-slate-200 bg-white px-3.5 py-3 sm:flex-row sm:items-center sm:justify-between"
-                      >
-                        <span className="text-sm font-semibold text-slate-700">
-                          {CORE_DOCUMENT_SPECS.some((s) => s.key === key)
-                            ? t(`registerApplication.documents.${labelKey}`)
-                            : t(`registerApplication.fields.${labelKey}`)}
-                        </span>
-                        <input
-                          type="file"
-                          accept={accept}
-                          className="text-xs text-slate-500 file:me-2 file:rounded-lg file:border-0 file:bg-[#1a3a6b]/10 file:px-3 file:py-1.5 file:text-xs file:font-bold file:text-[#1a3a6b]"
-                          onChange={(e) => setDocumentFiles((prev) => ({ ...prev, [key]: e.target.files?.[0] || null }))}
-                        />
-                      </div>
-                    ))}
+                    {[...CORE_DOCUMENT_SPECS, ...(formData.scholarship_request ? SCHOLARSHIP_DOCUMENT_SPECS : [])].map(({ key, labelKey, accept }) => {
+                      const required = CORE_DOCUMENT_SPECS.some((spec) => spec.key === key)
+                      const invalid = invalidFields.includes(`doc:${key}`)
+                      return (
+                        <div
+                          key={key}
+                          className={`flex flex-col gap-2 rounded-xl border border-dashed px-3.5 py-3 sm:flex-row sm:items-center sm:justify-between ${
+                            invalid ? 'border-rose-400 bg-rose-50 ring-2 ring-rose-300' : 'border-slate-200 bg-white'
+                          }`}
+                        >
+                          <span className={`text-sm font-semibold ${invalid ? 'text-rose-600' : 'text-slate-700'}`}>
+                            {required
+                              ? t(`registerApplication.documents.${labelKey}`)
+                              : t(`registerApplication.fields.${labelKey}`)}
+                            {required && <span className="ms-1 text-rose-500">*</span>}
+                          </span>
+                          <input
+                            type="file"
+                            accept={accept}
+                            required={required}
+                            className="text-xs text-slate-500 file:me-2 file:rounded-lg file:border-0 file:bg-[#1a3a6b]/10 file:px-3 file:py-1.5 file:text-xs file:font-bold file:text-[#1a3a6b]"
+                            onChange={(e) => {
+                              const file = e.target.files?.[0] || null
+                              setDocumentFiles((prev) => ({ ...prev, [key]: file }))
+                              if (file) clearInvalid(`doc:${key}`)
+                            }}
+                          />
+                        </div>
+                      )
+                    })}
                   </div>
                 </SectionCard>
               </div>

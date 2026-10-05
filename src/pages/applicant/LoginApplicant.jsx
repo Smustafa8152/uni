@@ -15,7 +15,7 @@ export default function LoginApplicant() {
   const location = useLocation()
   const from = location.state?.from || '/portal'
 
-  const [email, setEmail] = useState('')
+  const [email, setEmail] = useState(() => String(location.state?.email || '').trim())
   const [password, setPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
   const [loading, setLoading] = useState(false)
