@@ -136,11 +136,11 @@ export default function StudentSubjectView() {
         // Calculate available actions based on permissions (per-semester milestone)
         await calculateAvailableActions(subjectData, studentData, semesterId, pe)
       } else {
-        setError('You are not enrolled in this subject')
+        setError(t('studentPortal.subjectView.notEnrolled'))
       }
     } catch (err) {
       console.error('Error fetching data:', err)
-      setError(err.message || 'Failed to load subject data')
+      setError(err.message || t('studentPortal.subjectView.loadFailed'))
     } finally {
       setLoading(false)
     }
@@ -331,7 +331,7 @@ export default function StudentSubjectView() {
       if (!gradesVisible) {
         setGrades({
           visible: false,
-          reason: 'Official course grades are hidden until they are released.',
+          reason: t('studentPortal.subjectView.gradesHiddenUntilReleased'),
           exams: examGrades,
           homework: homeworkGrades,
           components: [],
@@ -511,29 +511,29 @@ export default function StudentSubjectView() {
   }
 
   const getHomeworkStatus = (hw) => {
-    if (hw.status === 'HW_CLD') return { label: 'Closed', color: 'bg-gray-100 text-gray-800' }
-    if (hw.submission?.status === 'HW_GRD') return { label: 'Graded', color: 'bg-green-100 text-green-800' }
-    if (hw.submission?.status === 'HW_LATE') return { label: 'Submitted Late', color: 'bg-yellow-100 text-yellow-800' }
-    if (hw.submission?.status === 'HW_SUB') return { label: 'Submitted', color: 'bg-blue-100 text-blue-800' }
-    if (new Date(hw.due_date) < new Date()) return { label: 'Overdue', color: 'bg-red-100 text-red-800' }
-    return { label: 'Open', color: 'bg-green-100 text-green-800' }
+    if (hw.status === 'HW_CLD') return { label: t('studentPortal.subjectView.status.closed'), color: 'bg-gray-100 text-gray-800' }
+    if (hw.submission?.status === 'HW_GRD') return { label: t('studentPortal.subjectView.status.graded'), color: 'bg-green-100 text-green-800' }
+    if (hw.submission?.status === 'HW_LATE') return { label: t('studentPortal.subjectView.status.submittedLate'), color: 'bg-yellow-100 text-yellow-800' }
+    if (hw.submission?.status === 'HW_SUB') return { label: t('studentPortal.subjectView.status.submitted'), color: 'bg-blue-100 text-blue-800' }
+    if (new Date(hw.due_date) < new Date()) return { label: t('studentPortal.subjectView.status.overdue'), color: 'bg-red-100 text-red-800' }
+    return { label: t('studentPortal.subjectView.status.open'), color: 'bg-green-100 text-green-800' }
   }
 
   const getExamStatus = (exam) => {
     if (canStudentSeeExamScore(exam, exam.submission)) {
-      return { label: 'Results Released', color: 'bg-green-100 text-green-800', canView: true }
+      return { label: t('studentPortal.subjectView.status.resultsReleased'), color: 'bg-green-100 text-green-800', canView: true }
     }
     if (exam.submission && (exam.submission.status === 'EX_SUB' || exam.submission.status === 'EX_GRD')) {
-      return { label: 'Submitted', color: 'bg-blue-100 text-blue-800', canView: false }
+      return { label: t('studentPortal.subjectView.status.submitted'), color: 'bg-blue-100 text-blue-800', canView: false }
     }
-    if (exam.status === 'EX_CLS') return { label: 'Closed', color: 'bg-gray-100 text-gray-800', canView: false }
+    if (exam.status === 'EX_CLS') return { label: t('studentPortal.subjectView.status.closed'), color: 'bg-gray-100 text-gray-800', canView: false }
     if (isExamEnterableForStudent(exam, new Date(), exam.submission)) {
-      return { label: 'Open', color: 'bg-blue-100 text-blue-800', canView: canPerformAction('SS_EXAM') }
+      return { label: t('studentPortal.subjectView.status.open'), color: 'bg-blue-100 text-blue-800', canView: canPerformAction('SS_EXAM') }
     }
     if (exam.status === 'EX_OPN' || exam.status === 'EX_SCH') {
-      return { label: 'Scheduled', color: 'bg-yellow-100 text-yellow-800', canView: false }
+      return { label: t('studentPortal.subjectView.status.scheduled'), color: 'bg-yellow-100 text-yellow-800', canView: false }
     }
-    return { label: 'Unknown', color: 'bg-gray-100 text-gray-800', canView: false }
+    return { label: t('studentPortal.subjectView.status.unknown'), color: 'bg-gray-100 text-gray-800', canView: false }
   }
 
   if (loading) {
@@ -553,12 +553,12 @@ export default function StudentSubjectView() {
             className="flex items-center space-x-2 text-gray-600 hover:text-gray-900 mb-6"
           >
             <ArrowLeft className="w-5 h-5" />
-            <span>Back</span>
+            <span>{t('studentPortal.subjectView.back')}</span>
           </button>
           <div className="bg-red-50 border border-red-200 rounded-lg p-6 text-center">
             <AlertCircle className="w-12 h-12 text-red-500 mx-auto mb-4" />
-            <h2 className="text-xl font-bold text-red-900 mb-2">Error</h2>
-            <p className="text-red-700">{error || 'Subject not found or you are not enrolled'}</p>
+            <h2 className="text-xl font-bold text-red-900 mb-2">{t('studentPortal.subjectView.error')}</h2>
+            <p className="text-red-700">{error || t('studentPortal.subjectView.notFound')}</p>
           </div>
         </div>
       </div>
@@ -586,7 +586,7 @@ export default function StudentSubjectView() {
             <div className="flex items-center space-x-2">
               {enrollment?.classes?.instructors && (
                 <div className="text-right">
-                  <p className="text-sm text-gray-600">Class Instructor</p>
+                  <p className="text-sm text-gray-600">{t('studentPortal.subjectView.classInstructor')}</p>
                   <p className="text-sm font-medium text-gray-900">{enrollment.classes.instructors.name_en}</p>
                 </div>
               )}
@@ -596,16 +596,16 @@ export default function StudentSubjectView() {
           {/* Tabs */}
           <div className="mt-4 flex space-x-1 border-b border-gray-200 overflow-x-auto">
             {[
-              { id: 'overview', label: 'Overview', icon: BookOpen },
-              { id: 'materials', label: 'Materials', icon: FolderOpen, action: 'SS_MATL' },
-              { id: 'homework', label: 'Homework', icon: FileText, action: 'SS_HWV' },
-              { id: 'exams', label: 'Exams', icon: GraduationCap, action: 'SS_EXAM' },
-              { id: 'teams', label: 'Teams Meetings', icon: Video, action: 'SS_JOIN' },
-              { id: 'recordings', label: 'Recordings', icon: Video, action: 'SS_REC' },
-              { id: 'attendance', label: 'Attendance', icon: Calendar, action: 'SS_ATT' },
-              { id: 'grades', label: 'Grades', icon: BarChart3, action: 'SS_GRAD' },
-              { id: 'forum', label: 'Forum', icon: MessageSquare, action: 'SS_FOR' },
-              { id: 'qa', label: 'Q&A', icon: HelpCircle, action: 'SS_QNA' },
+              { id: 'overview', label: t('studentPortal.subjectView.tabs.overview'), icon: BookOpen },
+              { id: 'materials', label: t('studentPortal.subjectView.tabs.materials'), icon: FolderOpen, action: 'SS_MATL' },
+              { id: 'homework', label: t('studentPortal.subjectView.tabs.homework'), icon: FileText, action: 'SS_HWV' },
+              { id: 'exams', label: t('studentPortal.subjectView.tabs.exams'), icon: GraduationCap, action: 'SS_EXAM' },
+              { id: 'teams', label: t('studentPortal.subjectView.tabs.teams'), icon: Video, action: 'SS_JOIN' },
+              { id: 'recordings', label: t('studentPortal.subjectView.tabs.recordings'), icon: Video, action: 'SS_REC' },
+              { id: 'attendance', label: t('studentPortal.subjectView.tabs.attendance'), icon: Calendar, action: 'SS_ATT' },
+              { id: 'grades', label: t('studentPortal.subjectView.tabs.grades'), icon: BarChart3, action: 'SS_GRAD' },
+              { id: 'forum', label: t('studentPortal.subjectView.tabs.forum'), icon: MessageSquare, action: 'SS_FOR' },
+              { id: 'qa', label: t('studentPortal.subjectView.tabs.qa'), icon: HelpCircle, action: 'SS_QNA' },
             ].map(tab => {
               const canAccess = !tab.action || canPerformAction(tab.action)
               const TabIcon = tab.icon
@@ -638,54 +638,54 @@ export default function StudentSubjectView() {
         {activeTab === 'overview' && (
           <div className="space-y-6">
             <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-              <h2 className="text-xl font-bold text-gray-900 mb-4">Subject Information</h2>
+              <h2 className="text-xl font-bold text-gray-900 mb-4">{t('studentPortal.subjectView.subjectInformation')}</h2>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 {enrollment?.classes && (
                   <>
                     <div>
-                      <p className="text-sm text-gray-600 mb-1">Class Code</p>
+                      <p className="text-sm text-gray-600 mb-1">{t('studentPortal.subjectView.classCode')}</p>
                       <p className="font-semibold text-gray-900">{enrollment.classes.code}</p>
                     </div>
                     <div>
-                      <p className="text-sm text-gray-600 mb-1">Section</p>
+                      <p className="text-sm text-gray-600 mb-1">{t('studentPortal.subjectView.section')}</p>
                       <p className="font-semibold text-gray-900">{enrollment.classes.section}</p>
                     </div>
                     {enrollment.semesters && (
                       <div>
-                        <p className="text-sm text-gray-600 mb-1">Semester</p>
+                        <p className="text-sm text-gray-600 mb-1">{t('studentPortal.subjectView.semester')}</p>
                         <p className="font-semibold text-gray-900">{enrollment.semesters.name_en} ({enrollment.semesters.code})</p>
                       </div>
                     )}
                   </>
                 )}
                 <div>
-                  <p className="text-sm text-gray-600 mb-1">Credit Hours</p>
+                  <p className="text-sm text-gray-600 mb-1">{t('studentPortal.subjectView.creditHours')}</p>
                   <p className="font-semibold text-gray-900">{subject.credit_hours}</p>
                 </div>
                 <div>
-                  <p className="text-sm text-gray-600 mb-1">Type</p>
+                  <p className="text-sm text-gray-600 mb-1">{t('studentPortal.subjectView.type')}</p>
                   <p className="font-semibold text-gray-900 capitalize">{subject.type}</p>
                 </div>
                 <div>
-                  <p className="text-sm text-gray-600 mb-1">Subject Semester</p>
+                  <p className="text-sm text-gray-600 mb-1">{t('studentPortal.subjectView.subjectSemester')}</p>
                   <p className="font-semibold text-gray-900">Semester {subject.semester_number}</p>
                 </div>
                 <div>
-                  <p className="text-sm text-gray-600 mb-1">College</p>
+                  <p className="text-sm text-gray-600 mb-1">{t('studentPortal.subjectView.college')}</p>
                   <p className="font-semibold text-gray-900">{subject.colleges?.name_en}</p>
                 </div>
               </div>
 
               {subject.description && (
                 <div className="mt-6 pt-6 border-t border-gray-200">
-                  <p className="text-sm text-gray-600 mb-2">Description</p>
+                  <p className="text-sm text-gray-600 mb-2">{t('studentPortal.subjectView.description')}</p>
                   <p className="text-gray-700 whitespace-pre-wrap">{subject.description}</p>
                 </div>
               )}
 
               {canPerformAction('SS_SYL') && subject.syllabus_content && (
                 <div className="mt-6 pt-6 border-t border-gray-200">
-                  <h3 className="text-lg font-semibold text-gray-900 mb-3">Syllabus</h3>
+                  <h3 className="text-lg font-semibold text-gray-900 mb-3">{t('studentPortal.subjectView.syllabus')}</h3>
                   <p className="text-gray-700 whitespace-pre-wrap">{subject.syllabus_content}</p>
                 </div>
               )}
@@ -697,11 +697,11 @@ export default function StudentSubjectView() {
                 .filter(a => a.code !== 'SS_VIEW')
                 .map(action => {
                   const actionConfig = {
-                    'SS_MATL': { label: 'View Materials', icon: FolderOpen, color: 'bg-blue-50 border-blue-200' },
-                    'SS_HWV': { label: 'View Homework', icon: FileText, color: 'bg-purple-50 border-purple-200' },
-                    'SS_EXAM': { label: 'Take Exams', icon: GraduationCap, color: 'bg-green-50 border-green-200' },
-                    'SS_GRAD': { label: 'View Grades', icon: BarChart3, color: 'bg-yellow-50 border-yellow-200' },
-                    'SS_ATT': { label: 'View Attendance', icon: Calendar, color: 'bg-indigo-50 border-indigo-200' },
+                    'SS_MATL': { label: t('studentPortal.subjectView.actions.viewMaterials'), icon: FolderOpen, color: 'bg-blue-50 border-blue-200' },
+                    'SS_HWV': { label: t('studentPortal.subjectView.actions.viewHomework'), icon: FileText, color: 'bg-purple-50 border-purple-200' },
+                    'SS_EXAM': { label: t('studentPortal.subjectView.actions.takeExams'), icon: GraduationCap, color: 'bg-green-50 border-green-200' },
+                    'SS_GRAD': { label: t('studentPortal.subjectView.actions.viewGrades'), icon: BarChart3, color: 'bg-yellow-50 border-yellow-200' },
+                    'SS_ATT': { label: t('studentPortal.subjectView.actions.viewAttendance'), icon: Calendar, color: 'bg-indigo-50 border-indigo-200' },
                   }[action.code] || { label: action.code, icon: Eye, color: 'bg-gray-50 border-gray-200' }
 
                   const ActionIcon = actionConfig.icon
@@ -727,7 +727,7 @@ export default function StudentSubjectView() {
                         {!action.enabled && <Lock className="w-5 h-5 text-gray-400" />}
                       </div>
                       {!action.enabled && (
-                        <p className="text-xs text-gray-600 mt-2">Complete payment requirements to access</p>
+                        <p className="text-xs text-gray-600 mt-2">{t('studentPortal.subjectView.paymentRequiredToAccess')}</p>
                       )}
                     </div>
                   )
@@ -740,7 +740,7 @@ export default function StudentSubjectView() {
         {activeTab === 'materials' && canPerformAction('SS_MATL') && (
           <div className="space-y-4">
             <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-              <h2 className="text-xl font-bold text-gray-900 mb-4">Learning Materials</h2>
+              <h2 className="text-xl font-bold text-gray-900 mb-4">{t('studentPortal.subjectView.learningMaterials')}</h2>
               {materials.length > 0 ? (
                 <div className="space-y-3">
                   {materials.map(material => (
@@ -761,7 +761,7 @@ export default function StudentSubjectView() {
                             className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center space-x-2"
                           >
                             <LinkIcon className="w-4 h-4" />
-                            <span>Open Link</span>
+                            <span>{t('studentPortal.subjectView.openLink')}</span>
                           </a>
                         ) : (
                           canPerformAction('SS_DOWN') && material.file_url && (
@@ -771,7 +771,7 @@ export default function StudentSubjectView() {
                               className="px-4 py-2 bg-primary-gradient text-white rounded-lg hover:shadow-lg transition-all flex items-center space-x-2"
                             >
                               <Download className="w-4 h-4" />
-                              <span>Download</span>
+                              <span>{t('studentPortal.subjectView.download')}</span>
                             </a>
                           )
                         )}
@@ -780,7 +780,7 @@ export default function StudentSubjectView() {
                   ))}
                 </div>
               ) : (
-                <p className="text-gray-500 text-center py-8">No materials available yet</p>
+                <p className="text-gray-500 text-center py-8">{t('studentPortal.subjectView.noMaterials')}</p>
               )}
             </div>
           </div>
@@ -792,7 +792,7 @@ export default function StudentSubjectView() {
             <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
               <h2 className="text-xl font-bold text-gray-900 mb-4 flex items-center space-x-2">
                 <Video className="w-6 h-6 text-blue-600" />
-                <span>Microsoft Teams Meetings</span>
+                <span>{t('studentPortal.subjectView.teamsMeetings')}</span>
               </h2>
               {teamsMeetings.length > 0 ? (
                 <div className="space-y-3">
@@ -811,7 +811,7 @@ export default function StudentSubjectView() {
                             </span>
                             <span className="flex items-center space-x-1">
                               <Clock className="w-4 h-4" />
-                              <span>{meeting.meeting_duration_minutes} minutes</span>
+                              <span>{t('studentPortal.subjectView.minutes', { n: meeting.meeting_duration_minutes })}</span>
                             </span>
                           </div>
                           {meeting.teams_join_url && (
@@ -822,7 +822,7 @@ export default function StudentSubjectView() {
                               className="inline-flex items-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
                             >
                               <Video className="w-4 h-4" />
-                              <span>Join Teams Meeting</span>
+                              <span>{t('studentPortal.subjectView.joinTeamsMeeting')}</span>
                               <LinkIcon className="w-4 h-4" />
                             </a>
                           )}
@@ -834,8 +834,8 @@ export default function StudentSubjectView() {
               ) : (
                 <div className="text-center py-8 text-gray-500">
                   <Video className="w-12 h-12 mx-auto mb-2 text-gray-400" />
-                  <p>No Teams meetings scheduled yet.</p>
-                  <p className="text-sm mt-1">Check back later or contact your instructor.</p>
+                  <p>{t('studentPortal.subjectView.noTeamsMeetings')}</p>
+                  <p className="text-sm mt-1">{t('studentPortal.subjectView.checkBackLater')}</p>
                 </div>
               )}
             </div>
@@ -846,7 +846,7 @@ export default function StudentSubjectView() {
         {activeTab === 'homework' && canPerformAction('SS_HWV') && (
           <div className="space-y-4">
             <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-              <h2 className="text-xl font-bold text-gray-900 mb-4">Homework Assignments</h2>
+              <h2 className="text-xl font-bold text-gray-900 mb-4">{t('studentPortal.subjectView.homeworkAssignments')}</h2>
               {homework.length > 0 ? (
                 <div className="space-y-4">
                   {homework.map(hw => {
@@ -862,11 +862,11 @@ export default function StudentSubjectView() {
                             <div className="flex items-center space-x-4 text-sm text-gray-600">
                               <span className="flex items-center space-x-1">
                                 <Calendar className="w-4 h-4" />
-                                <span>Due: {new Date(hw.due_date).toLocaleDateString()}</span>
+                                <span>{t('studentPortal.subjectView.due')} {new Date(hw.due_date).toLocaleDateString()}</span>
                               </span>
                               <span className="flex items-center space-x-1">
                                 <BarChart3 className="w-4 h-4" />
-                                <span>{hw.total_points} points</span>
+                                <span>{t('studentPortal.subjectView.points', { n: hw.total_points })}</span>
                               </span>
                             </div>
                           </div>
@@ -877,13 +877,13 @@ export default function StudentSubjectView() {
                         
                         {hw.submission && (
                           <div className="mt-4 p-4 bg-blue-50 rounded-lg">
-                            <p className="text-sm font-medium text-gray-900 mb-1">Your Submission</p>
+                            <p className="text-sm font-medium text-gray-900 mb-1">{t('studentPortal.subjectView.yourSubmission')}</p>
                             <p className="text-sm text-gray-600 mb-2">
-                              Submitted: {new Date(hw.submission.submitted_at).toLocaleString()}
+                              {t('studentPortal.subjectView.submittedOn')} {new Date(hw.submission.submitted_at).toLocaleString()}
                             </p>
                             {hw.submission.points_earned !== null && (
                               <p className="text-sm font-semibold text-gray-900">
-                                Score: {hw.submission.points_earned} / {hw.total_points}
+                                {t('studentPortal.subjectView.score')} {hw.submission.points_earned} / {hw.total_points}
                                 {hw.submission.grade && ` (${hw.submission.grade})`}
                               </p>
                             )}
@@ -897,12 +897,12 @@ export default function StudentSubjectView() {
                           <button
                             onClick={() => {
                               // TODO: Open submission modal
-                              alert('Homework submission functionality will be implemented')
+                              alert(t('studentPortal.subjectView.comingSoon'))
                             }}
                             className="mt-4 px-4 py-2 bg-primary-gradient text-white rounded-lg hover:shadow-lg transition-all flex items-center space-x-2"
                           >
                             <Upload className="w-4 h-4" />
-                            <span>Submit Homework</span>
+                            <span>{t('studentPortal.subjectView.submitHomework')}</span>
                           </button>
                         )}
 
@@ -910,11 +910,11 @@ export default function StudentSubjectView() {
                           <button
                             onClick={() => {
                               // TODO: Open update submission modal
-                              alert('Update submission functionality will be implemented')
+                              alert(t('studentPortal.subjectView.comingSoon'))
                             }}
                             className="mt-2 px-4 py-2 border-2 border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
                           >
-                            Update Submission
+                            {t('studentPortal.subjectView.updateSubmission')}
                           </button>
                         )}
                       </div>
@@ -922,7 +922,7 @@ export default function StudentSubjectView() {
                   })}
                 </div>
               ) : (
-                <p className="text-gray-500 text-center py-8">No homework assignments yet</p>
+                <p className="text-gray-500 text-center py-8">{t('studentPortal.subjectView.noHomework')}</p>
               )}
             </div>
           </div>
@@ -932,7 +932,7 @@ export default function StudentSubjectView() {
         {activeTab === 'exams' && canPerformAction('SS_EXAM') && (
           <div className="space-y-4">
             <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-              <h2 className="text-xl font-bold text-gray-900 mb-4">Exams</h2>
+              <h2 className="text-xl font-bold text-gray-900 mb-4">{t('studentPortal.subjectView.tabs.exams')}</h2>
               {exams.length > 0 ? (
                 <div className="space-y-4">
                   {exams.map(exam => {
@@ -954,7 +954,7 @@ export default function StudentSubjectView() {
                               </span>
                               <span className="flex items-center space-x-1">
                                 <BarChart3 className="w-4 h-4" />
-                                <span>{exam.total_points} points</span>
+                                <span>{t('studentPortal.subjectView.points', { n: exam.total_points })}</span>
                               </span>
                             </div>
                           </div>
@@ -965,13 +965,13 @@ export default function StudentSubjectView() {
 
                         {exam.submission && (
                           <div className="mt-4 p-4 bg-blue-50 rounded-lg">
-                            <p className="text-sm font-medium text-gray-900 mb-1">Your Submission</p>
+                            <p className="text-sm font-medium text-gray-900 mb-1">{t('studentPortal.subjectView.yourSubmission')}</p>
                             <p className="text-sm text-gray-600 mb-2">
-                              Submitted: {new Date(exam.submission.submitted_at).toLocaleString()}
+                              {t('studentPortal.subjectView.submittedOn')} {new Date(exam.submission.submitted_at).toLocaleString()}
                             </p>
                             {status.canView && exam.submission.points_earned !== null && (
                               <p className="text-sm font-semibold text-gray-900">
-                                Score: {exam.submission.points_earned} / {exam.total_points}
+                                {t('studentPortal.subjectView.score')} {exam.submission.points_earned} / {exam.total_points}
                                 {exam.submission.grade && ` (${exam.submission.grade})`}
                               </p>
                             )}
@@ -987,7 +987,7 @@ export default function StudentSubjectView() {
                             className="mt-4 px-4 py-2 bg-primary-gradient text-white rounded-lg hover:shadow-lg transition-all flex items-center space-x-2"
                           >
                             <Play className="w-4 h-4" />
-                            <span>Take Exam</span>
+                            <span>{t('studentPortal.subjectView.takeExam')}</span>
                           </button>
                         )}
                       </div>
@@ -995,7 +995,7 @@ export default function StudentSubjectView() {
                   })}
                 </div>
               ) : (
-                <p className="text-gray-500 text-center py-8">No exams scheduled yet</p>
+                <p className="text-gray-500 text-center py-8">{t('studentPortal.subjectView.noExams')}</p>
               )}
             </div>
           </div>
@@ -1005,7 +1005,7 @@ export default function StudentSubjectView() {
         {activeTab === 'recordings' && canPerformAction('SS_REC') && (
           <div className="space-y-4">
             <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-              <h2 className="text-xl font-bold text-gray-900 mb-4">Recorded Lectures</h2>
+              <h2 className="text-xl font-bold text-gray-900 mb-4">{t('studentPortal.subjectView.recordedLectures')}</h2>
               {recordings.length > 0 ? (
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                   {recordings.map(recording => (
@@ -1022,13 +1022,13 @@ export default function StudentSubjectView() {
                         className="w-full px-4 py-2 bg-primary-gradient text-white rounded-lg hover:shadow-lg transition-all flex items-center justify-center space-x-2"
                       >
                         <Play className="w-4 h-4" />
-                        <span>Watch</span>
+                        <span>{t('studentPortal.subjectView.watch')}</span>
                       </button>
                     </div>
                   ))}
                 </div>
               ) : (
-                <p className="text-gray-500 text-center py-8">No recordings available yet</p>
+                <p className="text-gray-500 text-center py-8">{t('studentPortal.subjectView.noRecordings')}</p>
               )}
             </div>
           </div>
@@ -1038,7 +1038,7 @@ export default function StudentSubjectView() {
         {activeTab === 'attendance' && canPerformAction('SS_ATT') && (
           <div className="space-y-4">
             <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-              <h2 className="text-xl font-bold text-gray-900 mb-4">Attendance Record</h2>
+              <h2 className="text-xl font-bold text-gray-900 mb-4">{t('studentPortal.subjectView.attendanceRecord')}</h2>
               {attendance.length > 0 ? (
                 <div className="space-y-3">
                   {attendance.map(record => {
@@ -1054,7 +1054,7 @@ export default function StudentSubjectView() {
                           {statusIcons[record.status] || <XCircle className="w-5 h-5 text-gray-600" />}
                           <div>
                             <p className="font-medium text-gray-900">{new Date(record.date).toLocaleDateString()}</p>
-                            <p className="text-sm text-gray-600 capitalize">{record.status}</p>
+                            <p className="text-sm text-gray-600 capitalize">{t(`studentPortal.subjectView.attendanceStatus.${record.status}`, { defaultValue: record.status })}</p>
                           </div>
                         </div>
                         {record.notes && (
@@ -1065,7 +1065,7 @@ export default function StudentSubjectView() {
                   })}
                 </div>
               ) : (
-                <p className="text-gray-500 text-center py-8">No attendance records yet</p>
+                <p className="text-gray-500 text-center py-8">{t('studentPortal.subjectView.noAttendance')}</p>
               )}
             </div>
           </div>
@@ -1075,12 +1075,12 @@ export default function StudentSubjectView() {
         {activeTab === 'grades' && (
           <div className="space-y-4">
             <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-              <h2 className="text-xl font-bold text-gray-900 mb-4">Grades</h2>
+              <h2 className="text-xl font-bold text-gray-900 mb-4">{t('studentPortal.subjectView.tabs.grades')}</h2>
               {(grades?.exams?.length > 0 || grades?.homework?.length > 0) && (
                 <div className="space-y-6 mb-6">
                   {grades.exams?.length > 0 && (
                     <div>
-                      <h3 className="text-lg font-semibold text-gray-900 mb-3">Exams</h3>
+                      <h3 className="text-lg font-semibold text-gray-900 mb-3">{t('studentPortal.subjectView.tabs.exams')}</h3>
                       <div className="space-y-2">
                         {grades.exams.map((exam, idx) => (
                           <div key={idx} className="flex items-center justify-between p-3 border border-gray-200 rounded-lg">
@@ -1095,7 +1095,7 @@ export default function StudentSubjectView() {
                   )}
                   {grades.homework?.length > 0 && (
                     <div>
-                      <h3 className="text-lg font-semibold text-gray-900 mb-3">Homework</h3>
+                      <h3 className="text-lg font-semibold text-gray-900 mb-3">{t('studentPortal.subjectView.tabs.homework')}</h3>
                       <div className="space-y-2">
                         {grades.homework.map((hw, idx) => (
                           <div key={idx} className="flex items-center justify-between p-3 border border-gray-200 rounded-lg">
@@ -1114,15 +1114,15 @@ export default function StudentSubjectView() {
                 <div className="space-y-6">
                   {grades.components && grades.components.length > 0 && (
                     <div>
-                      <h3 className="text-lg font-semibold text-gray-900 mb-3">Overall Grade</h3>
+                      <h3 className="text-lg font-semibold text-gray-900 mb-3">{t('studentPortal.subjectView.overallGrade')}</h3>
                       <div className="space-y-2">
                         {grades.components.map((component, idx) => (
                           <div key={idx} className="p-4 bg-gray-50 rounded-lg">
                             <div className="flex items-center justify-between">
                               <div>
-                                <p className="font-medium text-gray-900">Final Grade</p>
+                                <p className="font-medium text-gray-900">{t('studentPortal.subjectView.finalGrade')}</p>
                                 {component.letter_grade && (
-                                  <p className="text-sm text-gray-600">Letter: {component.letter_grade}</p>
+                                  <p className="text-sm text-gray-600">{t('studentPortal.subjectView.letter')} {component.letter_grade}</p>
                                 )}
                               </div>
                               <div className="text-right">
@@ -1144,8 +1144,8 @@ export default function StudentSubjectView() {
                 !grades?.exams?.length && !grades?.homework?.length && (
                 <div className="text-center py-8">
                   <Lock className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-                  <p className="text-gray-600 mb-2">Grades are not available</p>
-                  <p className="text-sm text-gray-500">{grades?.reason || 'Complete payment requirements to view grades'}</p>
+                  <p className="text-gray-600 mb-2">{t('studentPortal.subjectView.gradesNotAvailable')}</p>
+                  <p className="text-sm text-gray-500">{grades?.reason || t('studentPortal.subjectView.paymentRequiredForGrades')}</p>
                 </div>
                 )
               )}
@@ -1158,16 +1158,16 @@ export default function StudentSubjectView() {
           <div className="space-y-4">
             <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
               <div className="flex items-center justify-between mb-4">
-                <h2 className="text-xl font-bold text-gray-900">Discussion Forum</h2>
+                <h2 className="text-xl font-bold text-gray-900">{t('studentPortal.subjectView.discussionForum')}</h2>
                 <button
                   onClick={() => {
                     // TODO: Open new post modal
-                    alert('Create post functionality will be implemented')
+                    alert(t('studentPortal.subjectView.comingSoon'))
                   }}
                   className="px-4 py-2 bg-primary-gradient text-white rounded-lg hover:shadow-lg transition-all flex items-center space-x-2"
                 >
                   <MessageSquare className="w-4 h-4" />
-                  <span>New Post</span>
+                  <span>{t('studentPortal.subjectView.newPost')}</span>
                 </button>
               </div>
               {forumPosts.length > 0 ? (
@@ -1176,11 +1176,11 @@ export default function StudentSubjectView() {
                     <div key={post.id} className="border border-gray-200 rounded-lg p-4">
                       <div className="flex items-start justify-between mb-2">
                         <div>
-                          <h3 className="font-semibold text-gray-900">{post.title || 'Untitled'}</h3>
+                          <h3 className="font-semibold text-gray-900">{post.title || t('studentPortal.subjectView.untitled')}</h3>
                           <p className="text-sm text-gray-600">{new Date(post.created_at).toLocaleString()}</p>
                         </div>
                         {post.is_pinned && (
-                          <span className="px-2 py-1 bg-yellow-100 text-yellow-800 text-xs font-medium rounded">Pinned</span>
+                          <span className="px-2 py-1 bg-yellow-100 text-yellow-800 text-xs font-medium rounded">{t('studentPortal.subjectView.pinned')}</span>
                         )}
                       </div>
                       <p className="text-gray-700 mb-3">{post.content}</p>
@@ -1193,7 +1193,7 @@ export default function StudentSubjectView() {
                   ))}
                 </div>
               ) : (
-                <p className="text-gray-500 text-center py-8">No forum posts yet. Be the first to post!</p>
+                <p className="text-gray-500 text-center py-8">{t('studentPortal.subjectView.noForumPosts')}</p>
               )}
             </div>
           </div>
@@ -1204,16 +1204,16 @@ export default function StudentSubjectView() {
           <div className="space-y-4">
             <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
               <div className="flex items-center justify-between mb-4">
-                <h2 className="text-xl font-bold text-gray-900">Questions & Answers</h2>
+                <h2 className="text-xl font-bold text-gray-900">{t('studentPortal.subjectView.questionsAndAnswers')}</h2>
                 <button
                   onClick={() => {
                     // TODO: Open ask question modal
-                    alert('Ask question functionality will be implemented')
+                    alert(t('studentPortal.subjectView.comingSoon'))
                   }}
                   className="px-4 py-2 bg-primary-gradient text-white rounded-lg hover:shadow-lg transition-all flex items-center space-x-2"
                 >
                   <HelpCircle className="w-4 h-4" />
-                  <span>Ask Question</span>
+                  <span>{t('studentPortal.subjectView.askQuestion')}</span>
                 </button>
               </div>
               {questions.length > 0 ? (
@@ -1221,14 +1221,14 @@ export default function StudentSubjectView() {
                   {questions.map(question => (
                     <div key={question.id} className="border border-gray-200 rounded-lg p-4">
                       <div className="mb-3">
-                        <p className="font-semibold text-gray-900 mb-2">Q: {question.question_text}</p>
-                        <p className="text-xs text-gray-500">Asked on {new Date(question.created_at).toLocaleString()}</p>
+                        <p className="font-semibold text-gray-900 mb-2">{t('studentPortal.subjectView.qPrefix')} {question.question_text}</p>
+                        <p className="text-xs text-gray-500">{t('studentPortal.subjectView.askedOn')} {new Date(question.created_at).toLocaleString()}</p>
                       </div>
                       {question.answer_text && (
                         <div className="mt-3 pt-3 border-t border-gray-200">
-                          <p className="font-semibold text-gray-900 mb-2">A: {question.answer_text}</p>
+                          <p className="font-semibold text-gray-900 mb-2">{t('studentPortal.subjectView.aPrefix')} {question.answer_text}</p>
                           {question.answered_at && (
-                            <p className="text-xs text-gray-500">Answered on {new Date(question.answered_at).toLocaleString()}</p>
+                            <p className="text-xs text-gray-500">{t('studentPortal.subjectView.answeredOn')} {new Date(question.answered_at).toLocaleString()}</p>
                           )}
                         </div>
                       )}
@@ -1236,7 +1236,7 @@ export default function StudentSubjectView() {
                   ))}
                 </div>
               ) : (
-                <p className="text-gray-500 text-center py-8">No questions yet. Ask your first question!</p>
+                <p className="text-gray-500 text-center py-8">{t('studentPortal.subjectView.noQuestions')}</p>
               )}
             </div>
           </div>

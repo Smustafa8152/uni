@@ -54,7 +54,24 @@
     "fallSemester": "Fall Semester",
     "springSemester": "Spring Semester",
     "summerSemester": "Summer Semester",
-    "academicYear": "Academic Year"
+    "academicYear": "Academic Year",
+    "export": "Export Report",
+    "backToDashboard": "Back to Dashboard",
+    "notFound": "Not found",
+    "expired": "Expired",
+    "file": "File",
+    "inReview": "In review",
+    "link": "Link",
+    "new": "New",
+    "notAvailable": "N/A",
+    "print": "Print",
+    "refresh": "Refresh",
+    "saving": "Saving…",
+    "students": "students",
+    "title": "Title",
+    "update": "Update",
+    "updating": "Updating...",
+    "verified": "Verified"
   },
   "nationality": {
     "legacyValue": "please update"
@@ -72,7 +89,9 @@
       "markCompleted": "Mark completed",
       "attachments": "Attachments",
       "attachPdf": "Attach PDF",
-      "noAttachments": "No attachments yet."
+      "noAttachments": "No attachments yet.",
+      "subtitle": "View all student service requests and statuses.",
+      "title": "Student requests"
     },
     "curriculumMap": {
       "title": "Curriculum map — learning outcomes",
@@ -157,6 +176,38 @@
       "errNameRequired": "Rubric name is required.",
       "saveFailed": "Could not save rubric.",
       "deleteFailed": "Could not delete rubric."
+    },
+    "elibrary": {
+      "active": "Active",
+      "addItem": "Add item",
+      "authorAr": "Author (AR)",
+      "authorEn": "Author (EN)",
+      "chooseMajor": "Choose a major…",
+      "colActions": "Actions",
+      "colActive": "Active",
+      "colKind": "Kind",
+      "colTitle": "Title",
+      "count": "items",
+      "coverEmoji": "Cover emoji",
+      "editItem": "Edit item",
+      "empty": "No items yet for this major.",
+      "items": "Items",
+      "kind": "Kind",
+      "kindArticle": "Article",
+      "kindAudio": "Audio",
+      "kindBook": "Book",
+      "kindLink": "Link",
+      "pickMajor": "Major",
+      "selectedMajor": "Selected major",
+      "subtitle": "Add and manage library resources per major.",
+      "tags": "Tags (comma separated)",
+      "title": "e‑Library content",
+      "titleAr": "Title (AR)",
+      "titleEn": "Title (EN)",
+      "url": "URL"
+    },
+    "subjectLessons": {
+      "forceUseInSessions": "Force sessions/classes to use this template content (lock instructors from editing)"
     }
   },
   "navigation": {
@@ -258,7 +309,8 @@
     "operations": "Operations",
     "curriculumMap": "Curriculum map",
     "examAnswers": "Exam answers",
-    "gradesExport": "Grades export"
+    "gradesExport": "Grades export",
+    "universityKPIs": "University KPIs"
   },
   "roleSelection": {
     "title": "Imam Bukhari University",
@@ -498,7 +550,27 @@
     "noAccount": "New applicant?",
     "createAccount": "Create account",
     "emailIsInstructor": "This email belongs to an instructor account. Please use Instructor Portal sign-in.",
-    "goToInstructorLogin": "Go to Instructor Portal sign-in"
+    "goToInstructorLogin": "Go to Instructor Portal sign-in",
+    "subtitle2": "Sign in to view your status, documents, and offer details.",
+    "signingIn": "Signing in…",
+    "cards": {
+      "application": {
+        "title": "Application",
+        "value": "Track steps and required documents"
+      },
+      "updates": {
+        "title": "Updates",
+        "value": "See status changes instantly"
+      },
+      "offerLetter": {
+        "title": "Offer letter",
+        "value": "Review and accept online"
+      }
+    },
+    "footer": "University Management System • Imam Bukhari University (IBU)",
+    "rolePill": "Applicant",
+    "showPassword": "Show password",
+    "hidePassword": "Hide password"
   },
   "login": {
     "superAdmin": "Super Admin",
@@ -774,7 +846,8 @@
     "studyApproach": "Study approach",
     "creditHours": "Credit hours",
     "status": "Status",
-    "college": "College"
+    "college": "College",
+    "documentsExpiry": "Expiry"
   },
   "createStudent": {
     "title": "Create New Student",
@@ -873,7 +946,8 @@
     "previous": "Previous",
     "next": "Next",
     "phone": "Phone",
-    "notes": "Notes"
+    "notes": "Notes",
+    "email": "Email"
   },
   "instructors": {
     "title": "Title",
@@ -1109,7 +1183,25 @@
     "bulkSelectSemesterError": "Please select a semester",
     "bulkSelectStudentError": "Please select a student",
     "bulkClassFull": "Session is full",
-    "alreadyEnrolled": "Student is already enrolled in this session"
+    "alreadyEnrolled": "Student is already enrolled in this session",
+    "selectAcademicYear": "Select Academic Year...",
+    "completed": "Completed",
+    "dropped": "Dropped",
+    "enrolled": "Enrolled",
+    "failed": "Failed",
+    "noEnrollmentsFound": "No enrollments found",
+    "noStudentsFound": "No students found",
+    "searchSelectStudent": "-- Search and Select Student --",
+    "searchStudentHint": "Start typing to search for a student by name or ID",
+    "section": "Section",
+    "studentId": "ID:",
+    "studentInfo": "Student Information",
+    "studentLabel": "Student *",
+    "studentMajor": "Major:",
+    "studentName": "Name:",
+    "studentStatus": "Status:",
+    "viewDetails": "View Details",
+    "withdrawn": "Withdrawn"
   },
   "courses": {
     "title": "Courses",
@@ -1122,7 +1214,8 @@
     "capacity": "Capacity",
     "instructor": "Instructor",
     "semester": "Semester",
-    "noCoursesFound": "No courses found"
+    "noCoursesFound": "No courses found",
+    "subtitleStudent": "View your enrolled courses"
   },
   "schedule": {
     "title": "Schedule",
@@ -1441,7 +1534,9 @@
       "enteringGradesFor": "Entering grades for",
       "backToGradebook": "← Back to gradebook",
       "gradeEntrySingleStudent": "Enter or edit grades for this student.",
-      "scaleBadge": "{{letter}}: {{min}}–{{max}}% ({{points}} pts)"
+      "scaleBadge": "{{letter}}: {{min}}–{{max}}% ({{points}} pts)",
+      "fail": "fail",
+      "pass": "pass"
     },
     "gradeAnalytics": {
       "title": "Grade Distribution Analytics",
@@ -1971,7 +2066,58 @@
         "cancel": "Cancel",
         "next": "Next",
         "saving": "Saving...",
-        "saveChanges": "Save changes"
+        "saveChanges": "Save changes",
+        "fields": {
+          "basicInfoEn": "Basic Information (English)",
+          "firstName": "First Name",
+          "middleName": "Middle Name",
+          "lastName": "Last Name",
+          "basicInfoAr": "Basic Information (Arabic - Optional)",
+          "firstNameAr": "First Name (Arabic)",
+          "middleNameAr": "Middle Name (Arabic)",
+          "lastNameAr": "Last Name (Arabic)",
+          "personalDetails": "Personal Details",
+          "emailAddress": "Email Address",
+          "phoneNumber": "Phone Number",
+          "dateOfBirth": "Date of Birth",
+          "gender": "Gender",
+          "selectGender": "Select Gender",
+          "male": "Male",
+          "female": "Female",
+          "other": "Other",
+          "nationality": "Nationality",
+          "religion": "Religion",
+          "placeOfBirth": "Place of Birth",
+          "enrollmentDate": "Enrollment Date",
+          "streetAddress": "Street Address",
+          "city": "City",
+          "stateProvince": "State / Province",
+          "postalCode": "Postal / ZIP Code",
+          "country": "Country",
+          "contactName": "Contact Name",
+          "relationship": "Relationship",
+          "major": "Major",
+          "selectMajor": "Select Major",
+          "semester": "Semester",
+          "selectSemester": "Select Semester",
+          "highSchoolName": "High School Name",
+          "highSchoolCountry": "High School Country",
+          "graduationYear": "Graduation Year",
+          "gpa": "GPA / Grade",
+          "certificateType": "Certificate Type",
+          "toeflScore": "TOEFL Score",
+          "ieltsScore": "IELTS Score",
+          "satScore": "SAT Score",
+          "gmatScore": "GMAT Score",
+          "greScore": "GRE Score",
+          "transferStudent": "Transfer Student",
+          "previousUniversity": "Previous University",
+          "previousDegree": "Previous Degree",
+          "transferCredits": "Transfer Credits",
+          "personalStatement": "Personal Statement",
+          "scholarshipRequest": "Scholarship Request",
+          "scholarshipPercentage": "Scholarship Percentage"
+        }
       },
       "timelineTriggers": {
         "TRSB": "Applicant Submitted",
@@ -1988,6 +2134,12 @@
         "TRWL": "Waitlisted",
         "TRMN": "Manual Status Change",
         "TR": "System"
+      },
+      "errors": {
+        "invalidId": "Invalid application ID",
+        "loadFailed": "Failed to load application",
+        "selectStatus": "Please select a status",
+        "notFound": "Application not found"
       }
     },
     "statusReasons": {
@@ -2016,7 +2168,9 @@
         "RJEX": "Entrance Exam Failed",
         "RJOT": "Other Reason"
       }
-    }
+    },
+    "loadingColleges": "Loading colleges...",
+    "noCollegesAvailable": "No colleges available"
   },
   "settings": {
     "title": "Settings",
@@ -2062,6 +2216,29 @@
       "passwordMin": "Password must be at least 6 characters.",
       "passwordMismatch": "Passwords do not match.",
       "success": "Super admin user created successfully."
+    },
+    "staffUser": {
+      "alwaysOn": "always",
+      "confirm": "Confirm password",
+      "editMenus": "Edit menus",
+      "email": "Email",
+      "fullMenus": "Full menu access",
+      "invalidEmail": "Please enter a valid email.",
+      "listTitle": "Staff users",
+      "menuAccess": "Menu access",
+      "menuAccessHint": "Choose which sidebar sections this user can see. Use a quick option, then adjust checkboxes if needed.",
+      "menusCount": "{{n}} menus",
+      "menusRequired": "Select at least one menu item.",
+      "name": "Name",
+      "none": "No staff users found.",
+      "password": "Password",
+      "passwordMin": "Password must be at least 6 characters.",
+      "passwordMismatch": "Passwords do not match.",
+      "selectAll": "Select all",
+      "submit": "Create Staff User",
+      "subtitle": "Create a staff login and choose which menu sections they can see. Use quick options like Admissions or Finance, then fine-tune the checkboxes.",
+      "success": "Staff user created successfully.",
+      "title": "Create Staff User"
     }
   },
   "academic": {
@@ -2340,7 +2517,10 @@
       "cloneSemester": "Clone Semester",
       "deleteConfirm": "Are you sure you want to delete this semester? This action cannot be undone.",
       "cannotDeleteWithEnrollments": "Cannot delete semester with existing enrollments",
-      "cannotDeleteWithClasses": "Cannot delete semester with existing sessions"
+      "cannotDeleteWithClasses": "Cannot delete semester with existing sessions",
+      "archive": "Archive",
+      "enrollments": "Enrollments",
+      "registrationOpen": "Registration Open"
     },
     "departments": {
       "title": "Departments",
@@ -2944,7 +3124,9 @@
       "allowRefunds": "Allow Refunds",
       "fullRefundPeriodDays": "Full Refund Period (Days)",
       "partialRefundPeriodDays": "Partial Refund Period (Days)",
-      "partialRefundPercentage": "Partial Refund Percentage"
+      "partialRefundPercentage": "Partial Refund Percentage",
+      "paymentsEnabled": "Enable payments",
+      "paymentsEnabledDesc": "When disabled, admission and student portal will not require payments and invoice menus will be hidden."
     },
     "emailSettings": {
       "smtpConfiguration": "SMTP Configuration",
@@ -3538,7 +3720,10 @@
     "editTitle": "Edit Subject",
     "editSubtitle": "Update subject information",
     "updated": "Subject updated successfully! Redirecting...",
-    "update": "Update Subject"
+    "update": "Update Subject",
+    "headOfSubject": "Head of Subject (Administrative)",
+    "headOfSubjectHint": "This is the administrative head of the subject. Teaching instructors are assigned per class when creating classes.",
+    "title": "Title"
   },
   "studentSubjectView": {
     "title": "Subject View",
@@ -4592,7 +4777,11 @@
     "invoiceCreateFailed": "Payment was recorded, but the invoice could not be generated. Please contact the finance office with your application number.",
     "accessDenied": "Access Denied",
     "loginPermissionDenied": "You need to make an initial payment (10%) to access the student portal. Please contact the finance office or make a payment.",
-    "statusDoesNotAllowLogin": "Your account status does not allow portal access. Please contact the admissions office."
+    "statusDoesNotAllowLogin": "Your account status does not allow portal access. Please contact the admissions office.",
+    "amountMissing": "Payment amount is not available.",
+    "noReceiptYet": "No receipt available yet for this invoice.",
+    "outstandingBalance": "Outstanding balance",
+    "viewReceipt": "View receipt"
   },
   "track": {
     "backToTracking": "Back to application status",
@@ -5004,7 +5193,22 @@
       "resultsInfo": "Your result will appear after it is released by the instructor. You will receive a notification when published.",
       "backToExams": "Back to exams",
       "gradesPage": "Grades page",
-      "dashboard": "Dashboard"
+      "dashboard": "Dashboard",
+      "exam": "Exam",
+      "examWindowClosed": "The exam availability window has closed.",
+      "grade": "Grade",
+      "graded": "Graded",
+      "noExamsHint": "Exams appear here after your instructor publishes them (scheduled or open). Draft exams are not visible.",
+      "noExamsYet": "No published exams for your enrolled courses yet.",
+      "notOpenYet": "Not open yet",
+      "open": "Open",
+      "reexamWindow": "Re-exam window",
+      "score": "Score",
+      "submitConfirmTitle": "Submit all your answers and finish?",
+      "submitFailed": "Submit failed: {{msg}}",
+      "unanswered": "Unanswered",
+      "viewSubmission": "View submission",
+      "waitingToStartHint": "You can enter the exam when this countdown reaches zero."
     },
     "myCourses": "My courses",
     "courseGuide": "Course Guide",
@@ -5303,7 +5507,8 @@
         "transcript": "Transcript",
         "photo": "Personal photo",
         "other": "Other"
-      }
+      },
+      "statusActive": "Active"
     },
     "currentHours": "Current Hours",
     "lastSemesterAverage": "Last Semester's Average",
@@ -5372,7 +5577,215 @@
     "andMore": "and {n} other courses",
     "graduationPathAlerts": "Graduation Path Alerts",
     "comingSoon": "Coming soon",
-    "comingSoonDesc": "This section is under development and will be available soon."
+    "comingSoonDesc": "This section is under development and will be available soon.",
+    "dashboard": "Dashboard",
+    "examScoresVisible": "Exam scores appear here after you submit. Official semester GPA is confirmed at the end of the term.",
+    "registered": "Registered",
+    "requests": {
+      "addComment": "Add a comment or question",
+      "apply": "Apply",
+      "backToRequests": "Back to requests",
+      "businessDays": "business days",
+      "cancel": "Cancel request",
+      "cancelConfirm": "Cancel this request?",
+      "commentPlaceholder": "Write your question here...",
+      "comments": "Comments and messages",
+      "contact": "For enquiries:",
+      "detail": "Request details",
+      "done": "Done",
+      "downloadReceipt": "Download payment receipt",
+      "expectedCompletion": "Expected completion time",
+      "inProgress": "In progress",
+      "info": "Request information",
+      "myRequests": "My previous requests",
+      "noComments": "No comments yet.",
+      "noRequests": "No requests yet.",
+      "notFound": "Request not found.",
+      "pickup": "In-person pickup:",
+      "pickupValue": "Registration Office — Main Building",
+      "print": "Print request",
+      "processingTime": "Processing time:",
+      "quickActions": "Quick actions",
+      "requestNumber": "Request #",
+      "requestNumberLabel": "Request number:",
+      "send": "Send",
+      "sla": "Service level (SLA)",
+      "staff": "Registration staff",
+      "status": "Status",
+      "statusCancelled": "Cancelled",
+      "statusCompleted": "Completed",
+      "statusDraft": "Draft",
+      "statusProcessing": "Processing",
+      "statusRejected": "Rejected",
+      "statusSubmitted": "Submitted",
+      "stepDeliver": "Delivery",
+      "stepDeliverDesc": "Sending the document and a delivery notice",
+      "stepPrepare": "Preparing the document",
+      "stepPrepareDesc": "The document is being prepared and signed",
+      "stepReceived": "Request received",
+      "stepReceivedDesc": "Your request was recorded and sent for processing",
+      "stepVerify": "Data verification",
+      "stepVerifyDesc": "Your academic data was verified",
+      "student": "Student",
+      "submittedAt": "Submitted on",
+      "subtitleAr": "Request academic documents and services",
+      "timeline": "Request processing stages",
+      "title": "Requests center",
+      "titleAr": "Requests and services center",
+      "type": "Request type",
+      "workingHours": "Working hours:",
+      "workingHoursValue": "Sunday - Thursday 8:00 - 16:00",
+      "you": "You"
+    },
+    "typeYourAnswer": "Type your answer…",
+    "registrationPage": {
+      "active": "Active",
+      "add": "Add",
+      "addCourse": "Add course",
+      "blocked": "Blocked",
+      "confirmed": "Confirmed",
+      "conflicts": "Schedule conflicts",
+      "conflictsAuto": "Detected and reported immediately",
+      "course": "Course",
+      "currentRegistered": "Currently registered courses",
+      "drop": "Drop",
+      "max": "Maximum",
+      "maxHours": "Maximum hours",
+      "minHours": "Minimum hours",
+      "none": "No registered courses yet.",
+      "payToLift": "Pay to lift the hold",
+      "pickCourse": "Choose course",
+      "prereqs": "Prerequisites",
+      "prereqsAuto": "Applied automatically when adding",
+      "registeredHours": "Registered hours",
+      "rules": "Registration rules applied",
+      "state": "Registration status",
+      "status": "Status",
+      "summary": "Registration summary",
+      "time": "Time",
+      "totalHours": "Total registered hours",
+      "waitlisted": "Waitlisted",
+      "errors": {
+        "loadStudent": "Failed to load student data",
+        "loadSemesters": "Failed to load semesters",
+        "dropFailed": "Failed to drop course",
+        "loadClasses": "Failed to load classes",
+        "selectClass": "Please select at least one class",
+        "belowMinimum": "Total credits ({{current}} current + {{added}} new = {{total}} total) will be below minimum required ({{limit}}) for this semester.",
+        "aboveMaximum": "Total credits ({{current}} current + {{added}} new = {{total}} total) exceeds maximum allowed ({{limit}}) for this semester.",
+        "validateFailed": "Error validating enrollment. Please try again.",
+        "fixErrors": "Please fix the errors before submitting.",
+        "enrollFailed": "Failed to enroll in classes"
+      },
+      "reasons": {
+        "notStarted": "Registration has not started yet. Registration opens on {{date}}.",
+        "lateRegistration": "Late registration period. Late registration ends on {{date}}.",
+        "endedOn": "Registration period has ended. The deadline was {{date}}. Please contact the registrar's office.",
+        "ended": "Registration period has ended. Please contact the registrar's office.",
+        "checkFailed": "Error checking registration deadline. Please try again.",
+        "notOpen": "Registration is not currently open for this semester."
+      },
+      "seats": "{{n}} seats"
+    },
+    "subjectView": {
+      "notEnrolled": "You are not enrolled in this subject",
+      "loadFailed": "Failed to load subject data",
+      "gradesHiddenUntilReleased": "Official course grades are hidden until they are released.",
+      "status": {
+        "closed": "Closed",
+        "graded": "Graded",
+        "submittedLate": "Submitted Late",
+        "submitted": "Submitted",
+        "overdue": "Overdue",
+        "open": "Open",
+        "resultsReleased": "Results Released",
+        "scheduled": "Scheduled",
+        "unknown": "Unknown"
+      },
+      "back": "Back",
+      "error": "Error",
+      "notFound": "Subject not found or you are not enrolled",
+      "classInstructor": "Class Instructor",
+      "tabs": {
+        "overview": "Overview",
+        "materials": "Materials",
+        "homework": "Homework",
+        "exams": "Exams",
+        "teams": "Teams Meetings",
+        "recordings": "Recordings",
+        "attendance": "Attendance",
+        "grades": "Grades",
+        "forum": "Forum",
+        "qa": "Q&A"
+      },
+      "subjectInformation": "Subject Information",
+      "classCode": "Class Code",
+      "section": "Section",
+      "semester": "Semester",
+      "creditHours": "Credit Hours",
+      "type": "Type",
+      "subjectSemester": "Subject Semester",
+      "college": "College",
+      "description": "Description",
+      "syllabus": "Syllabus",
+      "actions": {
+        "viewMaterials": "View Materials",
+        "viewHomework": "View Homework",
+        "takeExams": "Take Exams",
+        "viewGrades": "View Grades",
+        "viewAttendance": "View Attendance"
+      },
+      "paymentRequiredToAccess": "Complete payment requirements to access",
+      "learningMaterials": "Learning Materials",
+      "openLink": "Open Link",
+      "download": "Download",
+      "noMaterials": "No materials available yet",
+      "teamsMeetings": "Microsoft Teams Meetings",
+      "minutes": "{{n}} minutes",
+      "joinTeamsMeeting": "Join Teams Meeting",
+      "noTeamsMeetings": "No Teams meetings scheduled yet.",
+      "checkBackLater": "Check back later or contact your instructor.",
+      "homeworkAssignments": "Homework Assignments",
+      "due": "Due:",
+      "points": "{{n}} points",
+      "yourSubmission": "Your Submission",
+      "submittedOn": "Submitted:",
+      "score": "Score:",
+      "comingSoon": "This feature will be available soon.",
+      "submitHomework": "Submit Homework",
+      "updateSubmission": "Update Submission",
+      "noHomework": "No homework assignments yet",
+      "takeExam": "Take Exam",
+      "noExams": "No exams scheduled yet",
+      "recordedLectures": "Recorded Lectures",
+      "watch": "Watch",
+      "noRecordings": "No recordings available yet",
+      "attendanceRecord": "Attendance Record",
+      "attendanceStatus": {
+        "present": "Present",
+        "absent": "Absent",
+        "late": "Late",
+        "excused": "Excused"
+      },
+      "noAttendance": "No attendance records yet",
+      "overallGrade": "Overall Grade",
+      "finalGrade": "Final Grade",
+      "letter": "Letter:",
+      "gradesNotAvailable": "Grades are not available",
+      "paymentRequiredForGrades": "Complete payment requirements to view grades",
+      "discussionForum": "Discussion Forum",
+      "newPost": "New Post",
+      "untitled": "Untitled",
+      "pinned": "Pinned",
+      "noForumPosts": "No forum posts yet. Be the first to post!",
+      "questionsAndAnswers": "Questions & Answers",
+      "askQuestion": "Ask Question",
+      "qPrefix": "Q:",
+      "aPrefix": "A:",
+      "askedOn": "Asked on",
+      "answeredOn": "Answered on",
+      "noQuestions": "No questions yet. Ask your first question!"
+    }
   },
   "instructorPortal": {
     "instructorPortal": "Instructor Portal",
@@ -5607,7 +6020,10 @@
         "pendingGrading": "Pending grading",
         "subjectInformation": "Subject information",
         "creditHours": "Credit hours",
-        "type": "Type"
+        "type": "Type",
+        "semester": "Semester",
+        "semesterNumber": "Semester {{n}}",
+        "college": "College"
       },
       "editSubject": "Edit subject",
       "attendance": {
@@ -5628,7 +6044,11 @@
         "noRecordsForClass": "No attendance records for this section yet.",
         "takeForSessionTitle": "Take attendance for a session",
         "openFullAttendancePage": "Open full attendance page",
-        "editingLocked": "Attendance editing is disabled for this term (admin settings). Edit actions are turned off until your program office enables them."
+        "editingLocked": "Attendance editing is disabled for this term (admin settings). Edit actions are turned off until your program office enables them.",
+        "selectClassLabel": "Select Class",
+        "classOption": "{{code}} - Section {{section}} ({{n}} students)",
+        "recentRecords": "Recent Attendance Records",
+        "noClasses": "No classes available. Create a class first."
       },
       "forum": {
         "title": "Moderate discussion forum",
@@ -5638,7 +6058,9 @@
         "pin": "Pin",
         "unpin": "Unpin",
         "lock": "Lock",
-        "unlock": "Unlock"
+        "unlock": "Unlock",
+        "untitled": "Untitled",
+        "viewReplies": "View replies ({{n}})"
       },
       "grades": {
         "title": "Grades management"
@@ -5654,7 +6076,73 @@
         "answerModalTitle": "Answer question",
         "answerPlaceholder": "Type your answer…",
         "submitAnswer": "Submit answer"
-      }
+      },
+      "errors": {
+        "instructorNotFound": "Instructor not found",
+        "notAssigned": "You are not assigned to teach any classes for this subject",
+        "loadFailed": "Failed to load subject data",
+        "notFound": "Subject not found or you are not assigned to teach any classes for this subject",
+        "updateHomework": "Failed to update homework status",
+        "closeHomework": "Failed to close homework",
+        "updateExam": "Failed to update exam status",
+        "releaseResults": "Failed to release exam results",
+        "deleteMaterial": "Failed to delete material",
+        "deleteHomework": "Failed to delete homework",
+        "deleteExam": "Failed to delete exam"
+      },
+      "status": {
+        "draft": "Draft",
+        "published": "Published",
+        "closed": "Closed",
+        "scheduled": "Scheduled",
+        "open": "Open",
+        "graded": "Graded",
+        "resultsReleased": "Results Released"
+      },
+      "confirm": {
+        "deleteMaterial": "Are you sure you want to delete this material?",
+        "deleteHomework": "Are you sure you want to delete this homework? All submissions will be deleted.",
+        "deleteExam": "Are you sure you want to delete this exam? All submissions will be deleted.",
+        "deleteRecording": "Delete this recording?"
+      },
+      "back": "Back",
+      "error": "Error",
+      "materials": {
+        "subjectTitle": "Subject materials (default)",
+        "subjectHint": "Default materials for this subject, visible to all students.",
+        "subjectEmpty": "No subject materials yet",
+        "classTitle": "Class materials",
+        "classHint": "Materials you added for your classes.",
+        "classEmpty": "No class materials yet. Click above to add."
+      },
+      "homework": {
+        "title": "Homework Assignments",
+        "create": "Create Homework",
+        "due": "Due:",
+        "empty": "No homework assignments yet"
+      },
+      "points": "{{n}} points",
+      "submissionsCount": "{{n}} submissions",
+      "gradedCount": "{{n}} graded",
+      "actions": {
+        "publish": "Publish",
+        "close": "Close",
+        "edit": "Edit",
+        "schedule": "Schedule",
+        "openExam": "Open Exam",
+        "closeExam": "Close Exam",
+        "releaseResults": "Release Results"
+      },
+      "exams": {
+        "create": "Create Exam",
+        "empty": "No exams created yet"
+      },
+      "recordings": {
+        "title": "Recorded Lectures",
+        "upload": "Upload Recording",
+        "empty": "No recordings uploaded yet"
+      },
+      "unknown": "Unknown"
     },
     "sessionsPanelNoClasses": "No class sections for this subject yet.",
     "studentsPanelNoClasses": "No class sections assigned.",
@@ -6653,7 +7141,113 @@
     "submitBlockedApprovals": "All assessment groups must be approved before submission.",
     "checkAllAssessmentsApproved": "All assessments approved",
     "examAnswersNav": "Exam answers",
-    "examAnswersPageTopbarTitle": "Exam answers"
+    "examAnswersPageTopbarTitle": "Exam answers",
+    "academicWeek": "Academic week",
+    "addRandomRule": "Add rule",
+    "allCategories": "All questions",
+    "allQuestions": "All",
+    "attemptDurationHint": "Countdown for each student after they start (not the 24-hour availability window).",
+    "autosaveInterval": "Autosave (sec)",
+    "availabilityEndHint": "Defaults to 24 hours after start. Separate from attempt duration below.",
+    "availabilityWindowHint": "When students may enter the exam (availability window).",
+    "bulkDelete": "Delete selected",
+    "bulkMove": "Move to…",
+    "categories": "Categories",
+    "category": "Category",
+    "categoryHasQuestions": "Cannot delete category with questions.",
+    "categoryName": "Category name",
+    "check": "Check",
+    "classCode": "Class",
+    "confirmBulkDelete": "Delete selected questions?",
+    "confirmDeleteCategory": "Delete this category?",
+    "correct": "Correct",
+    "correctAnswerIs": "The correct answer is '{{ans}}'.",
+    "correctFeedback": "Feedback for correct response",
+    "createCategory": "Create category",
+    "deanApproved": "Approved by dean",
+    "debarredStudents": "Debarred",
+    "enrolled": "Enrolled",
+    "enterQuestionText": "Enter question text",
+    "examDraftHint": "Click Publish Lesson after adding questions. Midterm/final exams also require a quiz password. Then use Next: Exam settings to open the exam window.",
+    "examDraftNotVisible": "Draft — not visible to students.",
+    "examInstructions": "Instructions",
+    "examInstructionsPlaceholder": "Enter instructions for students…",
+    "examPublishedOpen": "Published — open for students for the availability window (default 24 hours). Each student gets their own attempt timer once they start.",
+    "examPublishedScheduled": "Published as scheduled — students can see it; it opens when the start time arrives. Availability window defaults to 24 hours.",
+    "examScheduledStudentHint": "Students can see this exam as scheduled. It becomes enterable when status is Open (during the exam window).",
+    "examStatus": "Exam status",
+    "examStatusHelp": "Draft = hidden. Scheduled = visible, not enterable. Published = open for students.",
+    "feedback": "Feedback",
+    "fillCorrectResponses": "Fill in correct responses",
+    "generalFeedback": "General feedback",
+    "gradingAverage": "Average",
+    "gradingFirst": "First",
+    "gradingHighest": "Highest",
+    "gradingLast": "Last",
+    "gradingMethod": "Grading method",
+    "incorrect": "Incorrect",
+    "incorrectFeedback": "Feedback for incorrect response",
+    "loadExistingAssessment": "Load existing assessment",
+    "markedOutOf": "Marked out of {{n}}",
+    "monitorExamSubtitle": "{{submitted}} submitted · {{graded}} graded · avg {{avg}}",
+    "navFree": "Free",
+    "navSequential": "Sequential",
+    "navigationMode": "Navigation",
+    "noAnswer": "No answer",
+    "noAttemptsYet": "No attempts yet.",
+    "noCoursesAvailable": "No courses available",
+    "noCoursesForQuestionBank": "No active courses found. Assign classes to your instructor account first.",
+    "noManualQuestions": "No manual-grade questions in this exam.",
+    "noStudentsToSubmit": "No enrolled students to submit.",
+    "notYetAnswered": "Not yet answered",
+    "notifyStudentsOnChange": "Notify students about changes",
+    "optionFeedback": "Feedback for this response",
+    "passedStudents": "Passed",
+    "previewNeedsExam": "Save an exam with questions, then open preview from exam settings.",
+    "previewQuestion": "Preview",
+    "print": "Print",
+    "printDate": "Print date",
+    "printUser": "User",
+    "publishValidationFailed": "Cannot publish yet. Please fix the settings first.",
+    "publishedOpen": "Published (open)",
+    "question": "Question",
+    "questionName": "Question name",
+    "questionStatus": "Status",
+    "questionTypePreviewSoon": "Preview for this question type is coming soon.",
+    "questionsPerPage": "Questions per page",
+    "questionsRequired": "Add at least one question.",
+    "quizLayoutNav": "Layout & navigation",
+    "quizPassword": "Quiz password",
+    "quizPasswordRequired": "Quiz password is required for midterm/final.",
+    "randomCount": "Count",
+    "regularStudy": "Regular study",
+    "rootCategory": "Root category",
+    "saveAndPreview": "Save & preview",
+    "saveGrade": "Save grade",
+    "scheduled": "Scheduled",
+    "score": "Score",
+    "searchQuestions": "Search",
+    "searchQuestionsPlaceholder": "Search by name or text…",
+    "sectionAverage": "Section average",
+    "selectCourse": "Subject / course",
+    "selectExamToGrade": "Open this page from an exam to grade its answers.",
+    "selectExamToMonitor": "Open this page from an exam to monitor its attempts.",
+    "selectSubmission": "Select a submission",
+    "startAgain": "Start again",
+    "startedAt": "Started",
+    "studentId": "Student ID",
+    "studentName": "Name",
+    "studyType": "Study type",
+    "submissions": "Submissions",
+    "submitBlockedMissingGrades": "Some students are missing grades. Enter all grades before submitting.",
+    "submitBlockedWeights": "Grade weights must total 100% before approval.",
+    "submittedAt": "Submitted",
+    "templateLocked": "This lesson is locked to the admin subject template. You can preview it, but cannot edit the content.",
+    "totalStudents": "Total students",
+    "uncategorized": "Uncategorized",
+    "universityName": "University",
+    "unknownSubject": "Subject",
+    "welcomeGreetingAr": "Welcome,"
   },
   "applyForm": {
     "steps": {
@@ -6809,8 +7403,25 @@
       "passwordShort": "Password must be at least 8 characters.",
       "passwordMismatch": "Passwords do not match.",
       "accountExistsWrongPassword": "An account with this email already exists. Enter the correct password, or sign in to the applicant portal first.",
-      "accountExists": "An account with this email already exists. Please sign in to the applicant portal, then apply from there."
-    }
+      "accountExists": "An account with this email already exists. Please sign in to the applicant portal, then apply from there.",
+      "educationLevelRequired": "Please select your highest education level.",
+      "graduationYearRequired": "Please enter your year of graduation.",
+      "graduationYearRange": "Year of graduation must be between {{min}} and {{max}}.",
+      "gpaInvalid": "Grade / GPA must be a number between 0 and 4.",
+      "nameRequired": "Please enter your first and last name as shown on your ID.",
+      "dobRequired": "Please enter your date of birth.",
+      "dobFuture": "Date of birth cannot be in the future.",
+      "dobInvalid": "Please enter a valid date of birth.",
+      "dobTooYoung": "Applicants must be at least {{age}} years old. Please check your date of birth.",
+      "idNumberRequired": "Please enter your passport or ID number.",
+      "idIssueFuture": "Date of issue cannot be in the future.",
+      "idExpiryBeforeIssue": "Expiry date must be after the date of issue.",
+      "emailRequired": "Please enter your email address.",
+      "emailInvalid": "Please enter a valid email address, for example name@example.com.",
+      "mobileRequired": "Please enter your mobile number.",
+      "mobileInvalid": "Please enter your complete mobile number."
+    },
+    "degreeLevelClosed": "{{level}} (not open for applications)"
   },
   "registerApplication": {
     "headerTitle": "Student application",
@@ -7130,7 +7741,21 @@
     "reexamBulkConfirm": "Allow {{n}} selected students to re-take this exam during the window below. Current answers are archived; the latest attempt will drive the gradebook.",
     "retakeWindowLabel": "Window",
     "minutesShort": "min",
-    "attemptHistory": "Previous attempts"
+    "attemptHistory": "Previous attempts",
+    "allSubjects": "All subjects",
+    "attempts": "Attempts",
+    "changeExam": "Choose another exam",
+    "clearSubjectFilter": "Clear subject filter",
+    "examCount": "{{n}} exams",
+    "filterSubject": "Subject",
+    "noExamsHint": "Online exams will appear here once they are created for a class.",
+    "noExamsMatch": "No exams match your filters.",
+    "open": "Open",
+    "pickExamTitle": "Choose an exam to review",
+    "points": "Points",
+    "questions": "Questions",
+    "searchExams": "Search exams by title or subject…",
+    "tryClearFilters": "Try clearing search or subject filters."
   },
   "adminGradesExport": {
     "breadcrumb": "Grades export",
@@ -7153,5 +7778,118 @@
     "statsExams": "{{n}} exams",
     "statsAttempts": "{{n}} exam attempts",
     "related": "Related"
+  },
+  "studentLogin": {
+    "loading": "Loading…",
+    "back": "Back",
+    "portalBadge": "Student Portal",
+    "heroTitle": "Learn, track progress, and manage your studies.",
+    "heroSubtitle": "Sign in to access courseware, grades, requests, and all your student services in one place.",
+    "cards": {
+      "courseware": {
+        "title": "Courseware",
+        "value": "Lessons, quizzes, exams"
+      },
+      "progress": {
+        "title": "Progress",
+        "value": "Track completion & performance"
+      },
+      "requests": {
+        "title": "Requests",
+        "value": "Submit and follow up easily"
+      }
+    },
+    "footer": "University Management System • Imam Bukhari University (IBU)",
+    "title": "Welcome back",
+    "subtitle": "Sign in with your student account.",
+    "rolePill": "Student",
+    "emailAddress": "Email address",
+    "password": "Password",
+    "enterPassword": "Enter your password",
+    "showPassword": "Show password",
+    "hidePassword": "Hide password",
+    "forgotPassword": "Forgot password?",
+    "signingIn": "Signing in…",
+    "signIn": "Sign in",
+    "failedToSignIn": "Failed to sign in",
+    "policyNote": "By signing in, you agree to the university’s acceptable use policy.",
+    "accessDenied": "Access denied: {{reason}}",
+    "initialPaymentRequired": "You need to make an initial payment (10%) to access the student portal. Please contact the finance office or make a payment.",
+    "statusNotAllowed": "Your account status ({{status}}) does not allow portal access. Please contact the admissions office.",
+    "statusUnknown": "Unknown"
+  },
+  "collegeLogin": {
+    "loading": "Loading…",
+    "back": "Back",
+    "portalBadge": "College Portal",
+    "heroTitle": "Manage your college settings.",
+    "heroSubtitle": "Sign in to access college administration tools.",
+    "cards": {
+      "operations": {
+        "title": "Operations",
+        "value": "Students, instructors, classes"
+      },
+      "finance": {
+        "title": "Finance",
+        "value": "Invoices, receipts, reports"
+      },
+      "settings": {
+        "title": "Settings",
+        "value": "Configure your college portal"
+      }
+    },
+    "footer": "University Management System • Imam Bukhari University (IBU)",
+    "title": "Welcome back",
+    "subtitle": "Sign in with your college account.",
+    "rolePill": "College",
+    "emailAddress": "Email address",
+    "password": "Password",
+    "enterPassword": "Enter your password",
+    "showPassword": "Show password",
+    "hidePassword": "Hide password",
+    "forgotPassword": "Forgot password?",
+    "signingIn": "Signing in…",
+    "signIn": "Sign in",
+    "failedToSignIn": "Failed to sign in"
+  },
+  "trackApplication": {
+    "title": "Track Your Application",
+    "subtitle": "Enter your application number and date of birth to view your application status",
+    "applicationNumber": "Application Number",
+    "dateOfBirth": "Date of Birth",
+    "searching": "Searching...",
+    "submit": "Track Application",
+    "noNumber": "Don't have an application number?",
+    "registerHere": "Register here",
+    "errors": {
+      "bothRequired": "Please enter both application number and date of birth",
+      "notFound": "Application not found. Please check your application number and date of birth.",
+      "fetchFailed": "Could not load your application. Please try again."
+    }
+  },
+  "signup": {
+    "title": "Create Account",
+    "subtitle": "Join Imam Bukhari University (IBU)",
+    "fullName": "Full Name",
+    "fullNamePlaceholder": "Your full name",
+    "emailAddress": "Email Address",
+    "password": "Password",
+    "passwordPlaceholder": "At least 6 characters",
+    "confirmPassword": "Confirm Password",
+    "confirmPasswordPlaceholder": "Confirm your password",
+    "creating": "Creating account...",
+    "submit": "Create Account",
+    "haveAccount": "Already have an account?",
+    "signIn": "Sign in",
+    "errors": {
+      "passwordMismatch": "Passwords do not match",
+      "passwordShort": "Password must be at least 6 characters",
+      "failed": "Failed to sign up"
+    }
+  },
+  "public": {
+    "status": {
+      "applicationNumber": "Application #"
+    }
   }
 }

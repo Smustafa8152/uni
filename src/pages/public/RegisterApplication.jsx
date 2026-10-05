@@ -42,6 +42,34 @@ const LANGUAGE_CERTIFICATES = ['toefl', 'ielts', 'muet', 'arabic_proficiency', '
 const REFERRAL_SOURCES = ['website', 'social_media', 'agent', 'staff', 'student', 'friend', 'advertisement', 'other']
 const TITLES = ['mr', 'mrs', 'ms', 'dr']
 
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/
+const MIN_GRADUATION_YEAR = 1950
+const MIN_APPLICANT_AGE = 14
+const MIN_MOBILE_DIGITS = 6
+const MAX_PHONE_DIGITS = 15
+
+/** Today as YYYY-MM-DD in the applicant's own time zone, comparable with <input type="date"> values. */
+function todayIso() {
+  const d = new Date()
+  const pad = (n) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
+}
+
+/** Latest date of birth that still makes the applicant MIN_APPLICANT_AGE years old today. */
+function latestBirthDateIso() {
+  const d = new Date()
+  const pad = (n) => String(n).padStart(2, '0')
+  return `${d.getFullYear() - MIN_APPLICANT_AGE}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
+}
+
+/** A dial code plus a couple of digits is not a reachable number. */
+function isCompleteMobile(phone) {
+  const stored = formatStoredPhone(phone)
+  if (!stored) return false
+  const [dial, national = ''] = stored.split(' ')
+  return national.length >= MIN_MOBILE_DIGITS && dial.replace(/\D/g, '').length + national.length <= MAX_PHONE_DIGITS
+}
+
 const PAST_SEMESTER_STATUSES = new Set(['completed', 'archived', 'closed', 'cancelled', 'ended'])
 
 function isUpcomingSemester(semester, today = new Date()) {
@@ -717,92 +745,139 @@ export default function RegisterApplication({ portal = false }) {
 
   const localizedName = (row) => (language === 'ar' && row?.name_ar ? row.name_ar : row?.name_en)
 
+  /** With more than one intake on offer, the dates tell apart semesters that carry the same name. */
+  const semesterLabel = (semester) => {
+    const name = String(localizedName(semester) || '').trim()
+    if (availableSemesters.length < 2) return name
+    const monthYear = (value) => {
+      const d = value ? new Date(value) : null
+      if (!d || Number.isNaN(d.getTime())) return ''
+      return new Intl.DateTimeFormat(language === 'ar' ? 'ar-u-nu-latn' : 'en-GB', { month: 'short', year: 'numeric' }).format(d)
+    }
+    const range = [monthYear(semester.start_date), monthYear(semester.end_date)].filter(Boolean).join(' – ')
+    return range ? `${name} · ${range}` : name
+  }
+
   const parseDecimalField = (raw, { scale, min = null, max = null }) => {
     if (raw == null || String(raw).trim() === '') return { value: null, error: null }
     const s = String(raw).trim()
-    if (!/^\d+(\.\d+)?$/.test(s)) return { value: null, error: 'Invalid number format' }
+    if (!/^\d+(\.\d+)?$/.test(s)) return { value: null, error: 'format' }
     const n = Number(s)
-    if (!Number.isFinite(n)) return { value: null, error: 'Invalid number' }
-    if (min != null && n < min) return { value: null, error: `Must be at least ${min}` }
-    if (max != null && n > max) return { value: null, error: `Must be at most ${max}` }
+    if (!Number.isFinite(n)) return { value: null, error: 'format' }
+    if (min != null && n < min) return { value: null, error: 'range' }
+    if (max != null && n > max) return { value: null, error: 'range' }
     return { value: Number(n.toFixed(scale)), error: null }
   }
 
-  const invalidFieldsForStep = (step) => {
-    const fields = []
+  /** Every problem on a step, in the order the fields appear, each with the message shown to the applicant. */
+  const stepIssues = (step) => {
+    const issues = []
+    const add = (field, message) => issues.push({ field, message })
+    const today = todayIso()
+
     if (step === 1) {
-      if (!formData.semester_id) fields.push('semester_id')
-      if (!formData.degree_level) fields.push('degree_level')
-      else if (!programLocked && !activeDegreeLevels.includes(formData.degree_level)) fields.push('degree_level_inactive')
-      if (!selectedCollegeId) fields.push('college_id')
-      if (!formData.major_id) fields.push('major_id')
+      if (!formData.semester_id) add('semester_id', t('applyForm.errors.selectIntake', 'Please select a semester.'))
+      if (!formData.degree_level) {
+        add('degree_level', t('applyForm.errors.selectDegreeLevel', 'Please select an academic level.'))
+      } else if (!programLocked && !activeDegreeLevels.includes(formData.degree_level)) {
+        add('degree_level', t('applyForm.errors.degreeLevelInactive', 'This academic level is not open for applications.'))
+      }
+      if (!selectedCollegeId) add('college_id', t('registerApplication.errors.selectCollegeFirst'))
+      if (!formData.major_id) add('major_id', t('registerApplication.errors.selectMajor'))
     }
+
     if (step === 2) {
       const allowedEducation = previousEducationFor(formData.degree_level)
       if (!formData.highest_education_level || !allowedEducation.includes(formData.highest_education_level)) {
-        fields.push('highest_education_level')
+        add('highest_education_level', t('applyForm.errors.educationLevelRequired', 'Please select your highest education level.'))
       }
       const year = String(formData.graduation_year ?? '').trim()
       const yearNum = Number(year)
-      if (!year || !Number.isInteger(yearNum) || yearNum < 1950 || yearNum > 2100) fields.push('graduation_year')
-      const g = parseDecimalField(formData.gpa, { scale: 2, min: 0, max: 4 })
-      if (g.error) fields.push('gpa')
+      const maxYear = new Date().getFullYear()
+      if (!year) {
+        add('graduation_year', t('applyForm.errors.graduationYearRequired', 'Please enter your year of graduation.'))
+      } else if (!Number.isInteger(yearNum) || yearNum < MIN_GRADUATION_YEAR || yearNum > maxYear) {
+        add(
+          'graduation_year',
+          t('applyForm.errors.graduationYearRange', 'Year of graduation must be between {{min}} and {{max}}.', {
+            min: MIN_GRADUATION_YEAR,
+            max: maxYear,
+          })
+        )
+      }
+      if (parseDecimalField(formData.gpa, { scale: 2, min: 0, max: 4 }).error) {
+        add('gpa', t('applyForm.errors.gpaInvalid', 'Grade / GPA must be a number between 0 and 4.'))
+      }
     }
+
     if (step === 3) {
-      if (!formData.first_name.trim()) fields.push('first_name')
-      if (!formData.last_name.trim()) fields.push('last_name')
-      if (!formData.date_of_birth) fields.push('date_of_birth')
+      const nameMessage = t('applyForm.errors.nameRequired', 'Please enter your first and last name as shown on your ID.')
+      if (!formData.first_name.trim()) add('first_name', nameMessage)
+      if (!formData.last_name.trim()) add('last_name', nameMessage)
+      const dob = formData.date_of_birth
+      if (!dob) {
+        add('date_of_birth', t('applyForm.errors.dobRequired', 'Please enter your date of birth.'))
+      } else if (dob > today) {
+        add('date_of_birth', t('applyForm.errors.dobFuture', 'Date of birth cannot be in the future.'))
+      } else if (dob < '1900-01-01') {
+        add('date_of_birth', t('applyForm.errors.dobInvalid', 'Please enter a valid date of birth.'))
+      } else if (dob > latestBirthDateIso()) {
+        add(
+          'date_of_birth',
+          t('applyForm.errors.dobTooYoung', 'Applicants must be at least {{age}} years old. Please check your date of birth.', {
+            age: MIN_APPLICANT_AGE,
+          })
+        )
+      }
     }
+
+    if (step === 4) {
+      if (!String(formData.id_number ?? '').trim()) {
+        add('id_number', t('applyForm.errors.idNumberRequired', 'Please enter your passport or ID number.'))
+      }
+      if (formData.id_issue_date && formData.id_issue_date > today) {
+        add('id_issue_date', t('applyForm.errors.idIssueFuture', 'Date of issue cannot be in the future.'))
+      }
+      if (formData.id_issue_date && formData.id_expiry_date && formData.id_expiry_date <= formData.id_issue_date) {
+        add('id_expiry_date', t('applyForm.errors.idExpiryBeforeIssue', 'Expiry date must be after the date of issue.'))
+      }
+    }
+
     if (step === 5) {
-      if (!formData.email.trim()) fields.push('email')
-      if (!formatStoredPhone(formData.phone)) fields.push('phone')
+      const email = formData.email.trim()
+      if (!email) {
+        add('email', t('applyForm.errors.emailRequired', 'Please enter your email address.'))
+      } else if (!EMAIL_PATTERN.test(email)) {
+        add('email', t('applyForm.errors.emailInvalid', 'Please enter a valid email address, for example name@example.com.'))
+      }
+      if (!formatStoredPhone(formData.phone)) {
+        add('phone', t('applyForm.errors.mobileRequired', 'Please enter your mobile number.'))
+      } else if (!isCompleteMobile(formData.phone)) {
+        add('phone', t('applyForm.errors.mobileInvalid', 'Please enter your complete mobile number.'))
+      }
     }
+
     if (step === 6) {
       if (needsAccount) {
-        if (!formData.password || formData.password.length < 8) fields.push('password')
-        if (formData.password !== formData.password_confirm) fields.push('password_confirm')
+        if (!formData.password || formData.password.length < 8) {
+          add('password', t('applyForm.errors.passwordShort', 'Password must be at least 8 characters.'))
+        }
+        if (formData.password !== formData.password_confirm) {
+          add('password_confirm', t('applyForm.errors.passwordMismatch', 'Passwords do not match.'))
+        }
       }
+      const documentsMessage = t('applyForm.errors.documentsRequired', 'Please upload your ID, certificate, and transcript.')
       for (const { key } of CORE_DOCUMENT_SPECS) {
-        if (!documentFiles[key]) fields.push(`doc:${key}`)
+        if (!documentFiles[key]) add(`doc:${key}`, documentsMessage)
       }
     }
-    return fields
+
+    return issues
   }
 
-  const validateStep = (step) => {
-    const missing = invalidFieldsForStep(step)
-    if (missing.length === 0) return null
-    switch (step) {
-      case 1:
-        if (missing.includes('college_id')) return t('registerApplication.errors.selectCollegeFirst')
-        if (missing.includes('degree_level_inactive')) return t('applyForm.errors.degreeLevelInactive', 'This academic level is not open for applications.')
-        if (missing.includes('degree_level')) return t('applyForm.errors.selectDegreeLevel', 'Please select an academic level.')
-        if (missing.includes('major_id')) return t('registerApplication.errors.selectMajor')
-        if (missing.includes('semester_id')) return t('applyForm.errors.selectIntake', 'Please select a semester.')
-        break
-      case 2: {
-        if (missing.includes('highest_education_level') || missing.includes('graduation_year')) {
-          return t('applyForm.errors.educationRequired', 'Please select your highest education level and year of graduation.')
-        }
-        const g = parseDecimalField(formData.gpa, { scale: 2, min: 0, max: 4 })
-        if (g.error) return `${t('registerApplication.errors.gpaPrefix')}: ${g.error}`
-        break
-      }
-      case 3:
-        return t('applyForm.errors.personalRequired', 'Please enter your full name and date of birth.')
-      case 5:
-        return t('applyForm.errors.contactRequired', 'Email and mobile number are required.')
-      case 6: {
-        if (missing.includes('password')) return t('applyForm.errors.passwordShort', 'Password must be at least 8 characters.')
-        if (missing.includes('password_confirm')) return t('applyForm.errors.passwordMismatch', 'Passwords do not match.')
-        if (missing.some((field) => field.startsWith('doc:'))) {
-          return t('applyForm.errors.documentsRequired', 'Please upload your ID, certificate, and transcript.')
-        }
-        break
-      }
-    }
-    return null
-  }
+  const invalidFieldsForStep = (step) => stepIssues(step).map((issue) => issue.field)
+
+  const validateStep = (step) => stepIssues(step)[0]?.message ?? null
 
   const handleNext = () => {
     const missing = invalidFieldsForStep(currentStep)
@@ -957,10 +1032,16 @@ export default function RegisterApplication({ portal = false }) {
   }
 
   const handleSubmit = async () => {
-    const validationError = validateStep(currentStep)
-    if (validationError) {
-      setInvalidFields(invalidFieldsForStep(currentStep))
-      setError(validationError)
+    // A saved draft can reopen on a later step, so every step is checked again before sending.
+    for (const { id: stepId } of steps) {
+      const issues = stepIssues(stepId)
+      if (issues.length === 0) continue
+      if (stepId !== currentStep) {
+        setCurrentStep(stepId)
+        window.scrollTo({ top: 0, behavior: 'smooth' })
+      }
+      setInvalidFields(issues.map((issue) => issue.field))
+      setError(issues[0].message)
       return
     }
     if (!selectedCollegeId) {
@@ -1250,7 +1331,7 @@ export default function RegisterApplication({ portal = false }) {
                         <option value="">{t('common.select', 'Please select')}</option>
                         {availableSemesters.map((s) => (
                           <option key={s.id} value={s.id}>
-                            {localizedName(s)}
+                            {semesterLabel(s)}
                           </option>
                         ))}
                       </select>
@@ -1296,7 +1377,11 @@ export default function RegisterApplication({ portal = false }) {
                         <option value="">{t('common.select', 'Please select')}</option>
                         {APPLICATION_DEGREE_LEVELS.map((lvl) => (
                           <option key={lvl} value={lvl} disabled={!activeDegreeLevels.includes(lvl)}>
-                            {t(`applyForm.degreeLevels.${lvl}`)}
+                            {activeDegreeLevels.includes(lvl)
+                              ? t(`applyForm.degreeLevels.${lvl}`)
+                              : t('applyForm.degreeLevelClosed', '{{level}} (not open for applications)', {
+                                  level: t(`applyForm.degreeLevels.${lvl}`),
+                                })}
                           </option>
                         ))}
                       </select>
@@ -1470,7 +1555,7 @@ export default function RegisterApplication({ portal = false }) {
                       <input type="text" name="high_school_name" value={formData.high_school_name} onChange={handleChange} className={inputClass} />
                     </Field>
                     <Field label={t('applyForm.fields.graduationYear', 'Year of graduation')} required invalid={invalidFields.includes('graduation_year')}>
-                      <input type="number" name="graduation_year" value={formData.graduation_year} onChange={handleChange} min="1950" max="2100" placeholder="YYYY" className={inputClass} />
+                      <input type="number" name="graduation_year" value={formData.graduation_year} onChange={handleChange} min={MIN_GRADUATION_YEAR} max={new Date().getFullYear()} placeholder="YYYY" className={inputClass} />
                     </Field>
                       <Field label={t('applyForm.fields.gpa', 'Grade / GPA')} invalid={invalidFields.includes('gpa')} hint={t('applyForm.hints.gpa', 'On a 4.00 scale')}>
                       <input type="number" name="gpa" value={formData.gpa} onChange={handleChange} min="0" max="4" step="0.01" className={inputClass} />
@@ -1562,7 +1647,7 @@ export default function RegisterApplication({ portal = false }) {
                     <input type="text" name="name_ar" value={formData.name_ar} onChange={handleChange} dir="rtl" className={inputClass} />
                   </Field>
                   <Field label={t('applyForm.fields.dateOfBirth', 'Date of birth')} required invalid={invalidFields.includes('date_of_birth')}>
-                    <input type="date" name="date_of_birth" value={formData.date_of_birth} onChange={handleChange} className={inputClass} />
+                    <input type="date" name="date_of_birth" value={formData.date_of_birth} onChange={handleChange} min="1900-01-01" max={latestBirthDateIso()} className={inputClass} />
                   </Field>
                   <Field label={t('applyForm.fields.gender', 'Gender')}>
                     <Segmented
@@ -1603,7 +1688,7 @@ export default function RegisterApplication({ portal = false }) {
                       ))}
                     </select>
                   </Field>
-                  <Field label={t('applyForm.fields.idNumber', 'Passport / ID number')}>
+                  <Field label={t('applyForm.fields.idNumber', 'Passport / ID number')} required invalid={invalidFields.includes('id_number')}>
                     <input type="text" name="id_number" value={formData.id_number} onChange={handleChange} dir="ltr" className={inputClass} />
                   </Field>
                   <Field label={t('applyForm.fields.idIssueCountry', 'Country of issue')}>
@@ -1616,11 +1701,11 @@ export default function RegisterApplication({ portal = false }) {
                     />
                   </Field>
                   <div className="hidden md:block" />
-                  <Field label={t('applyForm.fields.idIssueDate', 'Date of issue')}>
-                    <input type="date" name="id_issue_date" value={formData.id_issue_date} onChange={handleChange} className={inputClass} />
+                  <Field label={t('applyForm.fields.idIssueDate', 'Date of issue')} invalid={invalidFields.includes('id_issue_date')}>
+                    <input type="date" name="id_issue_date" value={formData.id_issue_date} onChange={handleChange} max={todayIso()} className={inputClass} />
                   </Field>
-                  <Field label={t('applyForm.fields.idExpiryDate', 'Expiry date')}>
-                    <input type="date" name="id_expiry_date" value={formData.id_expiry_date} onChange={handleChange} className={inputClass} />
+                  <Field label={t('applyForm.fields.idExpiryDate', 'Expiry date')} invalid={invalidFields.includes('id_expiry_date')}>
+                    <input type="date" name="id_expiry_date" value={formData.id_expiry_date} onChange={handleChange} min={formData.id_issue_date || undefined} className={inputClass} />
                   </Field>
                 </div>
               </SectionCard>

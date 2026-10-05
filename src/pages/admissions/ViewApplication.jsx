@@ -83,10 +83,10 @@ function EditApplicationModal({
             <h2 className="text-xl font-bold text-gray-900 mb-6">{t('admissions.steps.personal')}</h2>
             
             <div>
-              <h3 className="text-lg font-semibold text-gray-800 mb-4">Basic Information (English)</h3>
+              <h3 className="text-lg font-semibold text-gray-800 mb-4">{t('admissions.viewApplication.editModal.fields.basicInfoEn')}</h3>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">First Name *</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">{t('admissions.viewApplication.editModal.fields.firstName')} *</label>
                   <input
                     type="text"
                     value={formData.first_name || ''}
@@ -96,7 +96,7 @@ function EditApplicationModal({
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Middle Name</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">{t('admissions.viewApplication.editModal.fields.middleName')}</label>
                   <input
                     type="text"
                     value={formData.middle_name || ''}
@@ -105,7 +105,7 @@ function EditApplicationModal({
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Last Name *</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">{t('admissions.viewApplication.editModal.fields.lastName')} *</label>
                   <input
                     type="text"
                     value={formData.last_name || ''}
@@ -118,10 +118,10 @@ function EditApplicationModal({
             </div>
 
             <div>
-              <h3 className="text-lg font-semibold text-gray-800 mb-4">Basic Information (Arabic - Optional)</h3>
+              <h3 className="text-lg font-semibold text-gray-800 mb-4">{t('admissions.viewApplication.editModal.fields.basicInfoAr')}</h3>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">First Name (Arabic)</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">{t('admissions.viewApplication.editModal.fields.firstNameAr')}</label>
                   <input
                     type="text"
                     value={formData.first_name_ar || ''}
@@ -131,7 +131,7 @@ function EditApplicationModal({
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Middle Name (Arabic)</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">{t('admissions.viewApplication.editModal.fields.middleNameAr')}</label>
                   <input
                     type="text"
                     value={formData.middle_name_ar || ''}
@@ -141,7 +141,7 @@ function EditApplicationModal({
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Last Name (Arabic)</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">{t('admissions.viewApplication.editModal.fields.lastNameAr')}</label>
                   <input
                     type="text"
                     value={formData.last_name_ar || ''}
@@ -154,10 +154,10 @@ function EditApplicationModal({
             </div>
 
             <div>
-              <h3 className="text-lg font-semibold text-gray-800 mb-4">Personal Details</h3>
+              <h3 className="text-lg font-semibold text-gray-800 mb-4">{t('admissions.viewApplication.editModal.fields.personalDetails')}</h3>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Email Address *</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">{t('admissions.viewApplication.editModal.fields.emailAddress')} *</label>
                   <input
                     type="email"
                     value={formData.email || ''}
@@ -167,7 +167,7 @@ function EditApplicationModal({
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Phone Number</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">{t('admissions.viewApplication.editModal.fields.phoneNumber')}</label>
                   <input
                     type="tel"
                     value={formData.phone || ''}
@@ -176,7 +176,7 @@ function EditApplicationModal({
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Date of Birth *</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">{t('admissions.viewApplication.editModal.fields.dateOfBirth')} *</label>
                   <input
                     type="date"
                     value={formData.date_of_birth || ''}
@@ -186,20 +186,20 @@ function EditApplicationModal({
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Gender</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">{t('admissions.viewApplication.editModal.fields.gender')}</label>
                   <select
                     value={formData.gender || ''}
                     onChange={(e) => handleFieldChange('gender', e.target.value)}
                     className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
                   >
-                    <option value="">Select Gender</option>
-                    <option value="male">Male</option>
-                    <option value="female">Female</option>
-                    <option value="other">Other</option>
+                    <option value="">{t('admissions.viewApplication.editModal.fields.selectGender')}</option>
+                    <option value="male">{t('admissions.viewApplication.editModal.fields.male')}</option>
+                    <option value="female">{t('admissions.viewApplication.editModal.fields.female')}</option>
+                    <option value="other">{t('admissions.viewApplication.editModal.fields.other')}</option>
                   </select>
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Nationality</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">{t('admissions.viewApplication.editModal.fields.nationality')}</label>
                   <NationalitySelect
                     value={formData.nationality || ''}
                     onChange={(code) => handleFieldChange('nationality', code)}
@@ -207,7 +207,7 @@ function EditApplicationModal({
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Religion</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">{t('admissions.viewApplication.editModal.fields.religion')}</label>
                   <input
                     type="text"
                     value={formData.religion || ''}
@@ -216,7 +216,7 @@ function EditApplicationModal({
                   />
                 </div>
                 <div className="md:col-span-2">
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Place of Birth</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">{t('admissions.viewApplication.editModal.fields.placeOfBirth')}</label>
                   <input
                     type="text"
                     value={formData.place_of_birth || ''}
@@ -225,7 +225,7 @@ function EditApplicationModal({
                   />
                 </div>
                 <div className="md:col-span-2">
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Enrollment Date</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">{t('admissions.viewApplication.editModal.fields.enrollmentDate')}</label>
                   <input
                     type="date"
                     value={formData.enrollment_date || ''}
@@ -243,7 +243,7 @@ function EditApplicationModal({
             <h2 className="text-xl font-bold text-gray-900 mb-6">{t('admissions.steps.contact')}</h2>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div className="md:col-span-2">
-                <label className="block text-sm font-medium text-gray-700 mb-2">Street Address</label>
+                <label className="block text-sm font-medium text-gray-700 mb-2">{t('admissions.viewApplication.editModal.fields.streetAddress')}</label>
                 <input
                   type="text"
                   value={formData.street_address || ''}
@@ -252,7 +252,7 @@ function EditApplicationModal({
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">City</label>
+                <label className="block text-sm font-medium text-gray-700 mb-2">{t('admissions.viewApplication.editModal.fields.city')}</label>
                 <input
                   type="text"
                   value={formData.city || ''}
@@ -261,7 +261,7 @@ function EditApplicationModal({
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">State / Province</label>
+                <label className="block text-sm font-medium text-gray-700 mb-2">{t('admissions.viewApplication.editModal.fields.stateProvince')}</label>
                 <input
                   type="text"
                   value={formData.state_province || ''}
@@ -270,7 +270,7 @@ function EditApplicationModal({
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Postal / ZIP Code</label>
+                <label className="block text-sm font-medium text-gray-700 mb-2">{t('admissions.viewApplication.editModal.fields.postalCode')}</label>
                 <input
                   type="text"
                   value={formData.postal_code || ''}
@@ -279,7 +279,7 @@ function EditApplicationModal({
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Country</label>
+                <label className="block text-sm font-medium text-gray-700 mb-2">{t('admissions.viewApplication.editModal.fields.country')}</label>
                 <input
                   type="text"
                   value={formData.country || ''}
@@ -296,7 +296,7 @@ function EditApplicationModal({
             <h2 className="text-xl font-bold text-gray-900 mb-6">{t('admissions.steps.emergency')}</h2>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Contact Name</label>
+                <label className="block text-sm font-medium text-gray-700 mb-2">{t('admissions.viewApplication.editModal.fields.contactName')}</label>
                 <input
                   type="text"
                   value={formData.emergency_contact_name || ''}
@@ -305,7 +305,7 @@ function EditApplicationModal({
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Relationship</label>
+                <label className="block text-sm font-medium text-gray-700 mb-2">{t('admissions.viewApplication.editModal.fields.relationship')}</label>
                 <input
                   type="text"
                   value={formData.emergency_contact_relationship || ''}
@@ -314,7 +314,7 @@ function EditApplicationModal({
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Phone Number</label>
+                <label className="block text-sm font-medium text-gray-700 mb-2">{t('admissions.viewApplication.editModal.fields.phoneNumber')}</label>
                 <input
                   type="tel"
                   value={formData.emergency_contact_phone || ''}
@@ -323,7 +323,7 @@ function EditApplicationModal({
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Email Address</label>
+                <label className="block text-sm font-medium text-gray-700 mb-2">{t('admissions.viewApplication.editModal.fields.emailAddress')}</label>
                 <input
                   type="email"
                   value={formData.emergency_contact_email || ''}
@@ -340,14 +340,14 @@ function EditApplicationModal({
             <h2 className="text-xl font-bold text-gray-900 mb-6">{t('admissions.steps.academic')}</h2>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Major *</label>
+                <label className="block text-sm font-medium text-gray-700 mb-2">{t('admissions.viewApplication.editModal.fields.major')} *</label>
                 <select
                   value={formData.major_id || ''}
                   onChange={(e) => handleFieldChange('major_id', e.target.value)}
                   className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
                   required
                 >
-                  <option value="">Select Major</option>
+                  <option value="">{t('admissions.viewApplication.editModal.fields.selectMajor')}</option>
                   {majors.map((major) => (
                     <option key={major.id} value={major.id}>
                       {getLocalizedName(major, isArabicLayout) || major.name_en} ({major.code})
@@ -356,13 +356,13 @@ function EditApplicationModal({
                 </select>
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Semester</label>
+                <label className="block text-sm font-medium text-gray-700 mb-2">{t('admissions.viewApplication.editModal.fields.semester')}</label>
                 <select
                   value={formData.semester_id || ''}
                   onChange={(e) => handleFieldChange('semester_id', e.target.value)}
                   className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
                 >
-                  <option value="">Select Semester</option>
+                  <option value="">{t('admissions.viewApplication.editModal.fields.selectSemester')}</option>
                   {semesters.map((semester) => (
                     <option key={semester.id} value={semester.id}>
                       {getLocalizedName(semester, isArabicLayout) || semester.name_en} ({semester.code})
@@ -373,7 +373,7 @@ function EditApplicationModal({
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">High School Name</label>
+                <label className="block text-sm font-medium text-gray-700 mb-2">{t('admissions.viewApplication.editModal.fields.highSchoolName')}</label>
                 <input
                   type="text"
                   value={formData.high_school_name || ''}
@@ -382,7 +382,7 @@ function EditApplicationModal({
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">High School Country</label>
+                <label className="block text-sm font-medium text-gray-700 mb-2">{t('admissions.viewApplication.editModal.fields.highSchoolCountry')}</label>
                 <input
                   type="text"
                   value={formData.high_school_country || ''}
@@ -391,7 +391,7 @@ function EditApplicationModal({
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Graduation Year</label>
+                <label className="block text-sm font-medium text-gray-700 mb-2">{t('admissions.viewApplication.editModal.fields.graduationYear')}</label>
                 <input
                   type="number"
                   value={formData.graduation_year || ''}
@@ -400,7 +400,7 @@ function EditApplicationModal({
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">GPA / Grade</label>
+                <label className="block text-sm font-medium text-gray-700 mb-2">{t('admissions.viewApplication.editModal.fields.gpa')}</label>
                 <input
                   type="number"
                   step="0.01"
@@ -410,7 +410,7 @@ function EditApplicationModal({
                 />
               </div>
               <div className="md:col-span-2">
-                <label className="block text-sm font-medium text-gray-700 mb-2">Certificate Type</label>
+                <label className="block text-sm font-medium text-gray-700 mb-2">{t('admissions.viewApplication.editModal.fields.certificateType')}</label>
                 <input
                   type="text"
                   value={formData.certificate_type || ''}
@@ -427,7 +427,7 @@ function EditApplicationModal({
             <h2 className="text-xl font-bold text-gray-900 mb-6">{t('admissions.steps.tests')}</h2>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">TOEFL Score</label>
+                <label className="block text-sm font-medium text-gray-700 mb-2">{t('admissions.viewApplication.editModal.fields.toeflScore')}</label>
                 <input
                   type="number"
                   value={formData.toefl_score || ''}
@@ -436,7 +436,7 @@ function EditApplicationModal({
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">IELTS Score</label>
+                <label className="block text-sm font-medium text-gray-700 mb-2">{t('admissions.viewApplication.editModal.fields.ieltsScore')}</label>
                 <input
                   type="number"
                   step="0.1"
@@ -446,7 +446,7 @@ function EditApplicationModal({
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">SAT Score</label>
+                <label className="block text-sm font-medium text-gray-700 mb-2">{t('admissions.viewApplication.editModal.fields.satScore')}</label>
                 <input
                   type="number"
                   value={formData.sat_score || ''}
@@ -455,7 +455,7 @@ function EditApplicationModal({
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">GMAT Score</label>
+                <label className="block text-sm font-medium text-gray-700 mb-2">{t('admissions.viewApplication.editModal.fields.gmatScore')}</label>
                 <input
                   type="number"
                   value={formData.gmat_score || ''}
@@ -464,7 +464,7 @@ function EditApplicationModal({
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">GRE Score</label>
+                <label className="block text-sm font-medium text-gray-700 mb-2">{t('admissions.viewApplication.editModal.fields.greScore')}</label>
                 <input
                   type="number"
                   value={formData.gre_score || ''}
@@ -486,12 +486,12 @@ function EditApplicationModal({
                 onChange={(e) => handleFieldChange('is_transfer_student', e.target.checked)}
                 className="w-5 h-5 text-primary-600 border-gray-300 rounded focus:ring-primary-500"
               />
-              <label className="text-sm font-medium text-gray-700">Transfer Student</label>
+              <label className="text-sm font-medium text-gray-700">{t('admissions.viewApplication.editModal.fields.transferStudent')}</label>
             </div>
             {formData.is_transfer_student && (
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Previous University</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">{t('admissions.viewApplication.editModal.fields.previousUniversity')}</label>
                   <input
                     type="text"
                     value={formData.previous_university || ''}
@@ -500,7 +500,7 @@ function EditApplicationModal({
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Previous Degree</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">{t('admissions.viewApplication.editModal.fields.previousDegree')}</label>
                   <input
                     type="text"
                     value={formData.previous_degree || ''}
@@ -509,7 +509,7 @@ function EditApplicationModal({
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Transfer Credits</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">{t('admissions.viewApplication.editModal.fields.transferCredits')}</label>
                   <input
                     type="number"
                     value={formData.transfer_credits || ''}
@@ -526,7 +526,7 @@ function EditApplicationModal({
           <div className="space-y-6">
             <h2 className="text-xl font-bold text-gray-900 mb-6">{t('admissions.steps.additional')}</h2>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Personal Statement</label>
+              <label className="block text-sm font-medium text-gray-700 mb-2">{t('admissions.viewApplication.editModal.fields.personalStatement')}</label>
               <textarea
                 value={formData.personal_statement || ''}
                 onChange={(e) => handleFieldChange('personal_statement', e.target.value)}
@@ -541,7 +541,7 @@ function EditApplicationModal({
                 onChange={(e) => handleFieldChange('scholarship_request', e.target.checked)}
                 className="w-5 h-5 text-primary-600 border-gray-300 rounded focus:ring-primary-500"
               />
-              <label className="text-sm font-medium text-gray-700">Scholarship Request</label>
+              <label className="text-sm font-medium text-gray-700">{t('admissions.viewApplication.editModal.fields.scholarshipRequest')}</label>
             </div>
             {formData.scholarship_request && (
               <div className="space-y-4">
@@ -557,7 +557,7 @@ function EditApplicationModal({
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Scholarship Percentage</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">{t('admissions.viewApplication.editModal.fields.scholarshipPercentage')}</label>
                   <input
                     type="number"
                     step="0.01"
@@ -1117,7 +1117,7 @@ export default function ViewApplication() {
 
   const fetchApplication = async () => {
     if (!applicationId || isNaN(applicationId)) {
-      setError('Invalid application ID')
+      setError(t('admissions.viewApplication.errors.invalidId'))
       setLoading(false)
       return null
     }
@@ -1190,7 +1190,7 @@ export default function ViewApplication() {
       return data
     } catch (err) {
       console.error('Error fetching application:', err)
-      setError('Failed to load application')
+      setError(t('admissions.viewApplication.errors.loadFailed'))
       return null
     } finally {
       setLoading(false)
@@ -1526,7 +1526,7 @@ export default function ViewApplication() {
 
   const handleStatusChange = async () => {
     if (!selectedStatus) {
-      setError('Please select a status')
+      setError(t('admissions.viewApplication.errors.selectStatus'))
       setModalStep(1)
       return
     }
@@ -1971,7 +1971,7 @@ export default function ViewApplication() {
           className="flex items-center space-x-2 text-gray-600 hover:text-gray-900"
         >
           <ArrowLeft className="w-5 h-5" />
-          <span>Back</span>
+          <span>{t('common.back')}</span>
         </button>
         <div className="bg-red-50 border border-red-200 rounded-lg p-4 text-red-700">
           {error}
@@ -1988,10 +1988,10 @@ export default function ViewApplication() {
           className="flex items-center space-x-2 text-gray-600 hover:text-gray-900"
         >
           <ArrowLeft className="w-5 h-5" />
-          <span>Back</span>
+          <span>{t('common.back')}</span>
         </button>
         <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 text-yellow-700">
-          Application not found
+          {t('admissions.viewApplication.errors.notFound')}
         </div>
       </div>
     )
@@ -2754,7 +2754,7 @@ export default function ViewApplication() {
                 type="button"
                 onClick={() => setShowRequestDocsModal(false)}
                 className="p-2 rounded-lg hover:bg-gray-100"
-                aria-label="Close"
+                aria-label={t('common.close')}
               >
                 <X className="w-5 h-5 text-gray-600" />
               </button>

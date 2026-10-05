@@ -26,6 +26,7 @@ const UI = {
 export default function StudentEnrollment() {
   const { t } = useTranslation()
   const { isRTL } = useLanguage()
+  const localName = (row) => (isRTL && row?.name_ar ? row.name_ar : row?.name_en)
   const location = useLocation()
   const navigate = useNavigate()
   const { user, userRole } = useAuth()
@@ -173,7 +174,7 @@ export default function StudentEnrollment() {
       setStudent(studentData)
     } catch (err) {
       console.error('Error fetching student:', err)
-      setError(err.message || 'Failed to load student data')
+      setError(err.message || t('studentPortal.registrationPage.errors.loadStudent'))
     } finally {
       setFetching(false)
     }
@@ -187,7 +188,7 @@ export default function StudentEnrollment() {
       // Registration allowed/blocked is enforced by checkRegistrationDeadline when user selects a semester.
       const { data, error } = await supabase
         .from('semesters')
-        .select('id, name_en, code, start_date, end_date, registration_start_date, registration_end_date, late_registration_end_date, status, college_id, is_university_wide')
+        .select('id, name_en, name_ar, code, start_date, end_date, registration_start_date, registration_end_date, late_registration_end_date, status, college_id, is_university_wide')
         .or(`college_id.eq.${student.college_id},is_university_wide.eq.true`)
         .order('start_date', { ascending: false })
 
@@ -202,7 +203,7 @@ export default function StudentEnrollment() {
       }
     } catch (err) {
       console.error('Error fetching semesters:', err)
-      setError(err.message || 'Failed to load semesters')
+      setError(err.message || t('studentPortal.registrationPage.errors.loadSemesters'))
     }
   }
 
@@ -264,7 +265,7 @@ export default function StudentEnrollment() {
       await fetchEnrolledRows()
     } catch (e) {
       console.error('Drop enrollment error:', e)
-      setError(e?.message || 'Failed to drop course')
+      setError(e?.message || t('studentPortal.registrationPage.errors.dropFailed'))
     } finally {
       setLoading(false)
     }
@@ -290,7 +291,7 @@ export default function StudentEnrollment() {
         startDate.setHours(0, 0, 0, 0)
         if (today < startDate) {
           status.allowed = false
-          status.reason = `Registration has not started yet. Registration opens on ${new Date(currentSemester.registration_start_date).toLocaleDateString()}.`
+          status.reason = t('studentPortal.registrationPage.reasons.notStarted', { date: new Date(currentSemester.registration_start_date).toLocaleDateString() })
           setRegistrationStatus(status)
           return
         }
@@ -315,7 +316,7 @@ export default function StudentEnrollment() {
         if (today <= lateEndDate) {
           status.allowed = true
           status.isLateRegistration = true
-          status.reason = `Late registration period. Late registration ends on ${new Date(currentSemester.late_registration_end_date).toLocaleDateString()}.`
+          status.reason = t('studentPortal.registrationPage.reasons.lateRegistration', { date: new Date(currentSemester.late_registration_end_date).toLocaleDateString() })
           setRegistrationStatus(status)
           return
         }
@@ -335,15 +336,15 @@ export default function StudentEnrollment() {
       status.allowed = false
       const lastDeadline = currentSemester.late_registration_end_date || currentSemester.registration_end_date
       if (lastDeadline) {
-        status.reason = `Registration period has ended. The deadline was ${new Date(lastDeadline).toLocaleDateString()}. Please contact the registrar's office.`
+        status.reason = t('studentPortal.registrationPage.reasons.endedOn', { date: new Date(lastDeadline).toLocaleDateString() })
       } else {
-        status.reason = 'Registration period has ended. Please contact the registrar\'s office.'
+        status.reason = t('studentPortal.registrationPage.reasons.ended')
       }
       setRegistrationStatus(status)
     } catch (err) {
       console.error('Error checking registration deadline:', err)
       status.allowed = false
-      status.reason = 'Error checking registration deadline. Please try again.'
+      status.reason = t('studentPortal.registrationPage.reasons.checkFailed')
       setRegistrationStatus(status)
     }
   }
@@ -497,7 +498,7 @@ export default function StudentEnrollment() {
         .select(`
           *,
           subjects (
-            id, name_en, code, credit_hours
+            id, name_en, name_ar, code, credit_hours
           ),
           instructors (
             id, name_en, name_ar
@@ -525,7 +526,7 @@ export default function StudentEnrollment() {
       setClasses(data || [])
     } catch (err) {
       console.error('Error fetching classes:', err)
-      setError(err.message || 'Failed to load classes')
+      setError(err.message || t('studentPortal.registrationPage.errors.loadClasses'))
     } finally {
       setClassesLoading(false)
     }
@@ -544,7 +545,7 @@ export default function StudentEnrollment() {
     try {
       const selectedClasses = classes.filter(c => formData.class_ids.includes(c.id.toString()))
       if (selectedClasses.length === 0) {
-        setValidationErrors(['Please select at least one class'])
+        setValidationErrors([t('studentPortal.registrationPage.errors.selectClass')])
         return
       }
 
@@ -555,7 +556,7 @@ export default function StudentEnrollment() {
 
       // Check registration deadline
       if (!registrationStatus?.allowed) {
-        errors.push(registrationStatus?.reason || 'Registration is not currently open for this semester.')
+        errors.push(registrationStatus?.reason || t('studentPortal.registrationPage.reasons.notOpen'))
       }
 
       // Check financial milestone (requires PM30 for enrollment)
@@ -573,18 +574,18 @@ export default function StudentEnrollment() {
       const maxCredits = semesterCreditsFromUni.max_credit_hours_with_permission
 
       if (newTotalCredits < minCredits) {
-        warnings.push(`Total credits (${currentSemesterCredits} current + ${selectedCredits} new = ${newTotalCredits} total) will be below minimum required (${minCredits}) for this semester.`)
+        warnings.push(t('studentPortal.registrationPage.errors.belowMinimum', { current: currentSemesterCredits, added: selectedCredits, total: newTotalCredits, limit: minCredits }))
       }
 
       if (newTotalCredits > maxCredits) {
-        errors.push(`Total credits (${currentSemesterCredits} current + ${selectedCredits} new = ${newTotalCredits} total) exceeds maximum allowed (${maxCredits}) for this semester.`)
+        errors.push(t('studentPortal.registrationPage.errors.aboveMaximum', { current: currentSemesterCredits, added: selectedCredits, total: newTotalCredits, limit: maxCredits }))
       }
 
       setValidationWarnings(warnings)
       setValidationErrors(errors)
     } catch (err) {
       console.error('Error validating enrollment:', err)
-      setValidationErrors(['Error validating enrollment. Please try again.'])
+      setValidationErrors([t('studentPortal.registrationPage.errors.validateFailed')])
     }
   }
 
@@ -602,7 +603,7 @@ export default function StudentEnrollment() {
 
   const handleSubmit = async () => {
     if (validationErrors.length > 0) {
-      setError('Please fix the errors before submitting.')
+      setError(t('studentPortal.registrationPage.errors.fixErrors'))
       return
     }
 
@@ -666,7 +667,7 @@ export default function StudentEnrollment() {
       }, 2000)
     } catch (err) {
       console.error('Error creating enrollment:', err)
-      setError(err.message || 'Failed to enroll in classes')
+      setError(err.message || t('studentPortal.registrationPage.errors.enrollFailed'))
     } finally {
       setLoading(false)
     }
@@ -738,7 +739,7 @@ export default function StudentEnrollment() {
       <div>
         <h1 className="text-2xl font-extrabold" style={{ color: UI.p }}>{t('studentPortal.courseRegistration', { defaultValue: 'Course registration' })}</h1>
         <p className="text-sm" style={{ color: UI.muted }}>
-          {currentSemester?.name_en ? `${currentSemester?.name_en}` : t('studentPortal.currentSemester', { defaultValue: 'Current semester' })}
+          {localName(currentSemester) ? localName(currentSemester) : t('studentPortal.currentSemester', { defaultValue: 'Current semester' })}
         </p>
       </div>
 
@@ -766,7 +767,7 @@ export default function StudentEnrollment() {
           <div className="bg-white rounded-xl border shadow-sm" style={{ borderColor: UI.bdr }}>
             <div className="flex items-center justify-between px-6 py-4 border-b" style={{ borderColor: UI.bdr }}>
               <div className="text-base font-extrabold" style={{ color: UI.p }}>
-                {t('studentPortal.registration.currentRegistered', { defaultValue: 'Currently registered courses' })}
+                {t('studentPortal.registrationPage.currentRegistered', { defaultValue: 'Currently registered courses' })}
               </div>
               <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-extrabold" style={{ backgroundColor: '#e6f7ef', color: UI.ok }}>
                 {totalHours} {t('studentPortal.hours', { defaultValue: 'hours' })}
@@ -776,11 +777,11 @@ export default function StudentEnrollment() {
               <table className="w-full text-sm">
                 <thead>
                   <tr style={{ backgroundColor: UI.p, color: 'white' }}>
-                    <th className="px-4 py-3 whitespace-nowrap">{t('studentPortal.registration.course', { defaultValue: 'Course' })}</th>
+                    <th className="px-4 py-3 whitespace-nowrap">{t('studentPortal.registrationPage.course', { defaultValue: 'Course' })}</th>
                     <th className="px-4 py-3 whitespace-nowrap">{t('studentPortal.hours', { defaultValue: 'Hours' })}</th>
-                    <th className="px-4 py-3 whitespace-nowrap">{t('studentPortal.registration.time', { defaultValue: 'Time' })}</th>
+                    <th className="px-4 py-3 whitespace-nowrap">{t('studentPortal.registrationPage.time', { defaultValue: 'Time' })}</th>
                     <th className="px-4 py-3 whitespace-nowrap">{t('studentPortal.theHall', { defaultValue: 'Hall' })}</th>
-                    <th className="px-4 py-3 whitespace-nowrap">{t('studentPortal.registration.status', { defaultValue: 'Status' })}</th>
+                    <th className="px-4 py-3 whitespace-nowrap">{t('studentPortal.registrationPage.status', { defaultValue: 'Status' })}</th>
                     <th className="px-4 py-3 whitespace-nowrap">{t('studentPortal.documents.colActions', { defaultValue: 'Actions' })}</th>
                   </tr>
                 </thead>
@@ -788,7 +789,7 @@ export default function StudentEnrollment() {
                   {enrolledRows.length === 0 ? (
                     <tr>
                       <td colSpan={6} className="px-4 py-6 text-center" style={{ color: UI.muted }}>
-                        {t('studentPortal.registration.none', { defaultValue: 'No registered courses yet.' })}
+                        {t('studentPortal.registrationPage.none', { defaultValue: 'No registered courses yet.' })}
                       </td>
                     </tr>
                   ) : (
@@ -798,14 +799,14 @@ export default function StudentEnrollment() {
                       return (
                         <tr key={r.id} className="border-b" style={{ borderColor: UI.bdr }}>
                           <td className="px-4 py-3">
-                            <strong>{subj?.code || '—'}</strong> — {subj?.name_en || '—'}
+                            <strong>{subj?.code || '—'}</strong> — {localName(subj) || '—'}
                           </td>
                           <td className="px-4 py-3">{subj?.credit_hours || 0}</td>
                           <td className="px-4 py-3">{scheduleToText(r.classes?.class_schedules)}</td>
                           <td className="px-4 py-3">{hall}</td>
                           <td className="px-4 py-3">
                             <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-extrabold" style={{ backgroundColor: '#e6f7ef', color: UI.ok }}>
-                              {t('studentPortal.registration.confirmed', { defaultValue: 'Confirmed' })}
+                              {t('studentPortal.registrationPage.confirmed', { defaultValue: 'Confirmed' })}
                             </span>
                           </td>
                           <td className="px-4 py-3">
@@ -816,7 +817,7 @@ export default function StudentEnrollment() {
                               className="px-3 py-1.5 rounded-md text-xs font-extrabold text-white disabled:opacity-50"
                               style={{ backgroundColor: UI.err }}
                             >
-                              {t('studentPortal.registration.drop', { defaultValue: 'Drop' })}
+                              {t('studentPortal.registrationPage.drop', { defaultValue: 'Drop' })}
                             </button>
                           </td>
                         </tr>
@@ -826,7 +827,7 @@ export default function StudentEnrollment() {
                 </tbody>
                 <tfoot>
                   <tr style={{ backgroundColor: UI.bg, fontWeight: 800 }}>
-                    <td className="px-4 py-3" colSpan={5}>{t('studentPortal.registration.totalHours', { defaultValue: 'Total registered hours' })}</td>
+                    <td className="px-4 py-3" colSpan={5}>{t('studentPortal.registrationPage.totalHours', { defaultValue: 'Total registered hours' })}</td>
                     <td className="px-4 py-3">{totalHours} {t('studentPortal.hours', { defaultValue: 'hours' })}</td>
                   </tr>
                 </tfoot>
@@ -837,14 +838,14 @@ export default function StudentEnrollment() {
           {/* Add course */}
           <div className={`bg-white rounded-xl border shadow-sm ${!canRegisterNow ? 'opacity-60 pointer-events-none' : ''}`} style={{ borderColor: UI.bdr }}>
             <div className="flex items-center justify-between px-6 py-4 border-b" style={{ borderColor: UI.bdr }}>
-              <div className="text-base font-extrabold" style={{ color: UI.p }}>{t('studentPortal.registration.addCourse', { defaultValue: 'Add course' })}</div>
+              <div className="text-base font-extrabold" style={{ color: UI.p }}>{t('studentPortal.registrationPage.addCourse', { defaultValue: 'Add course' })}</div>
               <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-extrabold" style={{ backgroundColor: '#fee2e2', color: UI.err }}>
-                {canRegisterNow ? t('studentPortal.documents.statusActive', { defaultValue: 'Active' }) : t('studentPortal.registration.blocked', { defaultValue: 'Blocked' })}
+                {canRegisterNow ? t('studentPortal.documents.statusActive', { defaultValue: 'Active' }) : t('studentPortal.registrationPage.blocked', { defaultValue: 'Blocked' })}
               </span>
             </div>
             <div className="p-6 grid grid-cols-1 sm:grid-cols-[minmax(0,1fr)_auto] gap-4 items-end">
               <div>
-                <label className="block text-sm font-semibold mb-1" style={{ color: UI.txt }}>{t('studentPortal.registration.pickCourse', { defaultValue: 'Choose course' })}</label>
+                <label className="block text-sm font-semibold mb-1" style={{ color: UI.txt }}>{t('studentPortal.registrationPage.pickCourse', { defaultValue: 'Choose course' })}</label>
                 <select
                   className="w-full px-3 py-2.5 rounded-md border bg-white"
                   style={{ borderColor: UI.bdr }}
@@ -859,7 +860,7 @@ export default function StudentEnrollment() {
                   ) : null}
                   {availableToAdd.map((c) => (
                     <option key={c.id} value={String(c.id)} disabled={c._seats <= 0}>
-                      {c.subjects?.code} — {c.subjects?.name_en} ({c._seats} seats)
+                      {c.subjects?.code} — {localName(c.subjects)} ({t('studentPortal.registrationPage.seats', { n: c._seats })})
                     </option>
                   ))}
                 </select>
@@ -871,7 +872,7 @@ export default function StudentEnrollment() {
                 className="px-5 py-2.5 rounded-md font-extrabold text-white disabled:opacity-50"
                 style={{ backgroundColor: UI.p }}
               >
-                + {t('studentPortal.registration.add', { defaultValue: 'Add' })}
+                + {t('studentPortal.registrationPage.add', { defaultValue: 'Add' })}
               </button>
             </div>
             {validationErrors.length > 0 && (
@@ -884,24 +885,24 @@ export default function StudentEnrollment() {
           {/* Rules */}
           <div className="bg-white rounded-xl border shadow-sm" style={{ borderColor: UI.bdr }}>
             <div className="px-6 py-4 border-b" style={{ borderColor: UI.bdr }}>
-              <div className="text-base font-extrabold" style={{ color: UI.p }}>{t('studentPortal.registration.rules', { defaultValue: 'Registration rules applied' })}</div>
+              <div className="text-base font-extrabold" style={{ color: UI.p }}>{t('studentPortal.registrationPage.rules', { defaultValue: 'Registration rules applied' })}</div>
             </div>
             <div className="p-6 grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
               <div className="p-3 rounded-md" style={{ backgroundColor: UI.bg }}>
-                <div className="font-extrabold mb-1">{t('studentPortal.registration.minHours', { defaultValue: 'Minimum hours' })}</div>
+                <div className="font-extrabold mb-1">{t('studentPortal.registrationPage.minHours', { defaultValue: 'Minimum hours' })}</div>
                 <div style={{ color: UI.muted }}>{semesterCreditsFromUni.min_credit_hours} {t('studentPortal.hours', { defaultValue: 'hours' })}</div>
               </div>
               <div className="p-3 rounded-md" style={{ backgroundColor: UI.bg }}>
-                <div className="font-extrabold mb-1">{t('studentPortal.registration.maxHours', { defaultValue: 'Maximum hours' })}</div>
+                <div className="font-extrabold mb-1">{t('studentPortal.registrationPage.maxHours', { defaultValue: 'Maximum hours' })}</div>
                 <div style={{ color: UI.muted }}>{maxHours} {t('studentPortal.hours', { defaultValue: 'hours' })}</div>
               </div>
               <div className="p-3 rounded-md" style={{ backgroundColor: UI.bg }}>
-                <div className="font-extrabold mb-1">{t('studentPortal.registration.prereqs', { defaultValue: 'Prerequisites' })}</div>
-                <div style={{ color: UI.muted }}>{t('studentPortal.registration.prereqsAuto', { defaultValue: 'Applied automatically when adding' })}</div>
+                <div className="font-extrabold mb-1">{t('studentPortal.registrationPage.prereqs', { defaultValue: 'Prerequisites' })}</div>
+                <div style={{ color: UI.muted }}>{t('studentPortal.registrationPage.prereqsAuto', { defaultValue: 'Applied automatically when adding' })}</div>
               </div>
               <div className="p-3 rounded-md" style={{ backgroundColor: UI.bg }}>
-                <div className="font-extrabold mb-1">{t('studentPortal.registration.conflicts', { defaultValue: 'Schedule conflicts' })}</div>
-                <div style={{ color: UI.muted }}>{t('studentPortal.registration.conflictsAuto', { defaultValue: 'Detected and reported immediately' })}</div>
+                <div className="font-extrabold mb-1">{t('studentPortal.registrationPage.conflicts', { defaultValue: 'Schedule conflicts' })}</div>
+                <div style={{ color: UI.muted }}>{t('studentPortal.registrationPage.conflictsAuto', { defaultValue: 'Detected and reported immediately' })}</div>
               </div>
             </div>
           </div>
@@ -911,25 +912,25 @@ export default function StudentEnrollment() {
           {/* Summary */}
           <div className="bg-white rounded-xl border shadow-sm" style={{ borderColor: UI.bdr }}>
             <div className="px-6 py-4 border-b" style={{ borderColor: UI.bdr }}>
-              <div className="text-base font-extrabold" style={{ color: UI.p }}>{t('studentPortal.registration.summary', { defaultValue: 'Registration summary' })}</div>
+              <div className="text-base font-extrabold" style={{ color: UI.p }}>{t('studentPortal.registrationPage.summary', { defaultValue: 'Registration summary' })}</div>
             </div>
             <div className="p-6 space-y-3 text-sm">
               <div className="flex items-center justify-between border-b pb-2" style={{ borderColor: UI.bdr }}>
-                <span style={{ color: UI.muted }}>{t('studentPortal.registration.registeredHours', { defaultValue: 'Registered hours' })}</span>
+                <span style={{ color: UI.muted }}>{t('studentPortal.registrationPage.registeredHours', { defaultValue: 'Registered hours' })}</span>
                 <strong>{totalHours}</strong>
               </div>
               <div className="flex items-center justify-between border-b pb-2" style={{ borderColor: UI.bdr }}>
-                <span style={{ color: UI.muted }}>{t('studentPortal.registration.max', { defaultValue: 'Maximum' })}</span>
+                <span style={{ color: UI.muted }}>{t('studentPortal.registrationPage.max', { defaultValue: 'Maximum' })}</span>
                 <strong>{maxHours} {t('studentPortal.hours', { defaultValue: 'hours' })}</strong>
               </div>
               <div className="flex items-center justify-between border-b pb-2" style={{ borderColor: UI.bdr }}>
-                <span style={{ color: UI.muted }}>{t('studentPortal.registration.waitlisted', { defaultValue: 'Waitlisted' })}</span>
+                <span style={{ color: UI.muted }}>{t('studentPortal.registrationPage.waitlisted', { defaultValue: 'Waitlisted' })}</span>
                 <strong>{waitlistedCount}</strong>
               </div>
               <div className="flex items-center justify-between">
-                <span style={{ color: UI.muted }}>{t('studentPortal.registration.state', { defaultValue: 'Registration status' })}</span>
+                <span style={{ color: UI.muted }}>{t('studentPortal.registrationPage.state', { defaultValue: 'Registration status' })}</span>
                 <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-extrabold" style={{ backgroundColor: canRegisterNow ? '#e6f7ef' : '#fee2e2', color: canRegisterNow ? UI.ok : UI.err }}>
-                  {canRegisterNow ? t('studentPortal.registration.active', { defaultValue: 'Active' }) : t('studentPortal.registration.blocked', { defaultValue: 'Blocked' })}
+                  {canRegisterNow ? t('studentPortal.registrationPage.active', { defaultValue: 'Active' }) : t('studentPortal.registrationPage.blocked', { defaultValue: 'Blocked' })}
                 </span>
               </div>
             </div>
@@ -939,7 +940,7 @@ export default function StudentEnrollment() {
                 className="mx-6 mb-6 inline-flex items-center justify-center gap-2 w-[calc(100%-3rem)] px-4 py-3 rounded-md font-extrabold text-white no-underline"
                 style={{ backgroundColor: UI.err }}
               >
-                💳 {t('studentPortal.registration.payToLift', { defaultValue: 'Pay to lift the hold' })}
+                💳 {t('studentPortal.registrationPage.payToLift', { defaultValue: 'Pay to lift the hold' })}
               </a>
             )}
           </div>
