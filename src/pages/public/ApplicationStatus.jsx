@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useMemo, useCallback } from 'react'
 import { useNavigate, useParams, useLocation, Link, useOutletContext } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { useLanguage } from '../../contexts/LanguageContext'
+import { FlagAr, FlagEn } from '../../components/LanguageFlags'
 import { useAuth } from '../../contexts/AuthContext'
 import { supabase, SUPABASE_STORAGE_BUCKET } from '../../lib/supabase'
 import { getLocalizedName } from '../../utils/localizedName'
@@ -786,15 +787,17 @@ export default function ApplicationStatus() {
               <button
                 type="button"
                 onClick={() => changeLanguage('en')}
-                className={`px-3 py-1.5 text-sm font-medium rounded-[6px] transition-colors ${language === 'en' ? 'bg-[#1a3a6b] text-white' : 'text-[#6b7a99] hover:bg-[#f4f6fb]'}`}
+                className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-[6px] transition-colors ${language === 'en' ? 'bg-[#1a3a6b] text-white' : 'text-[#6b7a99] hover:bg-[#f4f6fb]'}`}
               >
+                <FlagEn />
                 {t('applicantPortal.langEnglish', 'English')}
               </button>
               <button
                 type="button"
                 onClick={() => changeLanguage('ar')}
-                className={`px-3 py-1.5 text-sm font-medium rounded-[6px] transition-colors ${language === 'ar' ? 'bg-[#1a3a6b] text-white' : 'text-[#6b7a99] hover:bg-[#f4f6fb]'}`}
+                className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-[6px] transition-colors ${language === 'ar' ? 'bg-[#1a3a6b] text-white' : 'text-[#6b7a99] hover:bg-[#f4f6fb]'}`}
               >
+                <FlagAr />
                 {t('applicantPortal.langArabic', 'العربية')}
               </button>
             </div>

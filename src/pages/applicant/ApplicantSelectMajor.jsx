@@ -19,6 +19,7 @@ export default function ApplicantSelectMajor() {
   const [colleges, setColleges] = useState([])
   const [selectedCollegeId, setSelectedCollegeId] = useState('')
   const [majors, setMajors] = useState([])
+  const [activeDegreeLevels, setActiveDegreeLevels] = useState(null)
 
   useEffect(() => {
     let cancelled = false
@@ -27,6 +28,7 @@ export default function ApplicantSelectMajor() {
       try {
         const cfg = await getApplicationFormDefaults()
         if (cancelled) return
+        if (Array.isArray(cfg?.active_degree_levels)) setActiveDegreeLevels(cfg.active_degree_levels)
         if (cfg?.enabled && cfg.college_id && cfg.major_id) {
           navigate('/portal/apply/new', { replace: true })
           return
@@ -90,11 +92,12 @@ export default function ApplicantSelectMajor() {
         ])
         if (majorsRes.error) throw majorsRes.error
         if (!cancelled) {
+          const openLevels = activeDegreeLevels
           setMajors(
             filterMajorsForRegistration(majorsRes.data, {
               activeCollegeIds: new Set([String(selectedCollegeId)]),
               inactiveDepartmentIds: departmentsRes.error ? null : inactiveDepartmentIdSet(departmentsRes.data),
-            })
+            }).filter((major) => !openLevels || !major.degree_level || openLevels.includes(major.degree_level))
           )
         }
       } catch (e) {
@@ -107,7 +110,7 @@ export default function ApplicantSelectMajor() {
     return () => {
       cancelled = true
     }
-  }, [selectedCollegeId])
+  }, [selectedCollegeId, activeDegreeLevels])
 
   const selectedCollege = useMemo(
     () => colleges.find((c) => String(c.id) === String(selectedCollegeId)),

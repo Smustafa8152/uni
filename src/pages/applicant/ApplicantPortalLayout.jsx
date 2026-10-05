@@ -2,6 +2,7 @@ import { useEffect } from 'react'
 import { NavLink, Outlet, useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { useLanguage } from '../../contexts/LanguageContext'
+import { FlagAr, FlagEn } from '../../components/LanguageFlags'
 import { useAuth } from '../../contexts/AuthContext'
 import {
   LayoutDashboard,
@@ -121,23 +122,25 @@ export default function ApplicantPortalLayout() {
               <button
                 type="button"
                 onClick={() => changeLanguage('en')}
-                className={`px-2 sm:px-2.5 py-1 text-xs sm:text-sm font-semibold rounded-md transition-colors ${
+                className={`inline-flex items-center gap-1.5 px-2 sm:px-2.5 py-1 text-xs sm:text-sm font-semibold rounded-md transition-colors ${
                   language === 'en'
                     ? 'bg-[#1a3a6b] text-white shadow-sm'
                     : 'text-[#6b7a99] hover:bg-white'
                 }`}
               >
+                <FlagEn />
                 {t('applicantPortal.langEnglish')}
               </button>
               <button
                 type="button"
                 onClick={() => changeLanguage('ar')}
-                className={`px-2 sm:px-2.5 py-1 text-xs sm:text-sm font-semibold rounded-md transition-colors ${
+                className={`inline-flex items-center gap-1.5 px-2 sm:px-2.5 py-1 text-xs sm:text-sm font-semibold rounded-md transition-colors ${
                   language === 'ar'
                     ? 'bg-[#1a3a6b] text-white shadow-sm'
                     : 'text-[#6b7a99] hover:bg-white'
                 }`}
               >
+                <FlagAr />
                 {t('applicantPortal.langArabic')}
               </button>
             </div>

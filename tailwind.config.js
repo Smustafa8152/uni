@@ -7,7 +7,7 @@ export default {
   theme: {
     fontFamily: {
       sans: ['Inter', 'system-ui', 'sans-serif'],
-      'arabic': ['Noto Sans Arabic', 'sans-serif'],
+      'arabic': ['Cairo', 'Segoe UI', 'Tahoma', 'Arial', 'sans-serif'],
     },
     extend: {
       animation: {

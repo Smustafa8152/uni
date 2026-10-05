@@ -3327,7 +3327,7 @@ export default function ViewApplication() {
               [t('applyForm.fields.race'), application?.race],
               [t('applyForm.fields.idType'), application?.id_type ? t(`applyForm.idTypes.${application.id_type}`, application.id_type) : null],
               [t('applyForm.fields.idNumber'), application?.id_number],
-              [t('applyForm.fields.idIssueCountry'), application?.id_issue_country],
+              [t('applyForm.fields.idIssueCountry'), application?.id_issue_country ? getNationalityLabel(application.id_issue_country, isArabicLayout) : null],
               [t('applyForm.fields.idIssueDate'), application?.id_issue_date ? formatViewDate(application.id_issue_date) : null],
               [t('applyForm.fields.idExpiryDate'), application?.id_expiry_date ? formatViewDate(application.id_expiry_date) : null],
               [t('applyForm.fields.homePhone'), application?.home_phone],

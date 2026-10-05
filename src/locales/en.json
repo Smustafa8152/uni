@@ -1629,6 +1629,13 @@
     "applicationsPage": {
       "title": "Applications",
       "subtitle": "Manage student admission applications",
+      "activeLevelsTitle": "Active academic levels",
+      "activeLevelsHint": "Applicants still see every level. Unchecked levels stay visible but cannot be selected.",
+      "activeLevelsSave": "Save",
+      "activeLevelsSaving": "Saving…",
+      "activeLevelsSaved": "Saved.",
+      "activeLevelsFailed": "Failed to save academic levels.",
+      "activeLevelsNone": "Select at least one academic level.",
       "newApplication": "New application",
       "statsTotal": "Total applications",
       "statsPending": "Pending",
@@ -6597,8 +6604,8 @@
       "referral": "How you found us"
     },
     "fields": {
-      "intake": "Intake",
-      "workload": "Workload",
+      "intake": "Semester",
+      "workload": "Study mode",
       "academicLevel": "Academic level",
       "faculty": "Faculty",
       "firstChoice": "First choice",
@@ -6634,6 +6641,7 @@
       "idExpiryDate": "Expiry date",
       "email": "Email",
       "mobile": "Mobile number",
+      "phoneCountry": "Country code",
       "homePhone": "Home phone number",
       "country": "Country",
       "state": "State / province",
@@ -6654,11 +6662,14 @@
     "hints": {
       "gpa": "On a 4.00 scale",
       "selectLevelFirst": "Select an academic level first.",
+      "educationForLevel": "Qualifications below the academic level you selected.",
       "selectFacultyFirst": "Select a faculty first."
     },
     "workload": {
       "full_time": "Full-time",
-      "part_time": "Part-time"
+      "part_time": "Part-time",
+      "on_campus": "On campus",
+      "online": "Online"
     },
     "degreeLevels": {
       "diploma": "Diploma",
@@ -6708,17 +6719,20 @@
       "advertisement": "Advertisement",
       "other": "Other"
     },
-    "documentsIntro": "Optional now — you can upload them later from your application page.",
+    "documentsIntro": "ID, certificate, and transcript are required.",
     "empty": {
-      "intakes": "No intake is open for applications right now.",
+      "intakes": "No semester is open for applications right now.",
       "majors": "This faculty has no programs at the selected academic level.",
       "faculties": "No faculty offers programs at this academic level."
     },
     "errors": {
       "selectDegreeLevel": "Please select an academic level.",
-      "selectIntake": "Please select an intake.",
+      "degreeLevelInactive": "This academic level is not open for applications.",
+      "selectIntake": "Please select a semester.",
+      "educationRequired": "Please select your highest education level and year of graduation.",
       "personalRequired": "Please enter your full name and date of birth.",
       "contactRequired": "Email and mobile number are required.",
+      "documentsRequired": "Please upload your ID, certificate, and transcript.",
       "passwordShort": "Password must be at least 8 characters.",
       "passwordMismatch": "Passwords do not match.",
       "accountExistsWrongPassword": "An account with this email already exists. Enter the correct password, or sign in to the applicant portal first.",
@@ -6759,6 +6773,7 @@
       "step3": "Check your application status at any time from your dashboard.",
       "track": "Track application status",
       "goToPortal": "Go to applicant portal",
+      "signInPortal": "Sign in to the applicant portal",
       "another": "Submit another application",
       "copied": "Application number copied to clipboard!"
     },

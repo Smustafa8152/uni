@@ -211,9 +211,9 @@ export async function createStudentFromApplication(application, customPassword =
         major_id: parseInt(application.major_id),
         college_id: parseInt(application.college_id),
         enrollment_date: enrollmentDate,
-        study_type: 'full_time', // Default for new students
+        study_type: application.study_type === 'part_time' ? 'part_time' : 'full_time',
         study_load: 'normal', // Default
-        study_approach: 'on_campus', // Default
+        study_approach: application.study_type === 'online' ? 'online' : 'on_campus',
         credit_hours: null, // Will be determined by enrollment
         emergency_contact_name: application.emergency_contact_name || null,
         emergency_contact_relation: application.emergency_contact_relationship || application.emergency_contact_relation || null,

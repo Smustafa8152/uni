@@ -3,6 +3,7 @@ import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { ChevronDown, Menu, X } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
 import { useLanguage } from '../contexts/LanguageContext'
+import { FlagAr, FlagEn } from './LanguageFlags'
 
 const UI = {
   p: '#1a3a6b',
@@ -141,6 +142,7 @@ export default function StudentELearningLayout({ children }) {
                 className="h-9 px-3 rounded-full border flex items-center gap-2 text-sm font-semibold"
                 style={{ backgroundColor: UI.bg, borderColor: UI.bdr, color: '#1e2a3a' }}
               >
+                {language === 'ar' ? <FlagAr /> : <FlagEn />}
                 <span>{language === 'ar' ? 'العربية' : 'English'}</span>
                 <ChevronDown className="w-4 h-4" style={{ color: UI.muted }} />
               </button>
@@ -155,8 +157,9 @@ export default function StudentELearningLayout({ children }) {
                       changeLanguage('ar')
                       setLangMenuOpen(false)
                     }}
-                    className={`w-full px-4 py-2.5 text-sm text-right hover:bg-[#f4f6fb] ${language === 'ar' ? 'font-extrabold text-[#1a3a6b]' : 'font-semibold text-[#1e2a3a]'}`}
+                    className={`inline-flex w-full items-center justify-end gap-2 px-4 py-2.5 text-sm text-right hover:bg-[#f4f6fb] ${language === 'ar' ? 'font-extrabold text-[#1a3a6b]' : 'font-semibold text-[#1e2a3a]'}`}
                   >
+                    <FlagAr />
                     العربية
                   </button>
                   <button
@@ -165,8 +168,9 @@ export default function StudentELearningLayout({ children }) {
                       changeLanguage('en')
                       setLangMenuOpen(false)
                     }}
-                    className={`w-full px-4 py-2.5 text-sm text-right hover:bg-[#f4f6fb] ${language === 'en' ? 'font-extrabold text-[#1a3a6b]' : 'font-semibold text-[#1e2a3a]'}`}
+                    className={`w-full px-4 py-2.5 text-sm text-right hover:bg-[#f4f6fb] inline-flex items-center justify-end gap-2 ${language === 'en' ? 'font-extrabold text-[#1a3a6b]' : 'font-semibold text-[#1e2a3a]'}`}
                   >
+                    <FlagEn />
                     English
                   </button>
                 </div>

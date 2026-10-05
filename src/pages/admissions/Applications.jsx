@@ -12,6 +12,7 @@ import { hasUniversityWideScope, resolveEffectiveCollegeId } from '../../utils/m
 import { exportApplicationsList, applyApplicationFilters } from '../../utils/exportApplications'
 import SearchableMultiSelect from '../../components/SearchableMultiSelect'
 import { ADMISSION_MESSAGE_TEMPLATES, getAdmissionTemplate } from '../../utils/admissionMessageTemplates'
+import { APPLICATION_DEGREE_LEVELS, resolveActiveDegreeLevels } from '../../utils/getApplicationFormDefaults'
 
 const ASSIGN_FIELDS = [
   { key: 'college_id', labelKey: 'admissions.applicationsPage.assignCollege', fallback: 'College' },
@@ -163,6 +164,10 @@ export default function Applications() {
   const [settingsMajors, setSettingsMajors] = useState([])
   const [settingsSemesters, setSettingsSemesters] = useState([])
   const [settingsAcademicYears, setSettingsAcademicYears] = useState([])
+  const [activeDegreeLevels, setActiveDegreeLevels] = useState(() => [...APPLICATION_DEGREE_LEVELS])
+  const [degreeLevelsSaving, setDegreeLevelsSaving] = useState(false)
+  const [degreeLevelsError, setDegreeLevelsError] = useState('')
+  const [degreeLevelsSaved, setDegreeLevelsSaved] = useState(false)
 
   const fetchApplications = useCallback(async () => {
     if (authLoading || userRole === null || userRole === undefined) {
@@ -289,6 +294,7 @@ export default function Applications() {
         semester_id: raw.semester_id != null ? String(raw.semester_id) : '',
         academic_year_id: raw.academic_year_id != null ? String(raw.academic_year_id) : '',
       })
+      setActiveDegreeLevels(resolveActiveDegreeLevels(raw.active_degree_levels))
     } catch (e) {
       setProgramDefaultsError(e?.message || 'Failed to load application defaults')
     } finally {
@@ -356,6 +362,9 @@ export default function Applications() {
       const payload = {
         ...currentOnboarding,
         application_form_defaults: {
+          ...(currentOnboarding.application_form_defaults && typeof currentOnboarding.application_form_defaults === 'object'
+            ? currentOnboarding.application_form_defaults
+            : {}),
           enabled: Boolean(programDefaults.enabled),
           lock_fields: programDefaults.lock_fields !== false,
           college_id: programDefaults.college_id ? parseInt(programDefaults.college_id, 10) : null,
@@ -399,6 +408,59 @@ export default function Applications() {
       setProgramDefaultsLoading(false)
     }
   }, [userRole, programDefaults, settingsMeta])
+
+  const saveActiveDegreeLevels = useCallback(async () => {
+    if (userRole !== 'admin') return
+    if (activeDegreeLevels.length === 0) {
+      setDegreeLevelsError(t('admissions.applicationsPage.activeLevelsNone'))
+      setDegreeLevelsSaved(false)
+      return
+    }
+    setDegreeLevelsSaving(true)
+    setDegreeLevelsError('')
+    setDegreeLevelsSaved(false)
+    try {
+      const currentOnboarding = settingsMeta.onboarding_settings && typeof settingsMeta.onboarding_settings === 'object'
+        ? settingsMeta.onboarding_settings
+        : {}
+      const currentDefaults = currentOnboarding.application_form_defaults && typeof currentOnboarding.application_form_defaults === 'object'
+        ? currentOnboarding.application_form_defaults
+        : {}
+      const payload = {
+        ...currentOnboarding,
+        application_form_defaults: {
+          ...currentDefaults,
+          active_degree_levels: activeDegreeLevels,
+        },
+      }
+
+      let res
+      if (settingsMeta.id) {
+        res = await supabase
+          .from('university_settings')
+          .update({ onboarding_settings: payload, updated_at: new Date().toISOString() })
+          .eq('id', settingsMeta.id)
+          .select('id, onboarding_settings')
+          .limit(1)
+          .maybeSingle()
+      } else {
+        res = await supabase
+          .from('university_settings')
+          .insert({ onboarding_settings: payload })
+          .select('id, onboarding_settings')
+          .limit(1)
+          .maybeSingle()
+      }
+      if (res.error) throw res.error
+      setSettingsMeta({ id: res.data?.id ?? settingsMeta.id ?? null, onboarding_settings: res.data?.onboarding_settings ?? payload })
+      setDegreeLevelsSaved(true)
+      setTimeout(() => setDegreeLevelsSaved(false), 2000)
+    } catch (e) {
+      setDegreeLevelsError(e?.message || t('admissions.applicationsPage.activeLevelsFailed'))
+    } finally {
+      setDegreeLevelsSaving(false)
+    }
+  }, [userRole, activeDegreeLevels, settingsMeta, t])
 
   useEffect(() => {
     fetchApplications()
@@ -1403,6 +1465,73 @@ export default function Applications() {
           } ${alignStart}`}
         >
           {exportMessage}
+        </div>
+      )}
+
+      {userRole === 'admin' && (
+        <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6">
+          <div className={`flex flex-col gap-4 ${alignStart}`}>
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <h2 className="text-lg font-bold text-gray-900">{t('admissions.applicationsPage.activeLevelsTitle')}</h2>
+                <p className="text-sm text-gray-600 mt-1">{t('admissions.applicationsPage.activeLevelsHint')}</p>
+              </div>
+              <button
+                type="button"
+                onClick={saveActiveDegreeLevels}
+                disabled={degreeLevelsSaving}
+                className="shrink-0 bg-primary-gradient text-white px-5 py-2.5 rounded-xl font-semibold shadow-sm hover:shadow-md transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {degreeLevelsSaving
+                  ? t('admissions.applicationsPage.activeLevelsSaving')
+                  : t('admissions.applicationsPage.activeLevelsSave')}
+              </button>
+            </div>
+
+            {(degreeLevelsError || degreeLevelsSaved) && (
+              <div
+                className={`rounded-lg border p-3 text-sm ${
+                  degreeLevelsError
+                    ? 'bg-red-50 border-red-200 text-red-700'
+                    : 'bg-green-50 border-green-200 text-green-700'
+                }`}
+              >
+                {degreeLevelsError || t('admissions.applicationsPage.activeLevelsSaved')}
+              </div>
+            )}
+
+            <div className="flex flex-wrap gap-3">
+              {APPLICATION_DEGREE_LEVELS.map((lvl) => {
+                const checked = activeDegreeLevels.includes(lvl)
+                return (
+                  <label
+                    key={lvl}
+                    className={`flex items-center gap-2 rounded-xl border px-4 py-3 text-sm font-medium cursor-pointer transition-colors ${
+                      checked
+                        ? 'border-primary-300 bg-primary-50 text-gray-900'
+                        : 'border-gray-200 bg-gray-50 text-gray-500'
+                    }`}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={checked}
+                      onChange={(e) => {
+                        setDegreeLevelsError('')
+                        setDegreeLevelsSaved(false)
+                        setActiveDegreeLevels((prev) => {
+                          const next = new Set(prev)
+                          if (e.target.checked) next.add(lvl)
+                          else next.delete(lvl)
+                          return APPLICATION_DEGREE_LEVELS.filter((level) => next.has(level))
+                        })
+                      }}
+                    />
+                    <span>{t(`applyForm.degreeLevels.${lvl}`)}</span>
+                  </label>
+                )
+              })}
+            </div>
+          </div>
         </div>
       )}
 
