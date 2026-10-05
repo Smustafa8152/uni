@@ -8,7 +8,7 @@ export const ISO_COUNTRY_CODES = [
   'FI', 'FJ', 'FK', 'FM', 'FO', 'FR',
   'GA', 'GB', 'GD', 'GE', 'GF', 'GG', 'GH', 'GI', 'GL', 'GM', 'GN', 'GP', 'GQ', 'GR', 'GT', 'GU', 'GW', 'GY',
   'HK', 'HN', 'HR', 'HT', 'HU',
-  'ID', 'IE', 'IL', 'IM', 'IN', 'IQ', 'IR', 'IS', 'IT',
+  'ID', 'IE', 'IM', 'IN', 'IQ', 'IR', 'IS', 'IT',
   'JE', 'JM', 'JO', 'JP',
   'KE', 'KG', 'KH', 'KI', 'KM', 'KN', 'KP', 'KR', 'KW', 'KY', 'KZ',
   'LA', 'LB', 'LC', 'LI', 'LK', 'LR', 'LS', 'LT', 'LU', 'LV', 'LY',

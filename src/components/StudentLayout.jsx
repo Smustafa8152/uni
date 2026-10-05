@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
 import { useLanguage } from '../contexts/LanguageContext'
+import { FlagAr, FlagEn } from './LanguageFlags'
 import { ChevronDown, Menu, X } from 'lucide-react'
 import { getPaymentsEnabled } from '../utils/getPaymentsEnabled'
 
@@ -193,6 +194,7 @@ export default function StudentLayout({ children }) {
                 aria-label="تغيير اللغة"
                 title="تغيير اللغة"
               >
+                {language === 'ar' ? <FlagAr /> : <FlagEn />}
                 <span>{language === 'ar' ? 'العربية' : 'English'}</span>
                 <ChevronDown className="w-4 h-4" style={{ color: UI.muted }} />
               </button>
@@ -209,10 +211,11 @@ export default function StudentLayout({ children }) {
                       changeLanguage('ar')
                       setLangMenuOpen(false)
                     }}
-                    className={`w-full px-4 py-2.5 text-sm text-right hover:bg-[#f4f6fb] ${
+                    className={`inline-flex w-full items-center justify-end gap-2 px-4 py-2.5 text-sm text-right hover:bg-[#f4f6fb] ${
                       language === 'ar' ? 'font-extrabold text-[#1a3a6b]' : 'font-semibold text-[#1e2a3a]'
                     }`}
                   >
+                    <FlagAr />
                     العربية
                   </button>
                   <button
@@ -221,10 +224,11 @@ export default function StudentLayout({ children }) {
                       changeLanguage('en')
                       setLangMenuOpen(false)
                     }}
-                    className={`w-full px-4 py-2.5 text-sm text-right hover:bg-[#f4f6fb] ${
+                    className={`w-full px-4 py-2.5 text-sm text-right hover:bg-[#f4f6fb] inline-flex items-center justify-end gap-2 ${
                       language === 'en' ? 'font-extrabold text-[#1a3a6b]' : 'font-semibold text-[#1e2a3a]'
                     }`}
                   >
+                    <FlagEn />
                     English
                   </button>
                 </div>

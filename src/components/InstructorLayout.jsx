@@ -6,6 +6,7 @@ import { useLanguage } from '../contexts/LanguageContext'
 import { getActiveInstructorByEmail } from '../utils/getActiveInstructorByEmail'
 import { formatInstructorDisplayName } from '../utils/academicTitle'
 import { ChevronDown } from 'lucide-react'
+import { FlagAr, FlagEn } from './LanguageFlags'
 import '../styles/instructor-portal.css'
 
 const instructorNavigation = [
@@ -163,6 +164,7 @@ export default function InstructorLayout({ children }) {
                   aria-expanded={langDropdownOpen}
                   aria-label={language === 'ar' ? 'Language: Arabic' : 'Language: English'}
                 >
+                  {language === 'ar' ? <FlagAr /> : <FlagEn />}
                   {language === 'ar' ? 'العربية' : 'English'}
                   <ChevronDown className={langDropdownOpen ? 'topbar-lang-chevron-open' : ''} style={{ width: 16, height: 16, marginRight: 4 }} />
                 </button>
@@ -204,7 +206,10 @@ export default function InstructorLayout({ children }) {
                         cursor: 'pointer',
                       }}
                     >
-                      العربية
+                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+                        <FlagAr />
+                        العربية
+                      </span>
                     </button>
                     <button
                       type="button"
@@ -226,7 +231,10 @@ export default function InstructorLayout({ children }) {
                         cursor: 'pointer',
                       }}
                     >
-                      English
+                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+                        <FlagEn />
+                        English
+                      </span>
                     </button>
                   </div>
                 )}

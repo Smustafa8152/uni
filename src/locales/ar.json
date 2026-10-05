@@ -6516,7 +6516,7 @@
     },
     "fields": {
       "intake": "الفصل الدراسي",
-      "workload": "نظام الدراسة",
+      "workload": "نمط الدراسة",
       "academicLevel": "المرحلة الدراسية",
       "faculty": "الكلية",
       "firstChoice": "الرغبة الأولى",
@@ -6576,7 +6576,9 @@
     },
     "workload": {
       "full_time": "انتظام كامل",
-      "part_time": "انتظام جزئي"
+      "part_time": "انتظام جزئي",
+      "on_campus": "حضوري",
+      "online": "عن بُعد"
     },
     "degreeLevels": {
       "diploma": "دبلوم",

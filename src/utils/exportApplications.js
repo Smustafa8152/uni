@@ -214,7 +214,7 @@ export function getApplicationExportColumnDefs(isArabic, getStatusLabel) {
     { key: 'is_transfer_student', header: L('Transfer student', 'طالب محول'), get: (a) => a.is_transfer_student, width: 12 },
     { key: 'previous_university', header: L('Previous university', 'الجامعة السابقة'), get: (a) => a.previous_university, width: 20 },
     { key: 'scholarship_request', header: L('Scholarship request', 'طلب منحة'), get: (a) => a.scholarship_request, width: 14 },
-    { key: 'study_type', header: L('Workload', 'نظام الدراسة'), get: (a) => a.study_type, width: 12 },
+    { key: 'study_type', header: L('Study mode', 'نمط الدراسة'), get: (a) => a.study_type, width: 12 },
     { key: 'is_former_student', header: L('Former student', 'طالب سابق'), get: (a) => a.is_former_student, width: 12 },
     { key: 'matric_no', header: L('Matric no.', 'الرقم الجامعي السابق'), get: (a) => a.matric_no, width: 14 },
     { key: 'highest_education_level', header: L('Highest education level', 'أعلى مؤهل'), get: (a) => a.highest_education_level, width: 18 },

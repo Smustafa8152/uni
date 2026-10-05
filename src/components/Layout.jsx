@@ -3,6 +3,7 @@ import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { useAuth } from '../contexts/AuthContext'
 import { useLanguage } from '../contexts/LanguageContext'
+import { FlagAr, FlagEn } from './LanguageFlags'
 import { filterNavByMenuPermissions, isAdminPortalStaff } from '../utils/menuPermissions'
 import {
   LayoutDashboard,
@@ -570,11 +571,7 @@ export default function Layout({ children }) {
                   onClick={() => setLangMenuOpen(!langMenuOpen)}
                   className="flex items-center space-x-2 px-3 py-2 rounded-lg hover:bg-gray-100 transition-colors"
                 >
-                  {language === 'ar' ? (
-                    <span className="text-2xl">🇸🇦</span>
-                  ) : (
-                    <span className="text-2xl">🇬🇧</span>
-                  )}
+                  {language === 'ar' ? <FlagAr className="h-5 w-8" /> : <FlagEn className="h-5 w-8" />}
                 </button>
                 {langMenuOpen && (
                   <>
@@ -587,14 +584,14 @@ export default function Layout({ children }) {
                         onClick={() => handleLanguageChange('en')}
                         className={`w-full flex items-center ${isRTL ? 'space-x-reverse space-x-2' : 'space-x-2'} px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 transition-colors ${language === 'en' ? 'bg-gray-50' : ''}`}
                       >
-                        <span className="text-xl">🇬🇧</span>
+                        <FlagEn />
                         <span>English</span>
                       </button>
                       <button
                         onClick={() => handleLanguageChange('ar')}
                         className={`w-full flex items-center ${isRTL ? 'space-x-reverse space-x-2' : 'space-x-2'} px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 transition-colors ${language === 'ar' ? 'bg-gray-50' : ''}`}
                       >
-                        <span className="text-xl">🇸🇦</span>
+                        <FlagAr />
                         <span>العربية</span>
                       </button>
                     </div>

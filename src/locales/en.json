@@ -6597,8 +6597,8 @@
       "referral": "How you found us"
     },
     "fields": {
-      "intake": "Intake",
-      "workload": "Workload",
+      "intake": "Semester",
+      "workload": "Study mode",
       "academicLevel": "Academic level",
       "faculty": "Faculty",
       "firstChoice": "First choice",
@@ -6658,7 +6658,9 @@
     },
     "workload": {
       "full_time": "Full-time",
-      "part_time": "Part-time"
+      "part_time": "Part-time",
+      "on_campus": "On campus",
+      "online": "Online"
     },
     "degreeLevels": {
       "diploma": "Diploma",
@@ -6710,13 +6712,13 @@
     },
     "documentsIntro": "Optional now — you can upload them later from your application page.",
     "empty": {
-      "intakes": "No intake is open for applications right now.",
+      "intakes": "No semester is open for applications right now.",
       "majors": "This faculty has no programs at the selected academic level.",
       "faculties": "No faculty offers programs at this academic level."
     },
     "errors": {
       "selectDegreeLevel": "Please select an academic level.",
-      "selectIntake": "Please select an intake.",
+      "selectIntake": "Please select a semester.",
       "personalRequired": "Please enter your full name and date of birth.",
       "contactRequired": "Email and mobile number are required.",
       "passwordShort": "Password must be at least 8 characters.",

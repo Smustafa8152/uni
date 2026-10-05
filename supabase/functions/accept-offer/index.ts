@@ -361,6 +361,8 @@ serve(async (req) => {
           college_id: Number(app.college_id),
           enrollment_date: enrollmentDate,
           status: 'active',
+          study_type: app.study_type === 'part_time' ? 'part_time' : 'full_time',
+          study_approach: app.study_type === 'online' ? 'online' : 'on_campus',
         })
         .select('id, student_id')
         .single()
@@ -394,6 +396,7 @@ serve(async (req) => {
             emergency_phone: app.emergency_contact_phone || app.emergency_phone || null,
             major_id: Number(app.major_id),
             college_id: Number(app.college_id),
+            study_approach: app.study_type === 'online' ? 'online' : 'on_campus',
           })
           .eq('id', createdStudent.id)
       }
