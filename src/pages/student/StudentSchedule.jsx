@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo } from 'react'
+import { Link } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { useLanguage } from '../../contexts/LanguageContext'
 import { useAuth } from '../../contexts/AuthContext'
@@ -12,9 +13,46 @@ import { Calendar, Printer, Video, ExternalLink, X } from 'lucide-react'
 const DAYS = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday']
 const DAY_NAMES_EN = { sunday: 'Sunday', monday: 'Monday', tuesday: 'Tuesday', wednesday: 'Wednesday', thursday: 'Thursday', friday: 'Friday', saturday: 'Saturday' }
 const DAY_NAMES_AR = { sunday: 'الأحد', monday: 'الإثنين', tuesday: 'الثلاثاء', wednesday: 'الأربعاء', thursday: 'الخميس', friday: 'الجمعة', saturday: 'السبت' }
-const DEFAULT_TIME_SLOTS = ['08:00', '09:30', '11:00', '12:30', '14:00', '15:30', '17:00']
+const WEEKDAYS = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday']
+const COLORS = ['bg-[#1a3a6b]', 'bg-[#2a5298]', 'bg-emerald-700', 'bg-amber-700', 'bg-rose-700']
 
-const COLORS = ['bg-slate-700', 'bg-blue-600', 'bg-emerald-600', 'bg-amber-600', 'bg-orange-500', 'bg-rose-500']
+function downloadIcs(sessions, calendarName) {
+  const pad = (n) => String(n).padStart(2, '0')
+  const nextDate = (day) => {
+    const want = DAYS.indexOf(day)
+    const now = new Date()
+    const delta = (want - now.getDay() + 7) % 7
+    const d = new Date(now)
+    d.setDate(now.getDate() + delta)
+    return d
+  }
+  const stamp = (date, time) => {
+    const [h, m] = String(time || '00:00').split(':')
+    return `${date.getFullYear()}${pad(date.getMonth() + 1)}${pad(date.getDate())}T${pad(h)}${pad(m || 0)}00`
+  }
+  const lines = ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//IBU//Timetable//EN', `X-WR-CALNAME:${calendarName}`]
+  sessions.forEach((session, index) => {
+    const day = nextDate(session.day)
+    lines.push(
+      'BEGIN:VEVENT',
+      `UID:schedule-${session.scheduleId || index}@ibu`,
+      `DTSTART:${stamp(day, session.startTime)}`,
+      `DTEND:${stamp(day, session.endTime || session.startTime)}`,
+      'RRULE:FREQ=WEEKLY',
+      `SUMMARY:${session.code} ${session.name}`,
+      `LOCATION:${session.location || ''}`,
+      'END:VEVENT',
+    )
+  })
+  lines.push('END:VCALENDAR')
+  const blob = new Blob([lines.join('\r\n')], { type: 'text/calendar' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = 'timetable.ics'
+  a.click()
+  URL.revokeObjectURL(url)
+}
 
 export default function StudentSchedule() {
   const { t } = useTranslation()
@@ -26,7 +64,8 @@ export default function StudentSchedule() {
   const [selectedSemesterId, setSelectedSemesterId] = useState('')
   const [grid, setGrid] = useState({})
   const [courseList, setCourseList] = useState([])
-  const [timeSlots, setTimeSlots] = useState(DEFAULT_TIME_SLOTS)
+  const [unscheduled, setUnscheduled] = useState([])
+  const [timeSlots, setTimeSlots] = useState([])
   const [selectedSession, setSelectedSession] = useState(null)
 
   const isArabic = isRTL || language === 'ar'
@@ -108,14 +147,19 @@ export default function StudentSchedule() {
       const gridMap = {}
       const seen = new Set()
       const list = []
-      const slotSet = new Set(DEFAULT_TIME_SLOTS)
+      const waiting = []
+      const slotSet = new Set()
       enrollments?.forEach((enr, idx) => {
         const cls = enr.classes
-        if (!cls?.class_schedules?.length) return
+        if (!cls) return
         const sub = cls.subjects
         const code = sub?.code || cls.code || '—'
         const name = getLocalizedName(sub, language === 'ar') || '—'
         const color = COLORS[idx % COLORS.length]
+        if (!cls.class_schedules?.length) {
+          waiting.push({ code, name })
+          return
+        }
         cls.class_schedules.forEach(s => {
           const day = String(s.day_of_week || '').toLowerCase()
           if (!DAYS.includes(day)) return
@@ -149,6 +193,7 @@ export default function StudentSchedule() {
       setTimeSlots([...slotSet].sort())
       setGrid(gridMap)
       setCourseList(list)
+      setUnscheduled(waiting)
     } catch (e) {
       console.error(e)
     } finally {
@@ -157,7 +202,16 @@ export default function StudentSchedule() {
   }
 
   const currentSemester = semesters.find(s => String(s.id) === selectedSemesterId)
-  const displayDays = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday']
+  const displayDays = useMemo(() => {
+    const extra = ['friday', 'saturday'].filter((day) =>
+      timeSlots.some((slot) => (grid[`${day}_${slot}`] || []).length > 0)
+    )
+    return [...WEEKDAYS, ...extra]
+  }, [timeSlots, grid])
+  const sessions = useMemo(
+    () => displayDays.flatMap((day) => timeSlots.flatMap((slot) => grid[`${day}_${slot}`] || [])),
+    [displayDays, timeSlots, grid]
+  )
 
   const getRowEndTime = (slot) => {
     let maxEnd = ''
@@ -191,35 +245,52 @@ export default function StudentSchedule() {
     )
   }
 
+  const studentName = student ? getLocalizedName(student, language === 'ar') : ''
+
   return (
-    <div className={`space-y-6 ${isRTL ? 'text-right' : 'text-left'}`}>
-      <p className="text-slate-500 text-sm">
-        {t('studentPortal.classSchedule', 'Class schedule')} / {t('studentPortal.studentPortal', 'Student Portal')} / {t('studentPortal.main', 'Main')}
-      </p>
-      <div className={`flex flex-wrap items-center justify-between gap-4 ${isRTL ? 'flex-row-reverse' : ''}`}>
+    <div className="space-y-6 text-start" dir={isRTL ? 'rtl' : 'ltr'}>
+      <nav className="flex flex-wrap items-center gap-1.5 text-sm text-[#6b7a99]">
+        <Link to="/" className="hover:text-[#1a3a6b] no-underline">{t('applicantPortal.breadcrumbHome', 'Home')}</Link>
+        <span className="text-[#dde3ef]">/</span>
+        <Link to="/dashboard" className="hover:text-[#1a3a6b] no-underline">{t('track.studentPortal', 'Student portal')}</Link>
+        <span className="text-[#dde3ef]">/</span>
+        <span className="font-semibold text-[#1a3a6b]">{t('studentPortal.weeklySchedule', 'Weekly schedule')}</span>
+      </nav>
+
+      <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-slate-900">{t('studentPortal.weeklySchedule', 'Weekly schedule')}</h1>
-          <p className="text-slate-600 text-sm mt-1">
-            {currentSemester ? getLocalizedName(currentSemester, language === 'ar') : ''} {student ? `| ${getLocalizedName(student, language === 'ar')}` : ''}
+          <h1 className="text-2xl font-extrabold text-[#1a3a6b]">{t('studentPortal.weeklySchedule', 'Weekly schedule')}</h1>
+          <p className="mt-1 text-sm text-[#6b7a99]">
+            {[currentSemester ? getLocalizedName(currentSemester, language === 'ar') : '', studentName].filter(Boolean).join(' · ') || studentName}
           </p>
         </div>
-        <div className={`flex gap-2 ${isRTL ? 'flex-row-reverse' : ''}`}>
-          <button className="flex items-center gap-2 px-4 py-2 border border-slate-300 rounded-lg text-slate-700 hover:bg-slate-50 text-sm font-medium">
-            <Calendar className="w-4 h-4" />
-            {t('studentPortal.icsExport', 'ICS Export')}
-          </button>
-          <button className="flex items-center gap-2 px-4 py-2 border border-slate-300 rounded-lg text-slate-700 hover:bg-slate-50 text-sm font-medium">
-            <Printer className="w-4 h-4" />
-            {t('common.print', 'Print')}
-          </button>
-        </div>
+        {sessions.length > 0 && (
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={() => downloadIcs(sessions, t('studentPortal.weeklySchedule', 'Weekly schedule'))}
+              className="inline-flex items-center gap-2 rounded-lg border border-[#dde3ef] bg-white px-4 py-2 text-sm font-bold text-[#1e2a3a] hover:bg-[#f4f6fb]"
+            >
+              <Calendar className="h-4 w-4" />
+              {t('studentPortal.icsExport', 'ICS Export')}
+            </button>
+            <button
+              type="button"
+              onClick={() => window.print()}
+              className="inline-flex items-center gap-2 rounded-lg border border-[#dde3ef] bg-white px-4 py-2 text-sm font-bold text-[#1e2a3a] hover:bg-[#f4f6fb]"
+            >
+              <Printer className="h-4 w-4" />
+              {t('common.print', 'Print')}
+            </button>
+          </div>
+        )}
       </div>
 
-      {semesters.length > 0 && (
+      {semesters.length > 1 && (
         <select
           value={selectedSemesterId}
           onChange={(e) => setSelectedSemesterId(e.target.value)}
-          className="px-4 py-2 border border-slate-300 rounded-xl text-sm focus:ring-2 focus:ring-slate-500 focus:border-transparent"
+          className="rounded-xl border border-[#dde3ef] bg-white px-4 py-2 text-sm text-[#1e2a3a]"
         >
           {semesters.map((s) => (
             <option key={s.id} value={s.id}>{getLocalizedName(s, language === 'ar')}</option>
@@ -227,14 +298,38 @@ export default function StudentSchedule() {
         </select>
       )}
 
-      <div className="bg-white rounded-2xl shadow-md border border-slate-200 overflow-hidden">
+      {sessions.length === 0 ? (
+        <section className="rounded-2xl border border-[#dde3ef] bg-white px-6 py-12 text-center shadow-sm">
+          <Calendar className="mx-auto h-10 w-10 text-[#1a3a6b]" />
+          <h2 className="mt-4 text-lg font-extrabold text-[#1a3a6b]">{t('studentPortal.scheduleEmptyTitle')}</h2>
+          <p className="mx-auto mt-2 max-w-md text-sm leading-relaxed text-[#6b7a99]">{t('studentPortal.scheduleEmptyHint')}</p>
+          <Link
+            to="/student/enroll"
+            className="mt-5 inline-flex items-center justify-center rounded-lg bg-[#1a3a6b] px-5 py-2.5 text-sm font-bold text-white no-underline hover:bg-[#2a5298]"
+          >
+            {t('studentPortal.scheduleGoRegister')}
+          </Link>
+          {unscheduled.length > 0 && (
+            <ul className="mx-auto mt-6 max-w-md space-y-2 text-start">
+              {unscheduled.map((course) => (
+                <li key={course.code} className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm">
+                  <span className="font-bold text-[#1e2a3a]" dir="ltr">{course.code}</span>
+                  <span className="mt-0.5 block text-[#6b7a99]">{course.name}</span>
+                  <span className="mt-1 block text-xs font-semibold text-amber-900">{t('studentPortal.scheduleNoTime')}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+      ) : (
+      <div className="overflow-hidden rounded-2xl border border-[#dde3ef] bg-white shadow-sm">
         <div className={`overflow-x-auto ${isRTL ? 'rtl' : 'ltr'}`} dir={isRTL ? 'rtl' : 'ltr'}>
           <table className="w-full min-w-[700px] border-collapse" dir={isRTL ? 'rtl' : 'ltr'}>
             <thead>
               <tr>
-                <th className={`bg-slate-800 text-white px-3 py-3 text-sm font-semibold w-28 ${isRTL ? 'text-right' : 'text-left'}`}>{t('studentPortal.time', 'Time')}</th>
+                <th className="w-28 bg-[#1a3a6b] px-3 py-3 text-start text-sm font-semibold text-white">{t('studentPortal.time', 'Time')}</th>
                 {displayDays.map((day) => (
-                  <th key={day} className={`bg-slate-800 text-white px-2 py-3 text-sm font-semibold ${isRTL ? 'text-right' : 'text-left'}`}>
+                  <th key={day} className="bg-[#1a3a6b] px-2 py-3 text-start text-sm font-semibold text-white">
                     {language === 'ar' ? DAY_NAMES_AR[day] : DAY_NAMES_EN[day]}
                   </th>
                 ))}
@@ -243,24 +338,24 @@ export default function StudentSchedule() {
             <tbody>
               {timeSlots.map((slot) => (
                 <tr key={slot} className="border-b border-slate-100">
-                  <td className={`px-3 py-2 text-slate-600 text-sm font-medium bg-slate-50 align-top whitespace-nowrap ${isRTL ? 'text-right' : 'text-left'}`}>
+                  <td className="whitespace-nowrap bg-slate-50 px-3 py-2 text-start align-top text-sm font-medium text-slate-600" dir="ltr">
                     {rowTimeLabels[slot] || formatTime12h(slot, isArabic)}
                   </td>
                   {displayDays.map((day) => {
                     const key = `${day}_${slot}`
                     const cells = grid[key] || []
                     return (
-                      <td key={day} className={`p-1.5 align-top border-slate-100 min-w-[120px] ${isRTL ? 'text-right border-r' : 'text-left border-l'}`}>
+                      <td key={day} className="min-w-[120px] border-s border-slate-100 p-1.5 align-top text-start">
                         {cells.length === 0 ? (
-                          <span className="text-slate-300 text-sm">—</span>
+                          <span className="block min-h-8" />
                         ) : (
-                          <div className={`space-y-1 ${isRTL ? 'text-right' : 'text-left'}`}>
+                          <div className="space-y-1 text-start">
                             {cells.map((c, i) => (
                               <button
                                 key={`${c.scheduleId || c.code}-${i}`}
                                 type="button"
                                 onClick={() => setSelectedSession(c)}
-                                className={`w-full rounded-lg p-2.5 text-white text-xs shadow-sm text-left transition-transform hover:scale-[1.02] hover:shadow-md focus:outline-none focus:ring-2 focus:ring-white/60 ${c.color} ${isRTL ? 'text-right' : 'text-left'} ${c.joinUrl ? 'cursor-pointer' : 'cursor-pointer opacity-95'}`}
+                                className={`w-full cursor-pointer rounded-lg p-2.5 text-start text-xs text-white shadow-sm transition-transform hover:scale-[1.02] hover:shadow-md focus:outline-none focus:ring-2 focus:ring-white/60 ${c.color} ${c.joinUrl ? '' : 'opacity-95'}`}
                                 title={c.joinUrl ? t('classes.joinTeamsMeeting', 'Join Teams Meeting') : t('classes.noTeamsLink', 'No Teams link yet')}
                               >
                                 <p className="font-semibold">{c.code}</p>
@@ -287,7 +382,7 @@ export default function StudentSchedule() {
           </table>
         </div>
         {courseList.length > 0 && (
-          <div className={`flex flex-wrap gap-4 p-4 bg-slate-50 border-t border-slate-200 ${isRTL ? 'flex-row-reverse' : ''}`}>
+          <div className="flex flex-wrap gap-4 border-t border-[#dde3ef] bg-[#f7f9fd] p-4">
             {courseList.map((c, i) => (
               <div key={i} className="flex items-center gap-2">
                 <span className={`w-4 h-4 rounded flex-shrink-0 ${c.color}`} />
@@ -297,6 +392,7 @@ export default function StudentSchedule() {
           </div>
         )}
       </div>
+      )}
 
       {selectedSession && (
         <div
@@ -312,7 +408,7 @@ export default function StudentSchedule() {
             aria-modal="true"
             aria-labelledby="session-modal-title"
           >
-            <div className={`flex items-start justify-between gap-3 mb-4 ${isRTL ? 'flex-row-reverse' : ''}`}>
+            <div className="mb-4 flex items-start justify-between gap-3">
               <div>
                 <h2 id="session-modal-title" className="text-lg font-bold text-slate-900">
                   {selectedSession.code} — {selectedSession.name}
@@ -332,17 +428,17 @@ export default function StudentSchedule() {
             </div>
 
             <dl className="space-y-2 text-sm mb-5">
-              <div className={`flex gap-2 ${isRTL ? 'flex-row-reverse' : ''}`}>
+              <div className="flex gap-2">
                 <dt className="text-slate-500 shrink-0">{t('studentPortal.time', 'Time')}:</dt>
                 <dd className="font-medium text-slate-800">
                   {formatTimeRange12h(selectedSession.startTime, selectedSession.endTime, isArabic)}
                 </dd>
               </div>
-              <div className={`flex gap-2 ${isRTL ? 'flex-row-reverse' : ''}`}>
+              <div className="flex gap-2">
                 <dt className="text-slate-500 shrink-0">{t('classes.location', 'Location')}:</dt>
                 <dd className="font-medium text-slate-800">{selectedSession.location}</dd>
               </div>
-              <div className={`flex gap-2 ${isRTL ? 'flex-row-reverse' : ''}`}>
+              <div className="flex gap-2">
                 <dt className="text-slate-500 shrink-0">{t('classes.instructor', 'Instructor')}:</dt>
                 <dd className="font-medium text-slate-800">{selectedSession.instructor}</dd>
               </div>
@@ -353,7 +449,7 @@ export default function StudentSchedule() {
                 href={selectedSession.joinUrl}
                 target="_blank"
                 rel="noopener noreferrer"
-                className={`w-full inline-flex items-center justify-center gap-2 px-4 py-3 rounded-xl bg-blue-600 text-white font-semibold hover:bg-blue-700 transition-colors ${isRTL ? 'flex-row-reverse' : ''}`}
+                className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-[#1a3a6b] px-4 py-3 font-semibold text-white hover:bg-[#2a5298]"
               >
                 <Video className="w-5 h-5" />
                 {t('classes.joinTeamsMeeting', 'Join Teams Meeting')}

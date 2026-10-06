@@ -3,7 +3,7 @@ import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
 import { useLanguage } from '../contexts/LanguageContext'
 import { FlagAr, FlagEn } from './LanguageFlags'
-import { Bell, ChevronDown, Home, LogOut, Menu, Search, Video, X } from 'lucide-react'
+import { ChevronDown, Home, LogOut, Menu, Search, Video, X } from 'lucide-react'
 import { getPaymentsEnabled } from '../utils/getPaymentsEnabled'
 
 const UI = {
@@ -23,7 +23,6 @@ const NAV = [
       { href: '/dashboard', label: { ar: 'لوحة التحكم', en: 'Dashboard' }, icon: '🏠' },
       { href: '/student/profile', label: { ar: 'ملفي الشخصي', en: 'My profile' }, icon: '👤' },
       { href: '/student/documents', label: { ar: 'مركز الوثائق', en: 'Document center' }, icon: '📁' },
-      { href: '/student/holds', label: { ar: 'التعليقات والحجب', en: 'Holds & blocks' }, icon: '🔒' },
     ],
   },
   {
@@ -46,12 +45,6 @@ const NAV = [
     items: [
       { href: '/student/payments', label: { ar: 'الفواتير والرسوم', en: 'Invoices & fees' }, icon: '🧾' },
       { href: '/student/payments', label: { ar: 'الدفع الإلكتروني', en: 'Online payment' }, icon: '💳' },
-    ],
-  },
-  {
-    label: { ar: 'الخدمات الطلابية', en: 'Student services' },
-    items: [
-      { href: '/student/requests', label: { ar: 'مركز الطلبات', en: 'Requests center' }, icon: '📋' },
     ],
   },
   {
@@ -248,15 +241,6 @@ export default function StudentLayout({ children }) {
               title={tx({ ar: 'دليل المقررات', en: 'Course catalog' })}
             >
               <Search className="h-4 w-4" style={{ color: UI.p }} aria-hidden="true" />
-            </Link>
-            <Link
-              to="/student/requests"
-              className="hidden h-9 w-9 rounded-full border sm:flex items-center justify-center"
-              style={{ backgroundColor: UI.bg, borderColor: UI.bdr }}
-              aria-label={tx({ ar: 'مركز الطلبات', en: 'Requests center' })}
-              title={tx({ ar: 'مركز الطلبات', en: 'Requests center' })}
-            >
-              <Bell className="h-4 w-4" style={{ color: UI.p }} aria-hidden="true" />
             </Link>
             <div className="flex items-center gap-2 text-sm" style={{ color: UI.muted }}>
               <div className="hidden h-9 w-9 rounded-full sm:flex items-center justify-center font-extrabold text-white" style={{ backgroundColor: UI.p }}>

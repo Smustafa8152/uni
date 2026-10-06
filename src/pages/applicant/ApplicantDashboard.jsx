@@ -11,6 +11,7 @@ import {
   getApplicantReasonMeta,
   getApplicantStatus,
 } from '../../utils/applicationStatusDisplay'
+import ApplicantNextStep, { applicantHasNextStep } from '../../components/applicant/ApplicantNextStep'
 import { FilePlus2, ChevronRight, Loader2 } from 'lucide-react'
 
 const CLOSED_CODES = new Set(['DCRJ', 'ENCA', 'ENCU', 'ACWD'])
@@ -48,6 +49,14 @@ export default function ApplicantDashboard() {
             status_code,
             status_reason_code,
             review_notes,
+            interview_at,
+            interview_timezone,
+            interview_meeting_url,
+            interview_instructions,
+            exam_at,
+            exam_timezone,
+            exam_location_or_link,
+            exam_instructions,
             created_at,
             majors!major_id (name_en, name_ar),
             colleges!college_id (name_en, name_ar),
@@ -75,6 +84,7 @@ export default function ApplicantDashboard() {
   const active = rows.find((r) => !CLOSED_CODES.has(String(r.status_code || '').toUpperCase())) || rows[0] || null
   const others = active ? rows.filter((r) => r.id !== active.id) : []
 
+  const showNext = Boolean(active && applicantHasNextStep(active.status_code))
   const activeStatus = getApplicantStatus(active?.status_code)
   const hintKey = `${activeStatus.labelKey}Hint`
   const statusHint = active && i18n.exists(hintKey) ? t(hintKey) : ''
@@ -209,6 +219,11 @@ export default function ApplicantDashboard() {
             </div>
 
             <div className="px-5 sm:px-7 py-6">
+              {showNext && (
+                <div className="mb-6">
+                  <ApplicantNextStep application={active} isRTL={isRTL} portal />
+                </div>
+              )}
               <p className="text-xs font-bold uppercase tracking-wide text-[#6b7a99] mb-4">
                 {t('track.stagesTitle')}
               </p>
@@ -235,7 +250,7 @@ export default function ApplicantDashboard() {
                     : current
                       ? `track.flow.${step.key}Now`
                       : `track.flow.${step.key}Done`
-                  const detail = (current || accepted) && statusHint ? statusHint : t(copyKey)
+                  const detail = (current || accepted) && statusHint && !showNext ? statusHint : t(copyKey)
                   const badge = current || accepted
                     ? t('track.flow.youAreHere')
                     : done
@@ -270,7 +285,7 @@ export default function ApplicantDashboard() {
                         <p className={`mt-1 text-sm leading-relaxed ${failed ? 'text-rose-800' : upcoming ? 'text-[#a8b3c7]' : 'text-[#4b5b78]'}`}>
                           {detail}
                         </p>
-                        {current && reason && (
+                        {current && reason && !showNext && (
                           <div
                             className={`mt-3 rounded-xl border px-4 py-3 ${
                               failed

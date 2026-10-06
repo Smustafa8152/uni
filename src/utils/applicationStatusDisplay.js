@@ -21,8 +21,8 @@ export const APPLICANT_STATUS = {
   RVEX: { phase: 'review', view: 'action', action: 'exam', labelKey: 'track.applicant.exam', tone: 'action' },
 
   DCPN: { phase: 'decision', ...IN_REVIEW },
-  DCCA: { phase: 'decision', view: 'outcome', labelKey: 'track.applicant.admitted', tone: 'accepted' },
-  DCFA: { phase: 'decision', view: 'outcome', labelKey: 'track.applicant.admitted', tone: 'accepted' },
+  DCCA: { phase: 'decision', view: 'outcome', action: 'offer', labelKey: 'track.applicant.respondOffer', tone: 'accepted' },
+  DCFA: { phase: 'decision', view: 'outcome', action: 'offer', labelKey: 'track.applicant.admitted', tone: 'accepted' },
   DCWL: { phase: 'decision', view: 'outcome', labelKey: 'track.applicant.waitlisted', tone: 'waitlist' },
   DCRJ: { phase: 'decision', view: 'outcome', labelKey: 'track.applicant.rejected', tone: 'rejected' },
 

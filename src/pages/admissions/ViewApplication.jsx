@@ -13,7 +13,7 @@ import { getNationalityLabel, normalizeNationalityCode } from '../../utils/natio
 import { getApplicantStatus } from '../../utils/applicationStatusDisplay'
 import { emailForActionStatus } from '../../utils/admissionMessageTemplates'
 import NationalitySelect from '../../components/common/NationalitySelect'
-import { ArrowLeft, CheckCircle, XCircle, Clock, Mail, Phone, MapPin, Calendar, GraduationCap, FileText, User, AlertCircle, BookOpen, Edit, Save, X, ChevronDown, ChevronUp, ArrowRight, Info, Sparkles, Shield, TrendingUp, ArrowDown, KeyRound, Eye, EyeOff, Loader2, Copy, MessageSquare, Video, History } from 'lucide-react'
+import { ArrowLeft, CheckCircle, XCircle, Clock, Mail, Phone, MapPin, Calendar, GraduationCap, FileText, User, AlertCircle, BookOpen, Edit, Save, X, ArrowRight, Info, Sparkles, Shield, ArrowDown, KeyRound, Eye, EyeOff, Loader2, Copy, MessageSquare, Video, History } from 'lucide-react'
 import { Button, toast } from '../../components/ui'
 import { invokeAdminPasswordReset } from '../../utils/invokeAdminPasswordReset'
 import ApplicationMessagesPanel from '../../components/admissions/ApplicationMessagesPanel'
@@ -828,7 +828,6 @@ export default function ViewApplication() {
   const [selectedStatus, setSelectedStatus] = useState('')
   const [selectedReason, setSelectedReason] = useState('')
   const [statusNotes, setStatusNotes] = useState('')
-  const [modalStep, setModalStep] = useState(1) // 1: Select Status, 2: Select Reason (if needed), 3: Add Notes
   const [showAllStatuses, setShowAllStatuses] = useState(false)
   
   // Edit mode state
@@ -1317,18 +1316,12 @@ export default function ViewApplication() {
   const handleStatusSelect = (statusCode) => {
     setSelectedStatus(statusCode)
     setError('')
-    const reasonType = requiresReason(statusCode)
-    if (reasonType) {
-      setModalStep(2) // Move to reason selection step
-    } else {
-      setModalStep(3) // Move to notes step
-    }
+    if (!requiresReason(statusCode)) setSelectedReason('')
   }
 
   const handleReasonSelect = (reasonCode) => {
     setSelectedReason(reasonCode)
     setError('')
-    setModalStep(3) // Move to notes step
   }
 
   const docPublicUrl = useCallback((filePath) => {
@@ -1529,14 +1522,16 @@ export default function ViewApplication() {
   const handleStatusChange = async () => {
     if (!selectedStatus) {
       setError(t('admissions.viewApplication.errors.selectStatus'))
-      setModalStep(1)
       return
     }
 
-    const reasonType = requiresReason(selectedStatus)
-    if (reasonType && !selectedReason) {
-      setError(`Please select a ${reasonType === 'request_info' ? 'request' : 'reject'} reason`)
-      setModalStep(2)
+    const reasonNeeded = requiresReason(selectedStatus)
+    if (reasonNeeded && !selectedReason) {
+      setError(
+        reasonNeeded === 'request_info'
+          ? t('admissions.viewApplication.statusModal.requestInfoTitle')
+          : t('admissions.viewApplication.statusModal.rejectionRequired'),
+      )
       return
     }
 
@@ -1670,16 +1665,13 @@ export default function ViewApplication() {
           if (!fetchError && fullApplication) {
             const result = await createStudentFromApplication(fullApplication)
             
-            if (result.success) {
-              console.log('✅ Student created successfully from application:', result.student.student_id)
-              // Optionally show success message to user
-              // You could add a success state here
-            } else if (result.alreadyExists) {
-              console.log('ℹ️ Student already exists for this application')
-              // Student already exists, that's okay
+            if (result.success && result.alreadyExists) {
+              console.log('Student already exists; login promoted:', result.student.student_id)
+            } else if (result.success) {
+              console.log('Student created from application:', result.student.student_id)
             } else {
-              console.error('⚠️ Failed to create student from application:', result.error)
-              // Log error but don't block the status update
+              console.error('Failed to create or promote the student login:', result.error)
+              setError(result.error || 'The status was saved, but the student login could not be opened.')
             }
           }
         } catch (studentCreationError) {
@@ -1693,7 +1685,6 @@ export default function ViewApplication() {
       setSelectedStatus('')
       setSelectedReason('')
       setStatusNotes('')
-      setModalStep(1)
       setShowAllStatuses(false)
       
       // Refresh application data (this will also trigger activity log fetch)
@@ -1726,7 +1717,6 @@ export default function ViewApplication() {
     setSelectedStatus('')
     setSelectedReason('')
     setStatusNotes('')
-    setModalStep(1)
     setShowAllStatuses(false)
     setError('')
   }
@@ -1996,10 +1986,43 @@ export default function ViewApplication() {
     )
   }
 
-  const availableStatuses = getAllAvailableStatuses()
   const availableTransitions = getAvailableTransitions()
   const reasonType = selectedStatus ? requiresReason(selectedStatus) : null
   const reasonsList = reasonType === 'request_info' ? requestReasons : reasonType === 'reject' ? rejectReasons : []
+
+  const StatusTile = ({ code }) => {
+    const selected = selectedStatus === code
+    return (
+      <button
+        type="button"
+        onClick={() => handleStatusSelect(code)}
+        className={`flex h-full min-h-[6.25rem] flex-col rounded-2xl border p-3 text-start transition ${getStatusColor(code)} ${
+          selected ? 'border-gray-900 shadow-md ring-2 ring-gray-900' : 'hover:shadow-sm'
+        }`}
+      >
+        <span className="flex items-start justify-between gap-2">
+          <span className="text-sm font-bold leading-snug text-gray-900">{getStatusDisplayName(code)}</span>
+          {selected ? (
+            <CheckCircle className="mt-0.5 h-4 w-4 shrink-0" />
+          ) : (
+            <span dir="ltr" className="shrink-0 font-mono text-[10px] font-bold leading-5 opacity-50">{code}</span>
+          )}
+        </span>
+        <span className="mt-auto pt-2 text-[11px] leading-snug opacity-75">{applicantSeesLine(code)}</span>
+      </button>
+    )
+  }
+
+  const StageCard = ({ label, code, emptyText }) => (
+    <div className={`flex min-h-[5.75rem] flex-col justify-between rounded-3xl px-4 py-3 text-start ${
+      code ? `border shadow-sm ${getStatusColor(code)}` : 'border-2 border-dashed border-slate-300 bg-white'
+    }`}>
+      <span className={`text-xs font-semibold ${code ? 'opacity-70' : 'text-slate-400'}`}>{label}</span>
+      <span className={`text-base font-bold leading-snug ${code ? 'text-gray-900' : 'text-slate-400'}`}>
+        {code ? getStatusDisplayName(code) : emptyText}
+      </span>
+    </div>
+  )
 
   // ---- header and tabs ----
   const latinName = [application?.first_name, application?.last_name].filter(Boolean).join(' ').trim()
@@ -2096,8 +2119,8 @@ export default function ViewApplication() {
               className={heroButtonClass}
               disabled={updating}
               onClick={() => {
-                setModalStep(1)
-                setSelectedStatus('')
+                const nextSteps = getAvailableTransitions()
+                setSelectedStatus(nextSteps.length === 1 ? nextSteps[0].to_status_code : '')
                 setSelectedReason('')
                 setStatusNotes('')
                 setShowAllStatuses(false)
@@ -2236,394 +2259,168 @@ export default function ViewApplication() {
         </form>
       )}
 
-      {/* Enhanced Status Change Modal */}
+      {/* Status change: now → next, on one screen */}
       {showStatusModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-50 p-4 backdrop-blur-sm">
+        <div className="fixed inset-0 z-50 flex items-end justify-center bg-slate-900/50 p-0 [@media(min-height:760px)]:items-center [@media(min-height:760px)]:p-4">
           <div
-            className="bg-white rounded-3xl shadow-2xl max-w-5xl w-full max-h-[95vh] overflow-hidden flex flex-col"
+            className="max-h-[100dvh] w-full max-w-lg overflow-y-auto rounded-t-[28px] bg-[#f6f7fb] shadow-2xl sm:max-h-[90dvh] sm:rounded-[28px]"
             dir={isArabicLayout ? 'rtl' : 'ltr'}
           >
-            {/* Modal Header */}
-            <div className="flex items-center justify-between p-6 border-b border-gray-200 bg-gradient-to-r from-primary-50 to-primary-100">
-              <div className={alignStart}>
-                <h2 className={`text-2xl font-bold text-gray-900 ${alignStart}`}>
+            <div className="sticky top-0 z-10 border-b border-slate-200 bg-[#f6f7fb] px-5 pb-3 pt-3">
+              <div className="flex items-center justify-between gap-3">
+                <h2 className="text-lg font-bold text-slate-900">
                   {t('admissions.viewApplication.statusModal.title')}
                 </h2>
-                <p className={`text-sm text-gray-600 mt-1 ${alignStart}`}>
-                  {t('admissions.viewApplication.statusModal.subtitle')}
-                </p>
+                <button
+                  type="button"
+                  onClick={resetModal}
+                  className="rounded-full bg-white p-2 text-slate-500 shadow-sm hover:text-slate-800"
+                  aria-label={t('admissions.viewApplication.statusModal.cancel')}
+                >
+                  <X className="h-4 w-4" />
+                </button>
               </div>
-              <button
-                onClick={resetModal}
-                className="p-2 hover:bg-white hover:bg-opacity-50 rounded-lg transition-colors"
-              >
-                <X className="w-5 h-5 text-gray-600" />
-              </button>
+
+              <div className="mt-3 grid grid-cols-[1fr_auto_1fr] items-stretch gap-2">
+                <StageCard
+                  label={t('admissions.viewApplication.statusModal.now')}
+                  code={application?.status_code || application?.status}
+                />
+                <span className="flex items-center justify-center text-slate-400">
+                  {isArabicLayout ? <ArrowLeft className="h-5 w-5" /> : <ArrowRight className="h-5 w-5" />}
+                </span>
+                <StageCard
+                  label={t('admissions.viewApplication.statusModal.next')}
+                  code={selectedStatus}
+                  emptyText={t('admissions.viewApplication.statusModal.chooseNext')}
+                />
+              </div>
+
+              {selectedStatus ? (
+                <p className="mt-2 text-center text-xs text-slate-500">{applicantSeesLine(selectedStatus)}</p>
+              ) : null}
+              {availableTransitions.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setShowAllStatuses((open) => !open)}
+                  className="mt-2 text-sm font-semibold text-[#1a3a6b] hover:underline"
+                >
+                  {showAllStatuses
+                    ? t('admissions.viewApplication.statusModal.hideAll')
+                    : t('admissions.viewApplication.statusModal.otherStatus')}
+                </button>
+              )}
             </div>
 
-            {/* Progress Steps */}
-            <div className="px-6 py-4 border-b border-gray-200 bg-gray-50">
-              <div className="flex items-center justify-center gap-4">
-                <div className={`flex items-center gap-2 ${modalStep >= 1 ? 'text-primary-600' : 'text-gray-400'}`}>
-                  <div className={`w-8 h-8 rounded-full flex items-center justify-center border-2 ${modalStep >= 1 ? 'border-primary-600 bg-primary-600 text-white' : 'border-gray-300 bg-white'}`}>
-                    {modalStep > 1 ? <CheckCircle className="w-5 h-5" /> : <span>1</span>}
-                  </div>
-                  <span className="text-sm font-medium">{t('admissions.viewApplication.statusModal.selectStatus')}</span>
-                </div>
-                {isArabicLayout ? (
-                  <ArrowLeft className={`w-4 h-4 ${modalStep >= 2 ? 'text-primary-600' : 'text-gray-300'}`} />
-                ) : (
-                  <ArrowRight className={`w-4 h-4 ${modalStep >= 2 ? 'text-primary-600' : 'text-gray-300'}`} />
-                )}
-                <div className={`flex items-center gap-2 ${modalStep >= 2 ? 'text-primary-600' : 'text-gray-400'}`}>
-                  <div className={`w-8 h-8 rounded-full flex items-center justify-center border-2 ${modalStep >= 2 ? 'border-primary-600 bg-primary-600 text-white' : 'border-gray-300 bg-white'}`}>
-                    {modalStep > 2 ? <CheckCircle className="w-5 h-5" /> : <span>2</span>}
-                  </div>
-                  <span className="text-sm font-medium">
-                    {requiresReason(selectedStatus)
-                      ? (requiresReason(selectedStatus) === 'reject'
-                        ? t('admissions.viewApplication.statusModal.rejectReason')
-                        : t('admissions.viewApplication.statusModal.requestReason'))
-                      : t('admissions.viewApplication.statusModal.addNotes')}
-                  </span>
-                </div>
-                {requiresReason(selectedStatus) && (
-                  <>
-                    {isArabicLayout ? (
-                      <ArrowLeft className={`w-4 h-4 ${modalStep >= 3 ? 'text-primary-600' : 'text-gray-300'}`} />
-                    ) : (
-                      <ArrowRight className={`w-4 h-4 ${modalStep >= 3 ? 'text-primary-600' : 'text-gray-300'}`} />
-                    )}
-                    <div className={`flex items-center gap-2 ${modalStep >= 3 ? 'text-primary-600' : 'text-gray-400'}`}>
-                      <div className={`w-8 h-8 rounded-full flex items-center justify-center border-2 ${modalStep >= 3 ? 'border-primary-600 bg-primary-600 text-white' : 'border-gray-300 bg-white'}`}>
-                        <span>3</span>
-                      </div>
-                      <span className="text-sm font-medium">{t('admissions.viewApplication.statusModal.addNotes')}</span>
-                    </div>
-                  </>
-                )}
-              </div>
-            </div>
-
-            {/* Modal Content */}
-            <div className="flex-1 overflow-y-auto p-6">
+            <div className="space-y-3 px-5 pb-2 pt-3">
               {error && (
-                <div className="mb-4 bg-red-50 border border-red-200 rounded-lg p-4 text-red-700 flex items-center gap-2">
-                  <AlertCircle className="w-5 h-5" />
+                <div className="flex items-center gap-2 rounded-2xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+                  <AlertCircle className="h-4 w-4 shrink-0" />
                   <span>{error}</span>
                 </div>
               )}
 
-              {/* Step 1: Status Selection */}
-              {modalStep === 1 && (
-                <div className="space-y-6">
-                  {/* Current Status Display */}
-                  <div className="bg-gradient-to-r from-gray-50 to-gray-100 rounded-xl p-6 border-2 border-gray-200">
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <label className="block text-xs font-semibold text-gray-500 mb-2 uppercase tracking-wide">{t('admissions.viewApplication.statusModal.currentStatus')}</label>
-                        <div className={`inline-flex flex-col items-start gap-1 px-4 py-2 rounded-lg border-2 ${getStatusColor(application?.status_code || application?.status)}`}>
-                          <span className="inline-flex items-center gap-2">
-                            {getStatusIcon(application?.status_code || application?.status)}
-                            <span className="font-bold text-lg">{getStatusDisplayName(application?.status_code || application?.status)}</span>
-                            {application?.status_code && (
-                              <span className="text-xs font-mono opacity-75">({application.status_code})</span>
-                            )}
-                          </span>
-                          <span className="text-xs font-normal opacity-80">{applicantSeesLine(application?.status_code)}</span>
+              {availableTransitions.length > 1 && (
+                <div className="grid grid-cols-2 items-stretch gap-2">
+                  {availableTransitions.map((transition) => (
+                    <StatusTile key={transition.id || transition.to_status_code} code={transition.to_status_code} />
+                  ))}
+                </div>
+              )}
+
+              {(showAllStatuses || availableTransitions.length === 0) && (
+                <div className="space-y-4">
+                  {Object.entries(getStatusesByCategory()).map(([category, statuses]) => {
+                    if (!statuses.length || category === 'recommended') return null
+                    const categoryLabels = {
+                      application: t('admissions.viewApplication.statusModal.categories.application'),
+                      review: t('admissions.viewApplication.statusModal.categories.review'),
+                      decision: t('admissions.viewApplication.statusModal.categories.decision'),
+                      enrollment: t('admissions.viewApplication.statusModal.categories.enrollment'),
+                      academic: t('admissions.viewApplication.statusModal.categories.academic'),
+                      graduation: t('admissions.viewApplication.statusModal.categories.graduation'),
+                      other: t('admissions.viewApplication.statusModal.categories.other'),
+                    }
+                    return (
+                      <div key={category}>
+                        <p className="mb-2 text-xs font-bold text-slate-400">{categoryLabels[category] || categoryLabels.other}</p>
+                        <div className="grid grid-cols-2 items-stretch gap-2">
+                          {statuses.map((status) => (
+                            <StatusTile key={status.code} code={status.code} />
+                          ))}
                         </div>
                       </div>
-                      <TrendingUp className="w-8 h-8 text-gray-400" />
-                    </div>
-                  </div>
+                    )
+                  })}
+                </div>
+              )}
 
-                  {/* Recommended Transitions */}
-                  {availableTransitions.length > 0 && (
-                    <div>
-                      <div className="flex items-center gap-2 mb-4">
-                        <Sparkles className="w-5 h-5 text-primary-600" />
-                        <h3 className="text-lg font-bold text-gray-900">{t('admissions.viewApplication.statusModal.recommended')}</h3>
-                        <span className="px-2 py-1 bg-primary-100 text-primary-700 rounded-full text-xs font-medium">
-                          {t('admissions.viewApplication.statusModal.availableCount', { count: availableTransitions.length })}
-                        </span>
-                      </div>
-                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
-                        {availableTransitions.map(transition => {
-                          const targetStatus = statusCodes.find(s => s.code === transition.to_status_code)
-                          if (!targetStatus) return null
-                          return (
-                            <button
-                              key={transition.id}
-                              onClick={() => handleStatusSelect(targetStatus.code)}
-                              className={`p-4 rounded-xl border-2 transition-all hover:shadow-lg hover:scale-105 ${alignStart} ${getStatusColor(targetStatus.code)} hover:border-primary-500`}
-                            >
-                              <div className="flex items-start justify-between mb-2">
-                                <div className="flex-1">
-                                  <div className="flex items-center gap-2 mb-1">
-                                    {getStatusIcon(targetStatus.code)}
-                                    <span className="font-bold text-sm">{targetStatus.code}</span>
-                                  </div>
-                                  <p className="font-semibold text-gray-900 mb-1">
-                                    {isArabicLayout ? targetStatus.name_ar : targetStatus.name_en}
-                                  </p>
-                                  <p className="text-xs font-medium opacity-80">{applicantSeesLine(targetStatus.code)}</p>
-                                  {transition.trigger_name_en && (
-                                    <p className="text-xs text-gray-600 mt-1">
-                                      {isArabicLayout ? transition.trigger_name_ar : transition.trigger_name_en}
-                                    </p>
-                                  )}
-                                </div>
-                                <Sparkles className="w-4 h-4 text-primary-600 flex-shrink-0" />
-                              </div>
-                            </button>
-                          )
-                        })}
-                      </div>
-                    </div>
-                  )}
-
-                  {/* All Statuses (Collapsible) */}
-                  <div>
-                    <button
-                      onClick={() => setShowAllStatuses(!showAllStatuses)}
-                      className="flex items-center justify-between w-full p-4 bg-gray-50 rounded-xl hover:bg-gray-100 transition-colors mb-4"
-                    >
-                      <div className="flex items-center gap-2">
-                        <Shield className="w-5 h-5 text-gray-600" />
-                        <span className="font-semibold text-gray-900">
-                          {showAllStatuses
-                            ? t('admissions.viewApplication.statusModal.hideAll')
-                            : t('admissions.viewApplication.statusModal.showAll')}
-                        </span>
-                      </div>
-                      {showAllStatuses ? <ChevronUp className="w-5 h-5" /> : <ChevronDown className="w-5 h-5" />}
-                    </button>
-
-                    {showAllStatuses && (
-                      <div className="space-y-6">
-                        {(() => {
-                          const categories = getStatusesByCategory()
-                          return Object.entries(categories).map(([category, statuses]) => {
-                            if (statuses.length === 0 || category === 'recommended') return null
-                            
-                            const categoryLabels = {
-                              application: { label: t('admissions.viewApplication.statusModal.categories.application'), icon: FileText, bgClass: 'bg-blue-50', iconClass: 'text-blue-600' },
-                              review: { label: t('admissions.viewApplication.statusModal.categories.review'), icon: AlertCircle, bgClass: 'bg-yellow-50', iconClass: 'text-yellow-600' },
-                              decision: { label: t('admissions.viewApplication.statusModal.categories.decision'), icon: CheckCircle, iconReject: XCircle, bgClass: 'bg-green-50', iconClass: 'text-green-600' },
-                              enrollment: { label: t('admissions.viewApplication.statusModal.categories.enrollment'), icon: GraduationCap, bgClass: 'bg-indigo-50', iconClass: 'text-indigo-600' },
-                              academic: { label: t('admissions.viewApplication.statusModal.categories.academic'), icon: BookOpen, bgClass: 'bg-teal-50', iconClass: 'text-teal-600' },
-                              graduation: { label: t('admissions.viewApplication.statusModal.categories.graduation'), icon: CheckCircle, bgClass: 'bg-emerald-50', iconClass: 'text-emerald-600' },
-                              other: { label: t('admissions.viewApplication.statusModal.categories.other'), icon: Info, bgClass: 'bg-gray-50', iconClass: 'text-gray-600' }
-                            }
-                            
-                            const catInfo = categoryLabels[category] || categoryLabels.other
-                            const CatIcon = catInfo.icon
-                            
-                            return (
-                              <div key={category} className="border border-gray-200 rounded-xl overflow-hidden">
-                                <div className={`${catInfo.bgClass} px-4 py-3 border-b border-gray-200`}>
-                                  <div className="flex items-center gap-2">
-                                    <CatIcon className={`w-5 h-5 ${catInfo.iconClass}`} />
-                                    <h4 className="font-semibold text-gray-900">{catInfo.label}</h4>
-                                    <span className="px-2 py-1 bg-white rounded-full text-xs font-medium text-gray-600">
-                                      {statuses.length}
-                                    </span>
-                                  </div>
-                                </div>
-                                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 p-4">
-                                  {statuses.map(status => (
-                                    <button
-                                      key={status.code}
-                                      onClick={() => handleStatusSelect(status.code)}
-                                      className={`p-3 rounded-lg border-2 transition-all hover:shadow-md hover:scale-[1.02] ${alignStart} ${getStatusColor(status.code)} hover:border-primary-400`}
-                                    >
-                                      <div className="flex items-center justify-between">
-                                        <div className="flex-1">
-                                          <div className="flex items-center gap-2 mb-1">
-                                            {getStatusIcon(status.code)}
-                                            <span className="font-mono text-xs font-bold">{status.code}</span>
-                                          </div>
-                                          <p className="text-sm font-medium">
-                                            {isArabicLayout ? status.name_ar : status.name_en}
-                                          </p>
-                                          <p className="text-xs font-normal opacity-80 mt-1">{applicantSeesLine(status.code)}</p>
-                                        </div>
-                                        {isArabicLayout ? (
-                                          <ArrowLeft className="w-4 h-4 opacity-50" />
-                                        ) : (
-                                          <ArrowRight className="w-4 h-4 opacity-50" />
-                                        )}
-                                      </div>
-                                    </button>
-                                  ))}
-                                </div>
-                              </div>
-                            )
-                          })
-                        })()}
-                      </div>
-                    )}
+              {reasonType && (
+                <div className={`rounded-2xl border p-3 ${reasonType === 'reject' ? 'border-red-200 bg-red-50' : 'border-yellow-200 bg-yellow-50'}`}>
+                  <p className={`mb-2 text-sm font-semibold ${reasonType === 'reject' ? 'text-red-900' : 'text-yellow-900'}`}>
+                    {reasonType === 'reject'
+                      ? t('admissions.viewApplication.statusModal.rejectionReasons')
+                      : t('admissions.viewApplication.statusModal.requestReasons')}
+                  </p>
+                  <div className="flex flex-wrap gap-2">
+                    {reasonsList.map((reason) => {
+                      const selected = selectedReason === reason.code
+                      return (
+                        <button
+                          key={reason.code}
+                          type="button"
+                          onClick={() => handleReasonSelect(reason.code)}
+                          className={`rounded-full border px-3 py-1.5 text-start text-sm font-medium ${
+                            selected
+                              ? reasonType === 'reject'
+                                ? 'border-red-600 bg-red-600 text-white'
+                                : 'border-yellow-600 bg-yellow-500 text-white'
+                              : 'border-white bg-white text-gray-800 hover:border-gray-300'
+                          }`}
+                        >
+                          {isArabicLayout ? reason.name_ar : reason.name_en}
+                        </button>
+                      )
+                    })}
                   </div>
                 </div>
               )}
 
-              {/* Step 2: Reason Selection */}
-              {modalStep === 2 && reasonType && (
-                <div className="space-y-6">
-                  <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 mb-6">
-                    <div className="flex items-start gap-3">
-                      <Info className="w-5 h-5 text-blue-600 mt-0.5" />
-                      <div>
-                        <p className="font-semibold text-blue-900 mb-1">
-                          {reasonType === 'reject'
-                            ? t('admissions.viewApplication.statusModal.rejectionRequired')
-                            : t('admissions.viewApplication.statusModal.requestInfoTitle')}
-                        </p>
-                        <p className="text-sm text-blue-700">
-                          {reasonType === 'reject'
-                            ? t('admissions.viewApplication.statusModal.rejectionHint')
-                            : t('admissions.viewApplication.statusModal.requestHint')}
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="flex items-center gap-2 mb-4">
-                    {reasonType === 'reject' ? <XCircle className="w-5 h-5 text-red-600" /> : <AlertCircle className="w-5 h-5 text-yellow-600" />}
-                    <h3 className="text-lg font-bold text-gray-900">
-                      {reasonType === 'request_info'
-                        ? t('admissions.viewApplication.statusModal.requestReasons')
-                        : t('admissions.viewApplication.statusModal.rejectionReasons')}
-                    </h3>
-                  </div>
-
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    {reasonsList.map(reason => (
-                      <button
-                        key={reason.code}
-                        onClick={() => handleReasonSelect(reason.code)}
-                        className={`p-4 rounded-xl border-2 transition-all hover:shadow-lg ${alignStart} ${
-                          selectedReason === reason.code
-                            ? reasonType === 'reject' ? 'border-red-500 bg-red-50' : 'border-yellow-500 bg-yellow-50'
-                            : 'border-gray-200 bg-white hover:border-primary-300'
-                        }`}
-                      >
-                        <div className="flex items-start justify-between">
-                          <div className="flex-1">
-                            <div className="flex items-center gap-2 mb-2">
-                              <span className="font-mono text-xs font-bold text-gray-600">{reason.code}</span>
-                              {selectedReason === reason.code && (
-                                <CheckCircle className={`w-4 h-4 ${reasonType === 'reject' ? 'text-red-600' : 'text-yellow-600'}`} />
-                              )}
-                            </div>
-                            <p className="font-semibold text-gray-900">
-                              {isArabicLayout ? reason.name_ar : reason.name_en}
-                            </p>
-                          </div>
-                          {isArabicLayout ? (
-                            <ArrowLeft className="w-4 h-4 opacity-50" />
-                          ) : (
-                            <ArrowRight className="w-4 h-4 opacity-50" />
-                          )}
-                        </div>
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* Step 3: Notes */}
-              {modalStep === 3 && (
-                <div className="space-y-6">
-                  {/* Selected Status Review */}
-                  <div className="bg-gradient-to-r from-primary-50 to-primary-100 rounded-xl p-6 border-2 border-primary-200">
-                    <label className="block text-xs font-semibold text-gray-600 mb-3 uppercase tracking-wide">{t('admissions.viewApplication.statusModal.summary')}</label>
-                    <div className="space-y-3">
-                      <div className="flex items-center justify-between">
-                        <span className="text-sm text-gray-600">{t('admissions.viewApplication.statusModal.from')}</span>
-                        <span className={`px-3 py-1 rounded-lg border ${getStatusColor(application?.status_code || application?.status)} font-medium`}>
-                          {getStatusDisplayName(application?.status_code || application?.status)}
-                        </span>
-                      </div>
-                      <div className="flex items-center justify-center">
-                        <ArrowDown className="w-5 h-5 text-gray-400" />
-                      </div>
-                      <div className="flex items-center justify-between">
-                        <span className="text-sm text-gray-600">{t('admissions.viewApplication.statusModal.to')}</span>
-                        <span className={`px-3 py-1 rounded-lg border ${getStatusColor(selectedStatus)} font-medium`}>
-                          {getStatusDisplayName(selectedStatus)}
-                        </span>
-                      </div>
-                      {selectedReason && (
-                        <div className="mt-3 pt-3 border-t border-primary-200">
-                          <span className="text-sm text-gray-600">{t('admissions.viewApplication.statusModal.reason')}</span>
-                          <span className="ms-2 text-sm font-medium text-gray-900">
-                            {isArabicLayout
-                              ? reasonsList.find(r => r.code === selectedReason)?.name_ar
-                              : reasonsList.find(r => r.code === selectedReason)?.name_en}
-                          </span>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-semibold text-gray-700 mb-2">
-                      {t('admissions.viewApplication.statusModal.notesLabel')}{' '}
-                      <span className="text-gray-400 font-normal">({t('admissions.viewApplication.statusModal.optional')})</span>
-                    </label>
-                    <textarea
-                      value={statusNotes}
-                      onChange={(e) => setStatusNotes(e.target.value)}
-                      rows={6}
-                      className="w-full px-4 py-3 border-2 border-gray-300 rounded-xl focus:ring-2 focus:ring-primary-500 focus:border-primary-500 transition-all resize-none"
-                      placeholder={t('admissions.viewApplication.statusModal.notesPlaceholder')}
-                    />
-                    <p className="text-xs text-gray-500 mt-2">
-                      {t('admissions.viewApplication.statusModal.notesHelp')}
-                    </p>
-                  </div>
-                </div>
-              )}
+              <label className="block text-start">
+                <span className="mb-1.5 block text-xs font-semibold text-slate-500">
+                  {t('admissions.viewApplication.statusModal.notesLabel')}{' '}
+                  <span className="font-normal">({t('admissions.viewApplication.statusModal.optional')})</span>
+                </span>
+                <textarea
+                  value={statusNotes}
+                  onChange={(e) => setStatusNotes(e.target.value)}
+                  rows={1}
+                  className="w-full resize-none rounded-2xl border border-white bg-white px-3.5 py-2.5 text-sm shadow-sm outline-none focus:border-[#1a3a6b]"
+                  placeholder={t('admissions.viewApplication.statusModal.notesPlaceholder')}
+                />
+              </label>
             </div>
 
-            {/* Modal Footer */}
-            <div className="flex items-center justify-between gap-3 p-6 border-t border-gray-200 bg-gray-50">
+            <div className="bg-[#f6f7fb] px-5 pb-4 pt-2">
               <button
-                onClick={() => {
-                  if (modalStep > 1) {
-                    setModalStep(prev => prev - 1)
-                    setError('')
-                  } else {
-                    resetModal()
-                  }
-                }}
-                disabled={updating}
-                className="flex items-center gap-2 px-6 py-3 border-2 border-gray-300 rounded-xl text-gray-700 font-medium hover:bg-white transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                type="button"
+                onClick={handleStatusChange}
+                disabled={updating || !selectedStatus || (requiresReason(selectedStatus) && !selectedReason)}
+                className="flex w-full items-center justify-center gap-2 rounded-2xl bg-primary-gradient px-5 py-3.5 text-sm font-semibold text-white shadow-sm hover:shadow-md disabled:opacity-40"
               >
-                {isArabicLayout ? <ArrowRight className="w-4 h-4" /> : <ArrowLeft className="w-4 h-4" />}
-                <span>{modalStep > 1 ? t('admissions.viewApplication.statusModal.back') : t('admissions.viewApplication.statusModal.cancel')}</span>
+                {updating ? (
+                  <>
+                    <div className="h-4 w-4 animate-spin rounded-full border-b-2 border-white" />
+                    <span>{t('admissions.viewApplication.statusModal.updating')}</span>
+                  </>
+                ) : (
+                  <span>
+                    {selectedStatus
+                      ? `${t('admissions.viewApplication.statusModal.confirm')} · ${getStatusDisplayName(selectedStatus)}`
+                      : t('admissions.viewApplication.statusModal.confirm')}
+                  </span>
+                )}
               </button>
-              
-              {modalStep === 3 && (
-                <button
-                  onClick={handleStatusChange}
-                  disabled={updating || !selectedStatus || (requiresReason(selectedStatus) && !selectedReason)}
-                  className="flex items-center gap-2 px-8 py-3 bg-primary-gradient text-white rounded-xl font-semibold hover:shadow-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  {updating ? (
-                    <>
-                      <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div>
-                      <span>{t('admissions.viewApplication.statusModal.updating')}</span>
-                    </>
-                  ) : (
-                    <>
-                      <Save className="w-5 h-5" />
-                      <span>{t('admissions.viewApplication.statusModal.confirm')}</span>
-                    </>
-                  )}
-                </button>
-              )}
             </div>
           </div>
         </div>
