@@ -732,6 +732,22 @@ export default function RegisterApplication({ portal = false }) {
     [majors, formData.second_choice_college_id, formData.degree_level]
   )
 
+  // A second choice needs another program at the same level. PhD currently has one, so the section stays hidden.
+  const showSecondChoice = useMemo(() => {
+    if (!formData.degree_level) return false
+    const programs = majors.filter((m) => m.degree_level === formData.degree_level)
+    return programs.length > 1
+  }, [majors, formData.degree_level])
+
+  useEffect(() => {
+    if (showSecondChoice) return
+    setFormData((prev) =>
+      prev.second_choice_college_id || prev.second_choice_major_id
+        ? { ...prev, second_choice_college_id: '', second_choice_major_id: '' }
+        : prev
+    )
+  }, [showSecondChoice])
+
   const selectedMajor = useMemo(
     () => majors.find((m) => String(m.id) === String(formData.major_id)),
     [majors, formData.major_id]
@@ -1452,7 +1468,7 @@ export default function RegisterApplication({ portal = false }) {
                   </div>
                 </SectionCard>
 
-                <SectionCard title={t('applyForm.sections.secondChoice', 'Second choice (optional)')}>
+                {showSecondChoice && <SectionCard title={t('applyForm.sections.secondChoice', 'Second choice (optional)')}>
                   <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                     <Field label={t('applyForm.fields.faculty2', 'Faculty (second choice)')}>
                       <select
@@ -1497,7 +1513,7 @@ export default function RegisterApplication({ portal = false }) {
                       </select>
                     </Field>
                   </div>
-                </SectionCard>
+                </SectionCard>}
               </div>
             )}
 

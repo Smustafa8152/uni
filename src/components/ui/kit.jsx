@@ -46,9 +46,9 @@ const BADGE_TONES = {
 }
 
 /** Status in words, never colour alone. */
-export function Badge({ tone = 'neutral', icon: Icon, className = '', children }) {
+export function Badge({ tone = 'neutral', icon: Icon, className = '', children, ...props }) {
   return (
-    <span className={cx('inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-bold leading-none', BADGE_TONES[tone] || BADGE_TONES.neutral, className)}>
+    <span {...props} className={cx('inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-bold leading-none', BADGE_TONES[tone] || BADGE_TONES.neutral, className)}>
       {Icon ? <Icon className="h-3.5 w-3.5 shrink-0" aria-hidden="true" /> : null}
       {children}
     </span>
