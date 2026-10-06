@@ -1050,6 +1050,26 @@ function App() {
             }
           />
           <Route
+            path="/student/applications/:id"
+            element={
+              <ProtectedRoute allowedRoles={['student']}>
+                <RoleBasedLayout>
+                  <ApplicationStatus />
+                </RoleBasedLayout>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/student/applications/:id/offer-letter"
+            element={
+              <ProtectedRoute allowedRoles={['student']}>
+                <RoleBasedLayout>
+                  <ApplicantOfferLetter />
+                </RoleBasedLayout>
+              </ProtectedRoute>
+            }
+          />
+          <Route
             path="/student/documents"
             element={
               <ProtectedRoute allowedRoles={['student']}>

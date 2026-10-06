@@ -7,6 +7,7 @@ import { useAuth } from '../../contexts/AuthContext'
 import { supabase, SUPABASE_STORAGE_BUCKET } from '../../lib/supabase'
 import { getLocalizedName } from '../../utils/localizedName'
 import { APPLICANT_PHASES, applicantStatusClass, getApplicantReasonMeta, getApplicantStatus } from '../../utils/applicationStatusDisplay'
+import ApplicantNextStep, { applicantHasNextStep } from '../../components/applicant/ApplicantNextStep'
 import { canLoginWithoutSemesterPm10Milestone } from '../../utils/financePermissions'
 import PaymentModal from '../../components/payment/PaymentModal'
 import { getPaymentsEnabled } from '../../utils/getPaymentsEnabled'
@@ -60,8 +61,11 @@ export default function ApplicationStatus() {
   const { id } = useParams()
   const location = useLocation()
   const outletCtx = useOutletContext()
-  const portalMode = Boolean(outletCtx?.applicantPortal)
-  const { user } = useAuth()
+  const applicantPortal = Boolean(outletCtx?.applicantPortal)
+  const studentMode = location.pathname.startsWith('/student/applications/')
+  const portalMode = applicantPortal || studentMode
+  const homePath = studentMode ? '/dashboard' : '/portal'
+  const { user, userRole } = useAuth()
   const [application, setApplication] = useState(location.state?.application || null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -118,6 +122,24 @@ export default function ApplicationStatus() {
       applicationFetchInProgressRef.current = false
     })
   }, [id, application, portalMode, user?.id, user?.email])
+
+  useEffect(() => {
+    if (applicantPortal || studentMode || userRole !== 'student' || !id) return
+    navigate(`/student/applications/${id}${location.search}${location.hash}`, { replace: true })
+  }, [applicantPortal, studentMode, userRole, id, location.search, location.hash, navigate])
+
+  useEffect(() => {
+    if (!application) return
+    const pay = new URLSearchParams(location.search).get('pay')
+    if (pay === '1' && String(application.status_code || '').toUpperCase() === 'APPN') {
+      setShowPaymentModal(true)
+    }
+  }, [application, location.search])
+
+  useEffect(() => {
+    if (!application || location.hash !== '#status-documents-panel') return
+    document.getElementById('status-documents-panel')?.scrollIntoView({ block: 'start' })
+  }, [application, location.hash])
 
   // Fetch application documents when we have application
   useEffect(() => {
@@ -517,7 +539,7 @@ export default function ApplicationStatus() {
           <h2 className="text-2xl font-bold text-gray-900 mb-2">{t('track.notFound', 'Application Not Found')}</h2>
           <p className="text-gray-600 mb-6">{error || t('track.notFoundDesc', 'The application you are looking for does not exist.')}</p>
           <button
-            onClick={() => navigate(portalMode ? '/portal' : '/lookup-application')}
+            onClick={() => navigate(portalMode ? homePath : '/lookup-application')}
             className="px-6 py-3 bg-primary-600 text-white rounded-xl font-semibold hover:bg-primary-700 transition-colors"
           >
             {portalMode ? t('track.backToPortal', 'Back to dashboard') : t('track.backToLookup', 'Back to application lookup')}
@@ -671,8 +693,10 @@ export default function ApplicationStatus() {
               {t('applicantPortal.breadcrumbHome', 'Home')}
             </Link>
             <span className="text-[#dde3ef]">/</span>
-            <Link to="/portal" className="hover:text-[#1a3a6b] no-underline">
-              {t('applicantPortal.breadcrumbPortal', 'Applicant portal')}
+            <Link to={homePath} className="hover:text-[#1a3a6b] no-underline">
+              {studentMode
+                ? t('track.studentPortal', 'Student portal')
+                : t('applicantPortal.breadcrumbPortal', 'Applicant portal')}
             </Link>
             <span className="text-[#dde3ef]">/</span>
             <span className="text-[#1a3a6b] font-semibold">{t('track.breadcrumbStatus', 'Application status')}</span>
@@ -699,6 +723,17 @@ export default function ApplicationStatus() {
                 {statusLabel}
               </span>
             </header>
+            {applicantHasNextStep(application.status_code) && (
+              <div className="px-5 sm:px-7 pt-6">
+                <ApplicantNextStep
+                  application={application}
+                  isRTL={isRTL}
+                  portal={portalMode}
+                  onPage
+                  onPay={() => setShowPaymentModal(true)}
+                />
+              </div>
+            )}
             <ol className="px-5 sm:px-7 py-6" aria-label={t('track.stagesTitle', 'Application processing stages')}>
               {progressSteps.map((step, idx) => {
                 const failed = step.state === 'rejected'
@@ -707,7 +742,7 @@ export default function ApplicationStatus() {
                 const done = step.state === 'done' || accepted
                 const current = step.state === 'current' || failed || waiting
                 const upcoming = step.state === 'pending'
-                const showAction = step.state === 'current' && applicantStatus.view === 'action'
+                const showAction = step.state === 'current' && applicantStatus.view === 'action' && !applicantHasNextStep(application.status_code)
                 const mark = failed ? '!' : done ? '✓' : String(idx + 1)
                 const bubble = failed
                   ? 'bg-rose-600 text-white ring-4 ring-rose-100'
@@ -723,7 +758,7 @@ export default function ApplicationStatus() {
                   : current
                     ? `track.flow.${step.key}Now`
                     : `track.flow.${step.key}Done`
-                const detail = (current || accepted) && statusHint ? statusHint : t(copyKey)
+                const detail = (current || accepted) && statusHint && !applicantHasNextStep(application.status_code) ? statusHint : t(copyKey)
                 const badge = current || accepted
                   ? t('track.flow.youAreHere', 'Current step')
                   : done
@@ -747,7 +782,7 @@ export default function ApplicationStatus() {
                       <p className={`mt-1 text-sm leading-relaxed ${failed ? 'text-rose-800' : upcoming ? 'text-[#a8b3c7]' : 'text-[#4b5b78]'}`}>
                         {detail}
                       </p>
-                      {current && showReason && (
+                      {current && showReason && !applicantHasNextStep(application.status_code) && (
                         <div
                           className={`mt-3 rounded-xl border px-4 py-3 ${
                             failed
@@ -846,7 +881,7 @@ export default function ApplicationStatus() {
           </article>
 
           <div className="min-w-0 space-y-6">
-            {student && hasStudentPortalAccess && (
+            {student && hasStudentPortalAccess && !studentMode && userRole !== 'student' && (
               <div className="rounded-[10px] border border-[#dde3ef] bg-[#f8fafc] shadow-sm p-5">
                 <div className={`flex flex-col gap-3 text-start`}>
                   <div className={`flex items-start gap-3`}>

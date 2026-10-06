@@ -8,7 +8,9 @@ import { getEmailLookupCandidates } from '../../utils/emailLookup'
 import { formatTimeRange12h } from '../../utils/timeFormat'
 import { formatInstructorDisplayName } from '../../utils/academicTitle'
 import { supabase } from '../../lib/supabase'
-import { AlertTriangle, CreditCard, Calendar, GraduationCap, PenLine, Bell, Search, Receipt, GitBranch, HelpCircle, ClipboardList, Video, ExternalLink } from 'lucide-react'
+import ApplicantNextStep from '../../components/applicant/ApplicantNextStep'
+import { getApplicantStatus } from '../../utils/applicationStatusDisplay'
+import { AlertTriangle, CreditCard, Calendar, GraduationCap, PenLine, Search, Receipt, GitBranch, Video, ExternalLink } from 'lucide-react'
 
 const STUDENT_PORTAL_BG = '#1a3a6b'
 
@@ -32,6 +34,58 @@ export default function StudentDashboard() {
   const [completedCredits, setCompletedCredits] = useState(0)
   const [currentSemesterCredits, setCurrentSemesterCredits] = useState(0)
   const [computedGpa, setComputedGpa] = useState(null)
+  const [otherApplications, setOtherApplications] = useState([])
+
+  const loadOtherApplications = async (studentData, emailCandidates) => {
+    let query = supabase
+      .from('applications')
+      .select(
+        `
+        id,
+        application_number,
+        status_code,
+        status_reason_code,
+        review_notes,
+        major_id,
+        created_at,
+        interview_at,
+        interview_timezone,
+        interview_meeting_url,
+        interview_instructions,
+        exam_at,
+        exam_timezone,
+        exam_location_or_link,
+        exam_instructions,
+        majors!major_id (name_en, name_ar)
+      `
+      )
+      .order('created_at', { ascending: false })
+
+    query =
+      emailCandidates.length > 1
+        ? query.in('email', emailCandidates)
+        : query.eq('email', emailCandidates[0] || user.email)
+
+    const { data: apps, error } = await query
+    if (error || !apps) {
+      setOtherApplications([])
+      return
+    }
+
+    const owned = String(studentData.notes || '').match(/application #(\S+)/)?.[1]
+    let rows = apps
+    if (owned) {
+      rows = apps.filter((app) => String(app.application_number) !== owned && String(app.id) !== owned)
+    } else {
+      const primary = apps.find(
+        (app) =>
+          String(app.major_id) === String(studentData.major_id) &&
+          String(app.status_code || '').toUpperCase() === 'DCFA'
+      )
+      if (primary) rows = apps.filter((app) => app.id !== primary.id)
+    }
+    setOtherApplications(rows)
+  }
 
   useEffect(() => {
     if (user?.email) fetchData()
@@ -44,7 +98,7 @@ export default function StudentDashboard() {
       const emailCandidates = getEmailLookupCandidates(user.email)
       let studentQuery = supabase
         .from('students')
-        .select('id, student_id, name_en, name_ar, first_name, last_name, gpa, college_id, major_id, total_credits_earned, financial_hold_reason_code, financial_milestone_code, colleges(id, name_en, name_ar), majors(id, name_en, name_ar, total_credits)')
+        .select('id, student_id, name_en, name_ar, first_name, last_name, gpa, college_id, major_id, notes, total_credits_earned, financial_hold_reason_code, financial_milestone_code, colleges(id, name_en, name_ar), majors(id, name_en, name_ar, total_credits)')
         .eq('status', 'active')
 
       studentQuery =
@@ -58,6 +112,7 @@ export default function StudentDashboard() {
         return
       }
       setStudent(studentData)
+      await loadOtherApplications(studentData, emailCandidates)
       setTotalCreditsRequired(studentData.majors?.total_credits || 120)
       setCompletedCredits(studentData.total_credits_earned || 0)
 
@@ -308,15 +363,6 @@ export default function StudentDashboard() {
           >
             <Search className="w-4 h-4 text-slate-700" />
           </button>
-          <button
-            type="button"
-            className="relative h-9 w-9 rounded-full border border-slate-200 bg-white flex items-center justify-center"
-            title={tx('الإشعارات', 'Notifications')}
-            onClick={() => navigate('/student/requests')}
-          >
-            <Bell className="w-4 h-4 text-slate-700" />
-            {activeHoldCount > 0 && <span className="absolute top-1 right-1 h-2 w-2 rounded-full bg-red-600" />}
-          </button>
           <div className="flex items-center gap-2 text-sm text-slate-600">
             <div className="h-9 w-9 rounded-full flex items-center justify-center font-bold text-white" style={{ backgroundColor: STUDENT_PORTAL_BG }}>
               {initials}
@@ -325,6 +371,38 @@ export default function StudentDashboard() {
           </div>
         </div>
       </div>
+
+      {otherApplications.length > 0 && (
+        <section className="space-y-3">
+          <h2 className="text-base font-extrabold" style={{ color: STUDENT_PORTAL_BG }}>
+            {tx('طلبات أخرى', 'Other applications')}
+          </h2>
+          {otherApplications.map((app) => {
+            const status = getApplicantStatus(app.status_code)
+            const program = getLocalizedName(app.majors, isRTL) || app.majors?.name_en || '—'
+            return (
+              <div key={app.id} className="rounded-2xl border border-slate-200 bg-white p-4 space-y-3">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0 text-start">
+                    <div className="font-mono font-bold text-[#1a3a6b]" dir="ltr">{app.application_number}</div>
+                    <div className="text-sm text-slate-600">{program}</div>
+                  </div>
+                  <span className="shrink-0 rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs font-bold text-slate-700">
+                    {t(status.labelKey)}
+                  </span>
+                </div>
+                <ApplicantNextStep application={app} isRTL={isRTL} audience="student" />
+                <Link
+                  to={`/student/applications/${app.id}`}
+                  className="inline-flex text-sm font-bold text-[#1a3a6b] no-underline hover:underline"
+                >
+                  {tx('عرض الطلب', 'View application')}
+                </Link>
+              </div>
+            )
+          })}
+        </section>
+      )}
 
       {/* Next Action Card */}
       {hasFinancialHold && (
@@ -690,17 +768,9 @@ export default function StudentDashboard() {
                 <span className="text-base">📹</span>
                 {tx('بوابة التعلم الإلكتروني — جلسات Teams', 'e-Learning — Teams sessions')}
               </button>
-              <button type="button" onClick={() => navigate('/student/requests')} className="w-full px-4 py-2 rounded-lg border border-slate-200 bg-slate-50 font-bold text-slate-800 flex items-center justify-center gap-2">
-                <ClipboardList className="w-4 h-4" />
-                {tx('تقديم طلب خدمة', 'Submit service request')}
-              </button>
               <button type="button" onClick={() => navigate('/student/grades')} className="w-full px-4 py-2 rounded-lg border border-slate-200 bg-slate-50 font-bold text-slate-800 flex items-center justify-center gap-2">
                 <Receipt className="w-4 h-4" />
                 {tx('السجل الأكاديمي', 'Transcript')}
-              </button>
-              <button type="button" onClick={() => navigate('/student/holds')} className="w-full px-4 py-2 rounded-lg border border-slate-200 bg-slate-50 font-bold text-slate-800 flex items-center justify-center gap-2">
-                <HelpCircle className="w-4 h-4" />
-                {tx('عرض التعليقات والحجب', 'View holds & blocks')}
               </button>
             </div>
           </div>

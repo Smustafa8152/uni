@@ -117,12 +117,80 @@ async function createRegistrationFeeInvoice(student, application) {
 }
 
 /**
+ * Switch the applicant login to student. Does not change the password.
+ * Staff session required: the database function checks the caller.
+ */
+async function promoteApplicantLogin(application, customPassword, name) {
+  const { data, error } = await supabase.rpc('promote_applicant_to_student', {
+    p_email: application.email,
+    p_college_id: application.college_id ?? null,
+    p_applicant_auth_id: application.applicant_user_id ? String(application.applicant_user_id) : null,
+  })
+
+  if (!error && data?.promoted) return { ok: true }
+
+  if (!error && data?.reason === 'no_user' && customPassword) {
+    await createAuthUser({
+      email: application.email,
+      password: customPassword,
+      role: 'student',
+      college_id: application.college_id,
+      name,
+    })
+    return { ok: true }
+  }
+
+  return {
+    ok: false,
+    error: error?.message || data?.reason || 'Could not promote the applicant login',
+  }
+}
+
+async function attachApplicationRecords(student, application) {
+  if (application.registration_fee_amount && application.registration_fee_paid_at) {
+    try {
+      await createRegistrationFeeInvoice(student, application)
+    } catch (invoiceError) {
+      console.error('Error creating registration fee invoice:', invoiceError)
+    }
+  }
+
+  try {
+    const { data: appDocs, error: appDocsError } = await supabase
+      .from('application_documents')
+      .select('document_type, file_path, file_name, file_size, content_type, uploaded_at, verified_at')
+      .eq('application_id', application.id)
+    if (!appDocsError && appDocs && appDocs.length > 0) {
+      for (const doc of appDocs) {
+        await supabase.from('student_documents').upsert(
+          {
+            student_id: student.id,
+            document_type: doc.document_type,
+            file_path: doc.file_path,
+            file_name: doc.file_name,
+            file_size: doc.file_size,
+            content_type: doc.content_type,
+            uploaded_at: doc.uploaded_at || new Date().toISOString(),
+            status: doc.verified_at ? 'verified' : 'in_review',
+            verified_at: doc.verified_at || null,
+          },
+          { onConflict: 'student_id,document_type' }
+        )
+      }
+    }
+  } catch (docsErr) {
+    console.error('Error copying application documents to student:', docsErr)
+  }
+}
+
+/**
  * Create a student record from an application
  * This function handles the complete student creation process including:
  * - Student ID generation
  * - Student record creation
- * - Auth user account creation (with custom or auto-generated password)
+ * - Linking the existing applicant login (same email and password)
  * - Registration fee invoice creation (if fee was paid during application)
+ * Safe to run again: an existing student for this email is kept and the login is promoted.
  * @param {Object} application - The application object
  * @param {string} [customPassword] - Optional custom password for the auth user account
  */
@@ -140,11 +208,15 @@ export async function createStudentFromApplication(application, customPassword =
     }
 
     if (existingStudent) {
+      const name = [application.first_name, application.middle_name, application.last_name].filter(Boolean).join(' ')
+      const promoted = await promoteApplicantLogin(application, customPassword, name)
+      await attachApplicationRecords(existingStudent, application)
       return {
-        success: false,
-        error: 'Student already exists with this email',
+        success: promoted.ok,
+        error: promoted.ok ? undefined : promoted.error,
         student: existingStudent,
-        alreadyExists: true
+        alreadyExists: true,
+        promoted: promoted.ok,
       }
     }
 
@@ -240,6 +312,7 @@ export async function createStudentFromApplication(application, customPassword =
         documents: null, // Documents are stored separately in applications
         notes: `Created from application #${application.application_number || application.id}`,
         status: 'active',
+        current_status_code: 'ENAC',
       }
 
       const { data: createdStudent, error: insertError } = await supabase
@@ -270,80 +343,16 @@ export async function createStudentFromApplication(application, customPassword =
       } else {
         // Success! Break out of retry loop
         insertSuccess = true
-        
-        // Create auth user account automatically
-        // Use custom password if provided, otherwise generate a temporary password
-        const password = customPassword || `Temp${currentStudentId}@${new Date().getFullYear()}`
-        
-        try {
-          const { data: functionResult, error: functionError } = await createAuthUser({
-            email: application.email,
-            password: password,
-            role: 'student',
-            college_id: application.college_id,
-            name: name_en,
-          })
 
-          if (functionError) {
-            console.warn('Failed to create auth account:', functionError.message)
-            // Continue anyway - student is created, just no login account
-            // The student can request password reset later
-          } else if (functionResult?.success) {
-            console.log('✅ Student login account created successfully')
-          } else {
-            console.warn('Failed to create auth account:', functionResult?.error)
-          }
-        } catch (authErr) {
-          console.error('Error creating auth account:', authErr)
-          // Continue anyway - student is created, just no login account
-        }
-
-        // Create invoice retroactively if registration fee was paid during application
-        if (application.registration_fee_amount && application.registration_fee_paid_at) {
-          try {
-            await createRegistrationFeeInvoice(createdStudent, application)
-          } catch (invoiceError) {
-            console.error('Error creating registration fee invoice:', invoiceError)
-            // Don't throw - student is created successfully, invoice creation is secondary
-            // The invoice can be created manually later if needed
-          }
-        }
-
-        // Copy application documents to student_documents so they appear on the student profile
-        try {
-          const { data: appDocs, error: appDocsError } = await supabase
-            .from('application_documents')
-            .select('document_type, file_path, file_name, file_size, content_type, uploaded_at, verified_at')
-            .eq('application_id', application.id)
-          if (!appDocsError && appDocs && appDocs.length > 0) {
-            for (const doc of appDocs) {
-              await supabase.from('student_documents').upsert(
-                {
-                  student_id: createdStudent.id,
-                  document_type: doc.document_type,
-                  file_path: doc.file_path,
-                  file_name: doc.file_name,
-                  file_size: doc.file_size,
-                  content_type: doc.content_type,
-                  uploaded_at: doc.uploaded_at || new Date().toISOString(),
-                  status: doc.verified_at ? 'verified' : 'in_review',
-                  verified_at: doc.verified_at || null,
-                },
-                { onConflict: 'student_id,document_type' }
-              )
-            }
-            console.log(`✅ Copied ${appDocs.length} application document(s) to student profile`)
-          }
-        } catch (docsErr) {
-          console.error('Error copying application documents to student:', docsErr)
-          // Don't throw - student is created successfully
-        }
+        const promoted = await promoteApplicantLogin(application, customPassword, name_en)
+        await attachApplicationRecords(createdStudent, application)
 
         return {
-          success: true,
+          success: promoted.ok,
+          error: promoted.ok ? undefined : promoted.error,
           student: createdStudent,
-          password: password, // Return password for potential email notification
-          alreadyExists: false
+          alreadyExists: false,
+          promoted: promoted.ok,
         }
       }
     }
