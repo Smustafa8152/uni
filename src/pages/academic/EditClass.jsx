@@ -1,10 +1,16 @@
 import { useState, useEffect } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
+import { useTranslation } from 'react-i18next'
+import { useLanguage } from '../../contexts/LanguageContext'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
+import { getLocalizedName } from '../../utils/localizedName'
+import { formatInstructorDisplayName } from '../../utils/academicTitle'
 import { ArrowLeft, Save, Check, Plus, X } from 'lucide-react'
 
 export default function EditClass() {
+  const { t } = useTranslation()
+  const { isRTL } = useLanguage()
   const { id } = useParams()
   const navigate = useNavigate()
   const { userRole, collegeId: authCollegeId } = useAuth()
@@ -41,7 +47,7 @@ export default function EditClass() {
     try {
       let query = supabase
         .from('subjects')
-        .select('id, name_en, code')
+        .select('id, name_en, name_ar, code')
         .eq('status', 'active')
         .order('name_en')
 
@@ -65,7 +71,7 @@ export default function EditClass() {
     try {
       let query = supabase
         .from('semesters')
-        .select('id, name_en, code')
+        .select('id, name_en, name_ar, code')
         .order('start_date', { ascending: false })
 
       // Filter by college for college admins
@@ -90,7 +96,7 @@ export default function EditClass() {
     try {
       let query = supabase
         .from('instructors')
-        .select('id, name_en, email')
+        .select('id, name_en, name_ar, email, academic_title')
         .eq('status', 'active')
         .order('name_en')
 
@@ -360,9 +366,9 @@ export default function EditClass() {
           className="flex items-center space-x-2 text-gray-600 hover:text-gray-900"
         >
           <ArrowLeft className="w-5 h-5" />
-          <span>Back</span>
+          <span>{t('classes.back')}</span>
         </button>
-        <h1 className="text-3xl font-bold text-gray-900">Edit Class</h1>
+        <h1 className="text-3xl font-bold text-gray-900">{t('classes.editTitle')}</h1>
       </div>
 
       <form onSubmit={handleSubmit}>
@@ -375,47 +381,47 @@ export default function EditClass() {
           {success && (
             <div className="mb-6 p-4 bg-green-50 border border-green-200 rounded-lg text-green-700 flex items-center space-x-2">
               <Check className="w-5 h-5" />
-              <span>Class updated successfully! Redirecting...</span>
+              <span>{t('classes.updatedSuccess')}</span>
             </div>
           )}
 
           <div className="space-y-6">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Subject *</label>
+              <label className="block text-sm font-medium text-gray-700 mb-2">{t('classes.subjectLabel')}</label>
               <select
                 value={formData.subject_id}
                 onChange={(e) => handleChange('subject_id', e.target.value)}
                 required
                 className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
               >
-                <option value="">Select Subject...</option>
+                <option value="">{t('classes.selectSubject')}</option>
                 {subjects.map(subject => (
                   <option key={subject.id} value={subject.id}>
-                    {subject.code} - {subject.name_en}
+                    {subject.code} - {getLocalizedName(subject, isRTL)}
                   </option>
                 ))}
               </select>
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Semester *</label>
+              <label className="block text-sm font-medium text-gray-700 mb-2">{t('classes.semesterLabel')}</label>
               <select
                 value={formData.semester_id}
                 onChange={(e) => handleChange('semester_id', e.target.value)}
                 required
                 className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
               >
-                <option value="">Select Semester...</option>
+                <option value="">{t('classes.selectSemester')}</option>
                 {semesters.map(semester => (
                   <option key={semester.id} value={semester.id}>
-                    {semester.name_en} ({semester.code})
+                    {getLocalizedName(semester, isRTL)} ({semester.code})
                   </option>
                 ))}
               </select>
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Section *</label>
+              <label className="block text-sm font-medium text-gray-700 mb-2">{t('classes.sectionNumber')}</label>
               <input
                 type="text"
                 value={formData.section}
@@ -426,16 +432,16 @@ export default function EditClass() {
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Instructor</label>
+              <label className="block text-sm font-medium text-gray-700 mb-2">{t('classes.instructor')}</label>
               <select
                 value={formData.instructor_id}
                 onChange={(e) => handleChange('instructor_id', e.target.value)}
                 className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
               >
-                <option value="">Select Instructor...</option>
+                <option value="">{t('classes.selectInstructor')}</option>
                 {instructors.map(instructor => (
                   <option key={instructor.id} value={instructor.id}>
-                    {instructor.name_en}
+                    {formatInstructorDisplayName(instructor, isRTL)}
                   </option>
                 ))}
               </select>
@@ -443,73 +449,73 @@ export default function EditClass() {
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Room</label>
+                <label className="block text-sm font-medium text-gray-700 mb-2">{t('classes.room')}</label>
                 <input
                   type="text"
                   value={formData.room}
                   onChange={(e) => handleChange('room', e.target.value)}
                   className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
-                  placeholder="e.g., 101"
+                  placeholder={t('classes.roomPlaceholder')}
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Building</label>
+                <label className="block text-sm font-medium text-gray-700 mb-2">{t('classes.building')}</label>
                 <input
                   type="text"
                   value={formData.building}
                   onChange={(e) => handleChange('building', e.target.value)}
                   className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
-                  placeholder="e.g., Engineering Building"
+                  placeholder={t('classes.buildingPlaceholder')}
                 />
               </div>
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Class Type</label>
+              <label className="block text-sm font-medium text-gray-700 mb-2">{t('classes.classType')}</label>
               <select
                 value={formData.type}
                 onChange={(e) => handleChange('type', e.target.value)}
                 className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
               >
-                <option value="on_campus">On Campus</option>
-                <option value="online">Online</option>
-                <option value="hybrid">Hybrid</option>
+                <option value="on_campus">{t('classes.onCampus')}</option>
+                <option value="online">{t('classes.online')}</option>
+                <option value="hybrid">{t('classes.hybrid')}</option>
               </select>
             </div>
 
             <div className="border-t pt-4">
               <div className="flex items-center justify-between mb-4">
-                <h3 className="text-lg font-semibold text-gray-900">Class Schedule</h3>
+                <h3 className="text-lg font-semibold text-gray-900">{t('classes.classSchedule')}</h3>
                 <button
                   type="button"
                   onClick={addSchedule}
                   className="flex items-center space-x-2 px-4 py-2 bg-primary-50 text-primary-600 rounded-lg hover:bg-primary-100"
                 >
                   <Plus className="w-4 h-4" />
-                  <span>Add Time Slot</span>
+                  <span>{t('classes.addTimeSlot')}</span>
                 </button>
               </div>
               {formData.schedules.map((schedule, index) => (
                 <div key={index} className="grid grid-cols-1 md:grid-cols-5 gap-4 mb-4 p-4 bg-gray-50 rounded-lg">
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">Day</label>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">{t('classes.day')}</label>
                     <select
                       value={schedule.day}
                       onChange={(e) => handleScheduleChange(index, 'day', e.target.value)}
                       className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
                     >
-                      <option value="">Select Day...</option>
-                      <option value="sunday">Sunday</option>
-                      <option value="monday">Monday</option>
-                      <option value="tuesday">Tuesday</option>
-                      <option value="wednesday">Wednesday</option>
-                      <option value="thursday">Thursday</option>
-                      <option value="friday">Friday</option>
-                      <option value="saturday">Saturday</option>
+                      <option value="">{t('classes.selectDay')}</option>
+                      <option value="sunday">{t('classes.sunday')}</option>
+                      <option value="monday">{t('classes.monday')}</option>
+                      <option value="tuesday">{t('classes.tuesday')}</option>
+                      <option value="wednesday">{t('classes.wednesday')}</option>
+                      <option value="thursday">{t('classes.thursday')}</option>
+                      <option value="friday">{t('classes.friday')}</option>
+                      <option value="saturday">{t('classes.saturday')}</option>
                     </select>
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">Start Time</label>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">{t('classes.startTime')}</label>
                     <input
                       type="time"
                       value={schedule.start_time}
@@ -518,7 +524,7 @@ export default function EditClass() {
                     />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">End Time</label>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">{t('classes.endTime')}</label>
                     <input
                       type="time"
                       value={schedule.end_time}
@@ -527,13 +533,13 @@ export default function EditClass() {
                     />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">Location</label>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">{t('classes.location')}</label>
                     <input
                       type="text"
                       value={schedule.location}
                       onChange={(e) => handleScheduleChange(index, 'location', e.target.value)}
                       className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
-                      placeholder="Optional"
+                      placeholder={t('classes.locationPlaceholder')}
                     />
                   </div>
                   <div className="flex items-end">
@@ -552,13 +558,13 @@ export default function EditClass() {
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Notes</label>
+              <label className="block text-sm font-medium text-gray-700 mb-2">{t('classes.notes')}</label>
               <textarea
                 value={formData.notes}
                 onChange={(e) => handleChange('notes', e.target.value)}
                 rows={3}
                 className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
-                placeholder="Additional information..."
+                placeholder={t('classes.notesPlaceholder')}
               />
             </div>
 
@@ -569,7 +575,7 @@ export default function EditClass() {
                 onChange={(e) => handleChange('status', e.target.checked ? 'active' : 'inactive')}
                 className="rounded border-gray-300 text-primary-600 focus:ring-primary-500"
               />
-              <label className="text-sm font-medium text-gray-700">Active</label>
+              <label className="text-sm font-medium text-gray-700">{t('classes.active')}</label>
             </div>
           </div>
         </div>
@@ -580,7 +586,7 @@ export default function EditClass() {
             onClick={() => navigate(-1)}
             className="px-6 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50"
           >
-            Cancel
+            {t('classes.cancel')}
           </button>
           <button
             type="submit"
@@ -588,7 +594,7 @@ export default function EditClass() {
             className="flex items-center space-x-2 px-6 py-2 bg-primary-gradient text-white rounded-lg font-semibold hover:shadow-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed"
           >
             <Save className="w-5 h-5" />
-            <span>{loading ? 'Updating...' : 'Update Class'}</span>
+            <span>{loading ? t('classes.updating') : t('classes.updateButton')}</span>
           </button>
         </div>
       </form>

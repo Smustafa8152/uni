@@ -6,7 +6,34 @@ import { useNavigate } from 'react-router-dom'
 import { getLocalizedName } from '../../utils/localizedName'
 import { getStudentSemesterMilestone, checkFinancePermission } from '../../utils/financePermissions'
 import { getPaymentsEnabled } from '../../utils/getPaymentsEnabled'
+import { isFinishedSemester } from '../../utils/registrationRules'
 import { supabase } from '../../lib/supabase'
+
+const ADMITTED_CODES = new Set(['DCFA', 'ENAC', 'ENCF', 'ACAC', 'ACPR'])
+
+/** The term on the student record: a current enrollment, otherwise the accepted application. */
+async function resolveStudentSemester(studentRow) {
+  const { data: enrolled } = await supabase
+    .from('enrollments')
+    .select('semesters!semester_id(id, start_date)')
+    .eq('student_id', studentRow.id)
+    .eq('status', 'enrolled')
+  const fromEnrollment = (enrolled || [])
+    .map((row) => row.semesters)
+    .filter(Boolean)
+    .sort((a, b) => String(b.start_date || '').localeCompare(String(a.start_date || '')))[0]
+  if (fromEnrollment?.id) return fromEnrollment.id
+
+  const { data: apps } = await supabase
+    .from('applications')
+    .select('status_code, created_at, semester_id')
+    .ilike('email', studentRow.email)
+    .not('semester_id', 'is', null)
+    .order('created_at', { ascending: false })
+  const list = apps || []
+  const accepted = list.find((app) => ADMITTED_CODES.has(String(app.status_code || '').toUpperCase()))
+  return (accepted || list[0])?.semester_id || null
+}
 
 const UI = {
   p: '#1a3a6b',
@@ -118,16 +145,19 @@ export default function StudentCourseCatalog() {
       }
       setStudent(studentData)
 
+      const studentSemesterId = await resolveStudentSemester({ id: studentData.id, email: user.email })
       const { data: semestersData, error: semErr } = await supabase
         .from('semesters')
-        .select('id, name_en, name_ar, code, start_date, end_date, registration_start_date, registration_end_date, late_registration_end_date, status')
+        .select('id, name_en, name_ar, code, start_date, end_date, registration_start_date, registration_end_date, late_registration_end_date, status, college_id, is_university_wide')
         .or(`college_id.eq.${studentData.college_id},is_university_wide.eq.true`)
         .order('start_date', { ascending: false })
       if (!semErr && semestersData?.length) {
         setSemesters(semestersData)
         if (!selectedSemesterId) {
-          const active = semestersData.find((s) => s.status === 'active' || s.status === 'registration_open')
-          setSelectedSemesterId(String(active?.id || semestersData[0].id))
+          const mine = semestersData.find((s) => s.id === studentSemesterId)
+          const open = semestersData.find((s) => s.status === 'active' || s.status === 'registration_open')
+          const running = semestersData.find((s) => !isFinishedSemester(s))
+          setSelectedSemesterId(String((mine || open || running || semestersData[0]).id))
         }
       }
     } catch (e) {
@@ -172,7 +202,11 @@ export default function StudentCourseCatalog() {
         .eq('status', 'active')
         .order('code')
 
-      query = query.or(`college_id.eq.${student.college_id},is_university_wide.eq.true`)
+      const semester = semesters.find((s) => String(s.id) === selectedSemesterId)
+      const semesterOpenToCollege = Boolean(semester?.is_university_wide) || Number(semester?.college_id) === Number(student.college_id)
+      if (!semesterOpenToCollege) {
+        query = query.or(`college_id.eq.${student.college_id},is_university_wide.eq.true`)
+      }
       const { data: classesData, error } = await query
       if (error) throw error
 

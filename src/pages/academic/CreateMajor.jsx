@@ -233,7 +233,7 @@ export default function CreateMajor() {
     try {
       const { data, error } = await supabase
         .from('colleges')
-        .select('id, name_en, code')
+        .select('id, name_en, name_ar, code')
         .eq('status', 'active')
         .order('name_en')
 
@@ -248,7 +248,7 @@ export default function CreateMajor() {
     try {
       let query = supabase
         .from('departments')
-        .select('id, name_en, code')
+        .select('id, name_en, name_ar, code')
         .eq('status', 'active')
         .order('name_en')
 
@@ -327,7 +327,7 @@ export default function CreateMajor() {
       
       let query = supabase
         .from('academic_years')
-        .select('id, name_en, code, start_date, end_date')
+        .select('id, name_en, name_ar, code, start_date, end_date')
         .order('start_date', { ascending: false })
 
       // For college admins (user role): show college's academic years OR university-wide
@@ -942,7 +942,7 @@ export default function CreateMajor() {
                       <option value="">{t('academic.majors.selectInstructor')}</option>
                       {instructors.map(instructor => (
                         <option key={instructor.id} value={instructor.id}>
-                          {instructor.name_en} {instructor.title ? `(${instructor.title})` : ''}
+                          {getLocalizedName(instructor, isRTL)} {instructor.title ? `(${instructor.title})` : ''}
                         </option>
                       ))}
                     </select>
@@ -1555,7 +1555,7 @@ export default function CreateMajor() {
                                   .filter(s => !group.courses.some(c => c.subject_id === s.id))
                                   .map(subject => (
                                     <option key={subject.id} value={subject.id}>
-                                      {subject.code} - {subject.name_en} ({subject.credit_hours} credits)
+                                      {subject.code} - {getLocalizedName(subject, isRTL)} ({subject.credit_hours} {t('academic.majors.degreePlanSheet.credits', 'credits')})
                                     </option>
                                   ))}
                               </select>
@@ -1593,7 +1593,7 @@ export default function CreateMajor() {
                                     <div key={courseIndex} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg border border-gray-200">
                                       <div className="flex-1">
                                         <div className="font-medium text-sm">
-                                          {subject ? `${subject.code} - ${subject.name_en}` : `Subject ID: ${course.subject_id}`}
+                                          {subject ? `${subject.code} - ${getLocalizedName(subject, isRTL)}` : `${t('academic.subjects.subject', 'Subject')} ${course.subject_id}`}
                                         </div>
                                         <div className="text-xs text-gray-500">
                                           {subject ? `${subject.credit_hours} credits` : 'Subject not found'}

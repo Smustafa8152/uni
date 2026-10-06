@@ -85,7 +85,7 @@ export default function EditSubject() {
     try {
       const { data, error } = await supabase
         .from('colleges')
-        .select('id, name_en, code')
+        .select('id, name_en, name_ar, code')
         .eq('status', 'active')
         .order('name_en')
 
@@ -547,7 +547,7 @@ export default function EditSubject() {
                     <option value="">{t('subjectsForm.selectCollege')}</option>
                     {colleges.map((college) => (
                       <option key={college.id} value={college.id}>
-                        {college.name_en} ({college.code})
+                        {getLocalizedName(college, isRTL)} ({college.code})
                       </option>
                     ))}
                   </select>
@@ -757,7 +757,7 @@ export default function EditSubject() {
                             .filter(gt => !gradeConfiguration.some(gc => gc.grade_type_code === gt.code))
                             .map(gradeType => (
                               <option key={gradeType.code} value={gradeType.code}>
-                                {gradeType.name_en} ({gradeType.code})
+                                {getLocalizedName(gradeType, isRTL) || gradeType.name_en} ({gradeType.code})
                               </option>
                             ))}
                         </select>
@@ -778,7 +778,7 @@ export default function EditSubject() {
                           <div key={index} className="bg-white border border-gray-200 rounded-lg p-4">
                             <div className={`flex items-center ${isRTL ? 'flex-row-reverse justify-between' : 'justify-between'} mb-4`}>
                               <h5 className="font-medium text-gray-900">
-                                {config.grade_type_name_en} ({config.grade_type_code})
+                                {getLocalizedName({ name_en: config.grade_type_name_en, name_ar: config.grade_type_name_ar }, isRTL) || config.grade_type_name_en} ({config.grade_type_code})
                               </h5>
                               <button
                                 type="button"

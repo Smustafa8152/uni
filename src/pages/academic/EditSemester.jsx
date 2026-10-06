@@ -118,7 +118,7 @@ export default function EditSemester() {
     try {
       const { data, error } = await supabase
         .from('colleges')
-        .select('id, name_en, code')
+        .select('id, name_en, name_ar, code')
         .eq('status', 'active')
         .order('name_en')
 
@@ -133,7 +133,7 @@ export default function EditSemester() {
     try {
       let query = supabase
         .from('academic_years')
-        .select('id, name_en, code, start_date, end_date')
+        .select('id, name_en, name_ar, code, start_date, end_date')
         .order('start_date', { ascending: false })
 
       if (userRole === 'user' && collegeId) {
@@ -299,7 +299,7 @@ export default function EditSemester() {
                   <option value="">{t('academic.semesters.selectAcademicYear')}</option>
                   {academicYears.map(year => (
                     <option key={year.id} value={year.id}>
-                      {year.name_en} ({year.code})
+                      {getLocalizedName(year, isRTL)} ({year.code})
                     </option>
                   ))}
                 </select>

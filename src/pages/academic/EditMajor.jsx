@@ -90,7 +90,7 @@ export default function EditMajor() {
     try {
       const { data, error } = await supabase
         .from('colleges')
-        .select('id, name_en, code')
+        .select('id, name_en, name_ar, code')
         .eq('status', 'active')
         .order('name_en')
 
@@ -105,7 +105,7 @@ export default function EditMajor() {
     try {
       let query = supabase
         .from('departments')
-        .select('id, name_en, code')
+        .select('id, name_en, name_ar, code')
         .eq('status', 'active')
         .order('name_en')
 
@@ -622,7 +622,7 @@ export default function EditMajor() {
                       <option value="">{t('academic.majors.selectInstructor')}</option>
                       {instructors.map(instructor => (
                         <option key={instructor.id} value={instructor.id}>
-                          {instructor.name_en} {instructor.title ? `(${instructor.title})` : ''}
+                          {getLocalizedName(instructor, isRTL)} {instructor.title ? `(${instructor.title})` : ''}
                         </option>
                       ))}
                     </select>

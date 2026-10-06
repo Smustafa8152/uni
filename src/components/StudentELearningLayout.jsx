@@ -91,7 +91,12 @@ export default function StudentELearningLayout({ children }) {
                 <div className="px-3 pt-3 pb-1 text-[10px] font-extrabold tracking-wider uppercase text-white/35">{tx(section.label)}</div>
                 <ul className="space-y-1">
                   {section.items.map((item) => {
-                    const isActive = location.pathname === item.href || location.pathname.startsWith(item.href)
+                    const path = location.pathname
+                    const matches = path === item.href || path.startsWith(`${item.href}/`)
+                    const coveredByChild = section.items.some(
+                      (other) => other.href !== item.href && other.href.startsWith(`${item.href}/`) && (path === other.href || path.startsWith(`${other.href}/`)),
+                    )
+                    const isActive = matches && !coveredByChild
                     return (
                       <li key={`${item.href}`}>
                         <Link

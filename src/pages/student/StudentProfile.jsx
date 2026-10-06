@@ -7,12 +7,38 @@ import { getLocalizedName } from '../../utils/localizedName'
 import { supabase } from '../../lib/supabase'
 import { getNationalityLabel } from '../../utils/nationalities'
 
+const ADMITTED_CODES = new Set(['DCFA', 'ENAC', 'ENCF', 'ACAC', 'ACPR'])
+
+async function resolveStudentSemester(studentRow) {
+  const { data: enrolled } = await supabase
+    .from('enrollments')
+    .select('semesters!semester_id(id, name_en, name_ar, start_date)')
+    .eq('student_id', studentRow.id)
+    .eq('status', 'enrolled')
+  const fromEnrollment = (enrolled || [])
+    .map((row) => row.semesters)
+    .filter(Boolean)
+    .sort((a, b) => String(b.start_date || '').localeCompare(String(a.start_date || '')))[0]
+  if (fromEnrollment) return fromEnrollment
+
+  const { data: apps } = await supabase
+    .from('applications')
+    .select('status_code, created_at, semesters!semester_id(id, name_en, name_ar, start_date)')
+    .ilike('email', studentRow.email)
+    .not('semester_id', 'is', null)
+    .order('created_at', { ascending: false })
+  const list = apps || []
+  const accepted = list.find((app) => ADMITTED_CODES.has(String(app.status_code || '').toUpperCase()))
+  return (accepted || list[0])?.semesters || null
+}
+
 export default function StudentProfile() {
   const { t } = useTranslation()
   const { isRTL, language } = useLanguage()
   const { user } = useAuth()
   const [loading, setLoading] = useState(true)
   const [student, setStudent] = useState(null)
+  const [semester, setSemester] = useState(null)
   const [saving, setSaving] = useState(false)
   const [contactForm, setContactForm] = useState({
     personal_email: '',
@@ -60,13 +86,14 @@ export default function StudentProfile() {
           emergency_contact_relation,
           emergency_phone,
           colleges(id, name_en, name_ar),
-          majors(id, name_en, name_ar)
+          majors(id, name_en, name_ar, degree_level)
         `)
         .eq('email', user.email)
         .eq('status', 'active')
         .single()
       if (error || !data) return
       setStudent(data)
+      setSemester(await resolveStudentSemester(data))
       setContactForm((prev) => ({
         ...prev,
         mobile_phone: data.mobile_phone || data.phone || '',
@@ -125,15 +152,15 @@ export default function StudentProfile() {
 
   const college = getLocalizedName(student.colleges, isRTL)
   const major = getLocalizedName(student.majors, isRTL)
+  const semesterName = getLocalizedName(semester, isRTL)
+  const degreeCode = student.majors?.degree_level
+  const degree = degreeCode
+    ? t(`academic.majors.${degreeCode}`, { defaultValue: degreeCode })
+    : ''
   const displayName = getLocalizedName(student, isRTL) || [student.first_name, student.middle_name, student.last_name].filter(Boolean).join(' ') || student.email
   const avatarLetter = (displayName || 'م').trim().charAt(0) || 'م'
   const isArabic = isRTL || language === 'ar'
-  const programLine = t('studentPortal.profile.programLine', {
-    defaultValue: '{{major}} — Bachelor’s | Semester 3',
-    major: major || '—',
-    degree: t('studentPortal.profile.bachelors', { defaultValue: "Bachelor’s" }),
-    semester: t('studentPortal.profile.semester3', { defaultValue: 'Semester 3' }),
-  })
+  const programLine = [major, [degree, semesterName].filter(Boolean).join(' | ')].filter(Boolean).join(' — ') || '—'
 
   return (
     <div className={`space-y-6 ${isRTL ? 'text-right' : 'text-left'}`} dir={isArabic ? 'rtl' : 'ltr'}>
@@ -408,8 +435,8 @@ export default function StudentProfile() {
                 <div className="font-extrabold">{major || '—'}</div>
               </div>
               <div>
-                <div className="text-[#6b7a99]">{t('studentPortal.profile.academicLevel', { defaultValue: 'Academic level' })}</div>
-                <div className="font-extrabold">{t('studentPortal.profile.semester3', { defaultValue: 'Semester 3' })}</div>
+                <div className="text-[#6b7a99]">{t('studentPortal.profile.semester', { defaultValue: 'Semester' })}</div>
+                <div className="font-extrabold">{semesterName || '—'}</div>
               </div>
               <div>
                 <div className="text-[#6b7a99]">{t('studentPortal.profile.academicStatus', { defaultValue: 'Academic status' })}</div>
@@ -432,63 +459,6 @@ export default function StudentProfile() {
                 <div className="font-extrabold">—</div>
               </div>
             </div>
-          </div>
-
-          {/* Change Password (UI only for now) */}
-          <div className="bg-white rounded-xl border border-[#dde3ef] shadow-sm p-6">
-            <div className="flex items-center justify-between pb-4 mb-5 border-b border-[#dde3ef]">
-              <div className="text-base font-extrabold text-[#1a3a6b]">{t('studentPortal.profile.securityPassword', { defaultValue: 'Security & password' })}</div>
-            </div>
-            <form onSubmit={(e) => e.preventDefault()}>
-              <div className="space-y-4">
-                <div>
-                  <label className="block text-sm font-semibold mb-1">{t('studentPortal.profile.currentPassword', { defaultValue: 'Current password' })}</label>
-                  <input className="w-full px-3 py-2.5 rounded-md border border-[#dde3ef] bg-white" type="password" placeholder="••••••••" />
-                </div>
-                <div>
-                  <label className="block text-sm font-semibold mb-1">{t('studentPortal.profile.newPassword', { defaultValue: 'New password' })}</label>
-                  <input className="w-full px-3 py-2.5 rounded-md border border-[#dde3ef] bg-white" type="password" placeholder="••••••••" />
-                  <div className="text-xs text-[#6b7a99] mt-1">{t('studentPortal.profile.passwordHint', { defaultValue: 'At least 8 characters, including letters and numbers' })}</div>
-                </div>
-                <div>
-                  <label className="block text-sm font-semibold mb-1">{t('studentPortal.profile.confirmPassword', { defaultValue: 'Confirm password' })}</label>
-                  <input className="w-full px-3 py-2.5 rounded-md border border-[#dde3ef] bg-white" type="password" placeholder="••••••••" />
-                </div>
-                <button type="submit" className="inline-flex items-center gap-2 px-5 py-2.5 rounded-md font-extrabold text-white" style={{ backgroundColor: '#1a3a6b' }}>
-                  🔒 {t('studentPortal.profile.changePassword', { defaultValue: 'Change password' })}
-                </button>
-              </div>
-            </form>
-          </div>
-
-          {/* Active Sessions (UI only for now) */}
-          <div className="bg-white rounded-xl border border-[#dde3ef] shadow-sm p-6">
-            <div className="flex items-center justify-between pb-4 mb-5 border-b border-[#dde3ef]">
-              <div className="text-base font-extrabold text-[#1a3a6b]">{t('studentPortal.profile.activeSessions', { defaultValue: 'Active sessions' })}</div>
-            </div>
-            <div className="space-y-3 text-sm">
-              <div className="flex items-center justify-between p-3 rounded-md" style={{ backgroundColor: '#e6f7ef' }}>
-                <div>
-                  <div className="font-extrabold">{t('studentPortal.profile.sessionCurrentTitle', { defaultValue: 'Chrome — Windows' })}</div>
-                  <div className="text-[#6b7a99]">{t('studentPortal.profile.sessionCurrentMeta', { defaultValue: 'Riyadh • Current session' })}</div>
-                </div>
-                <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-extrabold" style={{ backgroundColor: '#e6f7ef', color: '#1a7a4a' }}>
-                  {t('studentPortal.profile.sessionCurrentBadge', { defaultValue: 'Current' })}
-                </span>
-              </div>
-              <div className="flex items-center justify-between p-3 rounded-md" style={{ backgroundColor: '#f4f6fb' }}>
-                <div>
-                  <div className="font-extrabold">{t('studentPortal.profile.sessionOtherTitle', { defaultValue: 'Safari — iPhone' })}</div>
-                  <div className="text-[#6b7a99]">{t('studentPortal.profile.sessionOtherMeta', { defaultValue: '2 days ago' })}</div>
-                </div>
-                <button type="button" className="px-3 py-1.5 rounded-md text-xs font-extrabold text-white" style={{ backgroundColor: '#b91c1c' }}>
-                  {t('studentPortal.profile.endSession', { defaultValue: 'End' })}
-                </button>
-              </div>
-            </div>
-            <button type="button" className="mt-4 px-4 py-2 rounded-md text-xs font-extrabold text-white" style={{ backgroundColor: '#b91c1c' }}>
-              {t('studentPortal.profile.signOutAll', { defaultValue: 'Sign out of all devices' })}
-            </button>
           </div>
         </div>
       </div>
