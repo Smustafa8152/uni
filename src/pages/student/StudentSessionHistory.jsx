@@ -144,6 +144,7 @@ export default function StudentSessionHistory() {
   }, [student?.id, courseFilter])
 
   const titleFor = (r) => (isArabic ? r?.title_ar : r?.title_en) || r?.title_ar || r?.title_en || '—'
+  const courseNameFor = (cls) => getLocalizedName(cls?.subjects, isArabic) || cls?.subjects?.code || '—'
   const isExpired = (r) => (r?.available_until ? new Date(r.available_until).getTime() < Date.now() : false)
 
   const prettyDate = useMemo(() => {

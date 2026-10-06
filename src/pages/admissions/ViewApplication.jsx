@@ -853,11 +853,9 @@ export default function ViewApplication() {
   const [staffUserId, setStaffUserId] = useState(null)
 
   const [showOfferModal, setShowOfferModal] = useState(false)
-  const [offerDeadline, setOfferDeadline] = useState('')
   const [tuitionAmount, setTuitionAmount] = useState('')
   const [tuitionTotalAmount, setTuitionTotalAmount] = useState(0)
   const [sendingOffer, setSendingOffer] = useState(false)
-  const [offerMessage, setOfferMessage] = useState('')
 
   const [showReceiveFeeModal, setShowReceiveFeeModal] = useState(false)
   const [receivingFee, setReceivingFee] = useState(false)
@@ -1420,7 +1418,7 @@ export default function ViewApplication() {
     setSendingOffer(true)
     setError('')
     try {
-      const deadlineIso = offerDeadline ? new Date(offerDeadline).toISOString() : null
+      const deadlineIso = null
       let amountNum = tuitionAmount !== '' ? Number(tuitionAmount) : null
       if (!paymentsEnabled) {
         amountNum = 0
@@ -1488,8 +1486,7 @@ export default function ViewApplication() {
               'offerLetter.emailSentBodyPortal',
               'Congratulations. You have been admitted. Your place is confirmed. Log in to the student portal with the same email and password you used to apply.',
             )
-        const note = offerMessage?.trim()
-        const message = note ? `${baseMessage}\n\n${note}` : baseMessage
+        const message = baseMessage
         const { error: mailErr } = await supabase.functions.invoke('send-admission-notification', {
           body: {
             scope: 'college',
@@ -1508,10 +1505,8 @@ export default function ViewApplication() {
       }
 
       setShowOfferModal(false)
-      setOfferDeadline('')
       setTuitionAmount('')
       setTuitionTotalAmount(0)
-      setOfferMessage('')
     } catch (e) {
       setError(e?.message || 'Failed to send offer letter')
     } finally {
@@ -2439,7 +2434,7 @@ export default function ViewApplication() {
                   {paymentsEnabled
                     ? t(
                         'admissions.viewApplication.sendOfferLetterHint',
-                        'The applicant is admitted as soon as you send this, and receives an email confirming that they are in. Set the tuition amount and deadline for any remaining fees.',
+                        'The applicant is admitted as soon as you send this, and receives an email confirming that they are in.',
                       )
                     : t(
                         'admissions.viewApplication.sendOfferLetterHintPortal',
@@ -2482,29 +2477,6 @@ export default function ViewApplication() {
                 </>
               )}
 
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">
-                  {t('admissions.viewApplication.offerDeadline', 'Deadline')}
-                </label>
-                <input
-                  type="date"
-                  value={offerDeadline}
-                  onChange={(e) => setOfferDeadline(e.target.value)}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg"
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">
-                  {t('admissions.viewApplication.offerEmailNote', 'Email note (optional)')}
-                </label>
-                <textarea
-                  rows={4}
-                  value={offerMessage}
-                  onChange={(e) => setOfferMessage(e.target.value)}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg resize-none"
-                />
-              </div>
             </div>
 
             <div className={`mt-6 flex items-center ${isArabicLayout ? 'flex-row-reverse' : ''} justify-end gap-2`}>

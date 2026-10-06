@@ -4,6 +4,8 @@ import { useTranslation } from 'react-i18next'
 import { useLanguage } from '../../contexts/LanguageContext'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
+import { getLocalizedName } from '../../utils/localizedName'
+import { formatInstructorDisplayName } from '../../utils/academicTitle'
 import { createTeamsMeeting, formatMeetingDateTime } from '../../utils/microsoftGraph'
 import { ArrowLeft, Save, Check, Plus, X } from 'lucide-react'
 
@@ -100,7 +102,7 @@ export default function CreateClass() {
     try {
       const { data, error } = await supabase
         .from('colleges')
-        .select('id, name_en, code')
+        .select('id, name_en, name_ar, code')
         .eq('status', 'active')
         .order('name_en')
 
@@ -115,7 +117,7 @@ export default function CreateClass() {
     try {
       let query = supabase
         .from('subjects')
-        .select('id, name_en, code')
+        .select('id, name_en, name_ar, code')
         .eq('status', 'active')
         .order('name_en')
 
@@ -143,7 +145,7 @@ export default function CreateClass() {
     try {
       let query = supabase
         .from('semesters')
-        .select('id, name_en, code')
+        .select('id, name_en, name_ar, code')
         .order('start_date', { ascending: false })
 
       // Use collegeId or authCollegeId
@@ -166,7 +168,7 @@ export default function CreateClass() {
     try {
       let query = supabase
         .from('instructors')
-        .select('id, name_en, email')
+        .select('id, name_en, name_ar, email, academic_title')
         .eq('status', 'active')
         .order('name_en')
 
@@ -305,11 +307,11 @@ export default function CreateClass() {
           // Get subject details for meeting title
           const { data: subjectData } = await supabase
             .from('subjects')
-            .select('name_en, code')
+            .select('name_en, name_ar, code')
             .eq('id', parseInt(formData.subject_id))
             .single()
 
-          const subjectName = subjectData?.name_en || 'Class'
+          const subjectName = getLocalizedName(subjectData, isRTL) || 'Class'
           const subjectCode = subjectData?.code || ''
 
           // Helper function to get first occurrence date for a day of week
@@ -495,7 +497,7 @@ export default function CreateClass() {
                     <option value="">{t('classes.selectCollege')}</option>
                     {colleges.map((college) => (
                       <option key={college.id} value={college.id}>
-                        {college.name_en} ({college.code})
+                        {getLocalizedName(college, isRTL)} ({college.code})
                       </option>
                     ))}
                   </select>
@@ -514,7 +516,7 @@ export default function CreateClass() {
                     <option value="">{t('classes.selectSubject')}</option>
                     {subjects.map(subject => (
                       <option key={subject.id} value={subject.id}>
-                        {subject.code} - {subject.name_en}
+                        {subject.code} - {getLocalizedName(subject, isRTL)}
                       </option>
                     ))}
                   </select>
@@ -530,7 +532,7 @@ export default function CreateClass() {
                     <option value="">{t('classes.selectSemester')}</option>
                     {semesters.map(semester => (
                       <option key={semester.id} value={semester.id}>
-                        {semester.name_en} ({semester.code})
+                        {getLocalizedName(semester, isRTL)} ({semester.code})
                       </option>
                     ))}
                   </select>
@@ -597,7 +599,7 @@ export default function CreateClass() {
                     <option value="">{t('classes.selectInstructor')}</option>
                     {instructors.map(instructor => (
                       <option key={instructor.id} value={instructor.id}>
-                        {instructor.name_en}
+                        {formatInstructorDisplayName(instructor, isRTL)}
                       </option>
                     ))}
                   </select>

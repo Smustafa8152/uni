@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next'
 import { useLanguage } from '../../contexts/LanguageContext'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
+import { getLocalizedName } from '../../utils/localizedName'
 import { ArrowLeft, Save, Check, GraduationCap, Trash2, ChevronDown, ChevronUp } from 'lucide-react'
 
 export default function ManageMajorSheet() {
@@ -335,7 +336,7 @@ export default function ManageMajorSheet() {
       
       let query = supabase
         .from('academic_years')
-        .select('id, name_en, code, start_date, end_date')
+        .select('id, name_en, name_ar, code, start_date, end_date')
         .order('start_date', { ascending: false })
 
       if (userRole === 'user' && currentCollegeId) {
@@ -737,7 +738,7 @@ export default function ManageMajorSheet() {
                         <option value="">{t('academic.majors.degreePlanSheet.selectAcademicYear')}</option>
                         {academicYears.map(year => (
                           <option key={year.id} value={year.name_en || year.code}>
-                            {year.name_en || year.code} ({new Date(year.start_date).getFullYear()}-{new Date(year.end_date).getFullYear()})
+                            {getLocalizedName(year, isRTL) || year.code} ({new Date(year.start_date).getFullYear()}-{new Date(year.end_date).getFullYear()})
                           </option>
                         ))}
                       </select>
