@@ -6,7 +6,8 @@ import { useAuth } from '../../contexts/AuthContext'
 import { supabase } from '../../lib/supabase'
 import { getLocalizedName } from '../../utils/localizedName'
 import ApplicationMessagesPanel from '../../components/admissions/ApplicationMessagesPanel'
-import { Loader2, MessageSquare, Video, GraduationCap } from 'lucide-react'
+import { ApplicantSessionLinks } from '../../components/applicant/ApplicantNextStep'
+import { Loader2, MessageSquare } from 'lucide-react'
 
 /** Applicant portal: messages for own applications */
 export default function ApplicantMessages() {
@@ -130,32 +131,7 @@ export default function ApplicantMessages() {
             </ul>
           </aside>
           <div className="space-y-4 min-w-0">
-            {selected?.interview_meeting_url || selected?.interview_at ? (
-              <div className="rounded-xl border border-violet-200 bg-violet-50 px-4 py-3 text-sm">
-                <div className={`flex gap-2 ${isRTL ? 'flex-row-reverse' : ''}`}>
-                  <Video className="w-5 h-5 shrink-0" />
-                  <div>
-                    <p className="font-bold">{t('admissions.interview.portalTitle', 'Admission interview')}</p>
-                    {selected.interview_meeting_url && (
-                      <a href={selected.interview_meeting_url} target="_blank" rel="noreferrer" className="underline font-semibold">
-                        {t('admissions.interview.joinMeeting', 'Join meeting')}
-                      </a>
-                    )}
-                  </div>
-                </div>
-              </div>
-            ) : null}
-            {selected?.exam_at || selected?.exam_location_or_link ? (
-              <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm">
-                <div className={`flex gap-2 ${isRTL ? 'flex-row-reverse' : ''}`}>
-                  <GraduationCap className="w-5 h-5 shrink-0" />
-                  <div>
-                    <p className="font-bold">{t('admissions.exam.portalTitle', 'Entrance exam / admission test')}</p>
-                    {selected.exam_location_or_link && <p>{selected.exam_location_or_link}</p>}
-                  </div>
-                </div>
-              </div>
-            ) : null}
+            <ApplicantSessionLinks application={selected} isRTL={isRTL} />
             {selected && (
               <ApplicationMessagesPanel
                 application={selected}

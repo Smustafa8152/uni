@@ -8,7 +8,7 @@ import { getEmailLookupCandidates } from '../../utils/emailLookup'
 import { formatTimeRange12h } from '../../utils/timeFormat'
 import { formatInstructorDisplayName } from '../../utils/academicTitle'
 import { supabase } from '../../lib/supabase'
-import ApplicantNextStep from '../../components/applicant/ApplicantNextStep'
+import ApplicantNextStep, { ApplicantSessionLinks } from '../../components/applicant/ApplicantNextStep'
 import { getApplicantStatus } from '../../utils/applicationStatusDisplay'
 import { AlertTriangle, CreditCard, Calendar, GraduationCap, PenLine, Search, Receipt, GitBranch, Video, ExternalLink } from 'lucide-react'
 
@@ -392,6 +392,7 @@ export default function StudentDashboard() {
                   </span>
                 </div>
                 <ApplicantNextStep application={app} isRTL={isRTL} audience="student" />
+                <ApplicantSessionLinks application={app} isRTL={isRTL} />
                 <Link
                   to={`/student/applications/${app.id}`}
                   className="inline-flex text-sm font-bold text-[#1a3a6b] no-underline hover:underline"

@@ -1,5 +1,6 @@
 import { Link } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
+import { ExternalLink, GraduationCap, Video } from 'lucide-react'
 import { getApplicantReasonMeta, getApplicantStatus } from '../../utils/applicationStatusDisplay'
 
 const NEW_APPLICATION = new Set(['DCRJ', 'ENCA', 'ENCU', 'ACWD'])
@@ -69,23 +70,9 @@ export default function ApplicantNextStep({ application, isRTL, portal = true, o
         : { label: t('track.applicant.viewOffer'), to: '/login/applicant' }
   } else if (info.action === 'enrollment') {
     button = { label: t('track.loginToStudentPortal'), to: '/login/student' }
-  } else if (info.action === 'interview' && application.interview_meeting_url) {
-    button = { label: t('admissions.interview.joinMeeting'), href: application.interview_meeting_url, external: true }
-  } else if (info.action === 'exam' && /^https?:\/\//i.test(application.exam_location_or_link || '')) {
-    button = { label: t('track.applicant.openExam'), href: application.exam_location_or_link, external: true }
   } else if (portal && !studentView && NEW_APPLICATION.has(code)) {
     button = { label: t('track.applicant.startNew'), to: '/portal/apply' }
   }
-
-  const interviewWhen = info.action === 'interview' ? whenText(application.interview_at, application.interview_timezone, isRTL) : ''
-  const examWhen = info.action === 'exam' ? whenText(application.exam_at, application.exam_timezone, isRTL) : ''
-  const examPlace = info.action === 'exam' ? String(application.exam_location_or_link || '').trim() : ''
-  const instructions =
-    info.action === 'interview'
-      ? String(application.interview_instructions || '').trim()
-      : info.action === 'exam'
-        ? String(application.exam_instructions || '').trim()
-        : ''
 
   const shell =
     info.tone === 'rejected'
@@ -123,29 +110,6 @@ export default function ApplicantNextStep({ application, isRTL, portal = true, o
           )}
         </div>
       )}
-      {(interviewWhen || examWhen || (examPlace && !/^https?:\/\//i.test(examPlace)) || instructions) && (
-        <div className="mt-3 space-y-1 text-sm text-[#1e2a3a]">
-          {interviewWhen && (
-            <p>
-              <span className="font-semibold">{t('admissions.interview.when')}: </span>
-              <span dir="ltr">{interviewWhen}</span>
-            </p>
-          )}
-          {examWhen && (
-            <p>
-              <span className="font-semibold">{t('admissions.exam.when')}: </span>
-              <span dir="ltr">{examWhen}</span>
-            </p>
-          )}
-          {examPlace && !/^https?:\/\//i.test(examPlace) && (
-            <p>
-              <span className="font-semibold">{t('admissions.exam.location')}: </span>
-              {examPlace}
-            </p>
-          )}
-          {instructions && <p className="whitespace-pre-wrap text-[#3d4d66]">{instructions}</p>}
-        </div>
-      )}
       {button && (
         <div className="mt-4 flex">
           {button.to ? (
@@ -168,5 +132,89 @@ export default function ApplicantNextStep({ application, isRTL, portal = true, o
         </div>
       )}
     </section>
+  )
+}
+
+function httpUrl(value) {
+  const text = String(value || '').trim()
+  return /^https?:\/\//i.test(text) ? text : ''
+}
+
+/** Interview and entrance-exam links, shown whenever admissions has saved them. */
+export function ApplicantSessionLinks({ application, isRTL }) {
+  const { t } = useTranslation()
+  if (!application) return null
+
+  const meetingUrl = httpUrl(application.interview_meeting_url)
+  const examRaw = String(application.exam_location_or_link || '').trim()
+  const examUrl = httpUrl(examRaw)
+  const interviewWhen = whenText(application.interview_at, application.interview_timezone, isRTL)
+  const examWhen = whenText(application.exam_at, application.exam_timezone, isRTL)
+  const interviewNotes = String(application.interview_instructions || '').trim()
+  const examNotes = String(application.exam_instructions || '').trim()
+  const showInterview = Boolean(meetingUrl || interviewWhen || interviewNotes)
+  const showExam = Boolean(examUrl || examRaw || examWhen || examNotes)
+  if (!showInterview && !showExam) return null
+
+  const buttonClass =
+    'mt-3 inline-flex items-center justify-center gap-2 rounded-lg bg-[#1a3a6b] px-4 py-2.5 text-sm font-bold text-white no-underline hover:bg-[#2a5298]'
+
+  return (
+    <div className="space-y-3">
+      {showInterview && (
+        <section className="rounded-2xl border border-[#dde3ef] bg-white px-4 py-4 sm:px-5">
+          <div className="flex items-start gap-3">
+            <Video className="mt-0.5 h-5 w-5 shrink-0 text-[#1a3a6b]" />
+            <div className="min-w-0 flex-1 text-start">
+              <p className="font-extrabold text-[#1a3a6b]">{t('admissions.interview.portalTitle', 'Admission interview')}</p>
+              {interviewWhen && (
+                <p className="mt-1 text-sm text-[#3d4d66]">
+                  <span className="font-semibold">{t('admissions.interview.when', 'When')}: </span>
+                  <span dir="ltr">{interviewWhen}</span>
+                </p>
+              )}
+              {interviewNotes && <p className="mt-1 whitespace-pre-wrap text-sm text-[#3d4d66]">{interviewNotes}</p>}
+              {meetingUrl && (
+                <a href={meetingUrl} target="_blank" rel="noopener noreferrer" className={buttonClass}>
+                  <Video className="h-4 w-4" />
+                  {t('track.applicant.joinInterview', 'Join interview')}
+                  <ExternalLink className="h-4 w-4" />
+                </a>
+              )}
+            </div>
+          </div>
+        </section>
+      )}
+      {showExam && (
+        <section className="rounded-2xl border border-[#dde3ef] bg-white px-4 py-4 sm:px-5">
+          <div className="flex items-start gap-3">
+            <GraduationCap className="mt-0.5 h-5 w-5 shrink-0 text-[#1a3a6b]" />
+            <div className="min-w-0 flex-1 text-start">
+              <p className="font-extrabold text-[#1a3a6b]">{t('admissions.exam.portalTitle', 'Entrance exam')}</p>
+              {examWhen && (
+                <p className="mt-1 text-sm text-[#3d4d66]">
+                  <span className="font-semibold">{t('admissions.exam.when', 'When')}: </span>
+                  <span dir="ltr">{examWhen}</span>
+                </p>
+              )}
+              {examRaw && !examUrl && (
+                <p className="mt-1 text-sm text-[#3d4d66]">
+                  <span className="font-semibold">{t('admissions.exam.location', 'Location')}: </span>
+                  {examRaw}
+                </p>
+              )}
+              {examNotes && <p className="mt-1 whitespace-pre-wrap text-sm text-[#3d4d66]">{examNotes}</p>}
+              {examUrl && (
+                <a href={examUrl} target="_blank" rel="noopener noreferrer" className={buttonClass}>
+                  <GraduationCap className="h-4 w-4" />
+                  {t('track.applicant.openExam', 'Open the test')}
+                  <ExternalLink className="h-4 w-4" />
+                </a>
+              )}
+            </div>
+          </div>
+        </section>
+      )}
+    </div>
   )
 }
