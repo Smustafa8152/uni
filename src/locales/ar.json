@@ -7509,6 +7509,7 @@
       "gpa": "من 4.00",
       "selectLevelFirst": "اختر المرحلة الدراسية أولاً.",
       "educationForLevel": "المؤهلات الأدنى من المرحلة الدراسية التي اخترتها.",
+      "educationForMaster": "بكالوريوس أو أعلى.",
       "selectFacultyFirst": "اختر الكلية أولاً."
     },
     "workload": {

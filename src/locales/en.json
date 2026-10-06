@@ -7503,6 +7503,7 @@
       "gpa": "On a 4.00 scale",
       "selectLevelFirst": "Select an academic level first.",
       "educationForLevel": "Qualifications below the academic level you selected.",
+      "educationForMaster": "A bachelor's degree or higher.",
       "selectFacultyFirst": "Select a faculty first."
     },
     "workload": {
