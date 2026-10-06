@@ -1140,7 +1140,7 @@ export default function RegisterApplication({ portal = false }) {
       if (insertError) throw insertError
 
       if (!formData.submit_as_draft && application?.id) {
-        const mailResult = await notifyApplicationSubmitted(supabase, application, { isDraft: false })
+        const mailResult = await notifyApplicationSubmitted(supabase, application, { isDraft: false, language })
         if (!mailResult.sent && !mailResult.skipped) {
           console.warn('Submit confirmation email was not sent:', mailResult.error)
         }

@@ -2,6 +2,7 @@ import { BrowserRouter, Routes, Route, Navigate, useParams, useSearchParams } fr
 import { AuthProvider } from './contexts/AuthContext'
 import { CollegeProvider } from './contexts/CollegeContext'
 import { LanguageProvider } from './contexts/LanguageContext'
+import { Toaster } from './components/ui/toast'
 import { ProtectedRoute } from './components/ProtectedRoute'
 import './i18n'
 import Layout from './components/Layout'
@@ -185,6 +186,7 @@ function App() {
       <AuthProvider>
         <CollegeProvider>
           <BrowserRouter>
+          <Toaster />
         <Routes>
           <Route path="/" element={<Landing />} />
           <Route path="/login/admin" element={<LoginAdmin />} />

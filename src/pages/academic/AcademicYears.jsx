@@ -120,48 +120,41 @@ export default function AcademicYears() {
     }
   }
 
+  /**
+   * Semesters and registered students per academic year, from two quick reads.
+   * "Registered" is the sum of the class seat counters of the year's semesters.
+   */
   const fetchYearStatistics = async (years) => {
     try {
+      const yearIds = years.map(year => year.id)
+      const { data: semesters, error: semError } = await supabase
+        .from('semesters')
+        .select('id, academic_year_id')
+        .in('academic_year_id', yearIds)
+      if (semError) throw semError
+
       const stats = {}
-      
-      // Fetch all statistics in parallel for all years
-      const promises = years.map(async (year) => {
-        // Fetch semesters for this academic year
-        const { data: semesters, error: semError } = await supabase
-          .from('semesters')
-          .select('id')
-          .eq('academic_year_id', year.id)
-        
-        if (semError) {
-          console.error(`Error fetching semesters for year ${year.id}:`, semError)
-          return { yearId: year.id, semesterCount: 0, enrollmentCount: 0 }
+      yearIds.forEach(id => { stats[id] = { semesterCount: 0, enrollmentCount: 0 } })
+      const yearOfSemester = {}
+      for (const semester of semesters || []) {
+        yearOfSemester[semester.id] = semester.academic_year_id
+        if (stats[semester.academic_year_id]) stats[semester.academic_year_id].semesterCount += 1
+      }
+      setYearStats({ ...stats })
+
+      const semesterIds = Object.keys(yearOfSemester)
+      if (semesterIds.length > 0) {
+        const { data: classes, error: classError } = await supabase
+          .from('classes')
+          .select('semester_id, enrolled')
+          .in('semester_id', semesterIds)
+        if (classError) throw classError
+        for (const row of classes || []) {
+          const yearId = yearOfSemester[row.semester_id]
+          if (stats[yearId]) stats[yearId].enrollmentCount += row.enrolled || 0
         }
-        
-        const semesterIds = semesters?.map(s => s.id) || []
-        const semesterCount = semesterIds.length
-        
-        // Fetch enrollments for these semesters
-        let enrollmentCount = 0
-        if (semesterIds.length > 0) {
-          const { count, error: enrollError } = await supabase
-            .from('enrollments')
-            .select('*', { count: 'exact', head: true })
-            .in('semester_id', semesterIds)
-          
-          if (!enrollError) {
-            enrollmentCount = count || 0
-          }
-        }
-        
-        return { yearId: year.id, semesterCount, enrollmentCount }
-      })
-      
-      const results = await Promise.all(promises)
-      results.forEach(({ yearId, semesterCount, enrollmentCount }) => {
-        stats[yearId] = { semesterCount, enrollmentCount }
-      })
-      
-      setYearStats(stats)
+        setYearStats({ ...stats })
+      }
     } catch (err) {
       console.error('Error fetching year statistics:', err)
     }
@@ -183,11 +176,11 @@ export default function AcademicYears() {
     }
 
     const now = new Date()
-    const currentYear = yearsArray.find(year => {
+    // The year marked "current" wins; a year that is merely in progress today is the fallback.
+    const currentYear = yearsArray.find(year => year.is_current) || yearsArray.find(year => {
       const start = new Date(year.start_date)
       const end = new Date(year.end_date)
-      const normalized = normalizeStatus(year.status)
-      return year.is_current || (now >= start && now <= end && normalized === 'in_progress')
+      return now >= start && now <= end && normalizeStatus(year.status) === 'in_progress'
     })
 
     const activeYears = yearsArray.filter(year => 
@@ -521,7 +514,7 @@ export default function AcademicYears() {
               : t('academic.academicYears.closed')}
           </div>
           {kpis.registrationStatus === 'open' && kpis.currentYear && (
-            <div className="text-xs text-yellow-600 mt-1">{t('academic.academicYears.closesInDays', { days: 14 })}</div>
+            <div className="text-xs text-gray-500 mt-1">{t('academic.academicYears.registrationBySemester')}</div>
           )}
         </div>
 

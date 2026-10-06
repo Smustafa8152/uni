@@ -5,6 +5,7 @@ import { useLanguage } from '../contexts/LanguageContext'
 import { getSemesterCreditsFromUniversitySettings } from '../utils/getCollegeSettings'
 import { getLocalizedName } from '../utils/localizedName'
 import { supabase } from '../lib/supabase'
+import { finalGradePoints, isPassedEnrollment } from '../utils/registrationRules'
 import { useAuth } from '../contexts/AuthContext'
 import { useCollege } from '../contexts/CollegeContext'
 import { buildStudentSearchOrFilter } from '../utils/studentSearchQuery'
@@ -256,9 +257,16 @@ export default function CreateEnrollment() {
           await fetchCourseGroups(majorSheetData.id)
         }
       } else if (studentMajorSheetData) {
-        setStudentMajorSheet(studentMajorSheetData)
-        // Fetch course groups for this major sheet
-        await fetchCourseGroups(studentMajorSheetData.major_sheet.id)
+        // The join comes back under "major_sheets"; the rest of this page reads "major_sheet".
+        const joined = Array.isArray(studentMajorSheetData.major_sheets)
+          ? studentMajorSheetData.major_sheets[0]
+          : studentMajorSheetData.major_sheets
+        const assignedSheet = joined || (studentMajorSheetData.major_sheet_id ? { id: studentMajorSheetData.major_sheet_id } : null)
+        if (assignedSheet?.id) {
+          setStudentMajorSheet({ ...studentMajorSheetData, major_sheet: assignedSheet })
+          // Fetch course groups for this major sheet
+          await fetchCourseGroups(assignedSheet.id)
+        }
       }
     } catch (err) {
       console.error('Error fetching student major sheet:', err)
@@ -391,19 +399,17 @@ export default function CreateEnrollment() {
           )
         `)
         .eq('student_id', parseInt(formData.student_id))
-        .in('status', ['completed'])
+        .in('status', ['completed', 'enrolled'])
 
       if (enrollError) throw enrollError
 
       // Build list of passed subjects with their GPA points
       const passedSubjects = (completedEnrollments || [])
         .map(e => {
-          // Use grade_components GPA points if available, otherwise use enrollment grade_points
-          const raw = e.grade_components
-          const comp = Array.isArray(raw) ? raw[0] : raw
-          const gpaPoints = comp?.gpa_points ?? e.grade_points ?? 0
+          // Only a final or approved grade counts; each prerequisite's own minimum is applied further down.
+          const gpaPoints = finalGradePoints(e)
           const subjId = e.classes?.subjects?.id
-          if (subjId && gpaPoints >= 2.0) { // Minimum passing grade (C or 2.0 GPA)
+          if (subjId && isPassedEnrollment(e)) {
             return {
               subject_id: subjId,
               gpa_points: gpaPoints,
@@ -1021,7 +1027,7 @@ export default function CreateEnrollment() {
       }, 2000)
     } catch (err) {
       console.error('Error creating enrollment:', err)
-      setError(err.message || t('enrollments.createdSuccess'))
+      setError(err.message || t('enrollments.createFailed'))
     } finally {
       setLoading(false)
     }

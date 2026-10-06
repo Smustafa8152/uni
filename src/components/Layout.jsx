@@ -436,7 +436,7 @@ export default function Layout({ children }) {
 
   const handleSignOut = async () => {
     await signOut()
-    navigate('/login')
+    navigate('/')
   }
 
   const handleLanguageChange = (lang) => {

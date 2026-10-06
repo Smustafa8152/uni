@@ -1,1031 +1,697 @@
-import { useState, useEffect } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
+import { AlertTriangle, BookOpen, Check, CheckCircle2, ListChecks, RotateCcw, Search, Users, X } from 'lucide-react'
 import { useLanguage } from '../contexts/LanguageContext'
-import { supabase } from '../lib/supabase'
 import { useAuth } from '../contexts/AuthContext'
 import { useCollege } from '../contexts/CollegeContext'
-import { getLocalizedName } from '../utils/localizedName'
-import { buildStudentSearchOrFilter } from '../utils/studentSearchQuery'
-import { ArrowLeft, ArrowRight, ShoppingCart, Calendar, Search, Plus, X, Eye, Trash2, Check, Save, Loader, Building2 } from 'lucide-react'
-import { resolveEffectiveCollegeId } from '../utils/menuPermissions'
+import { supabase } from '../lib/supabase'
+import { getSemesterCreditsFromUniversitySettings } from '../utils/getCollegeSettings'
+import { hasUniversityWideScope } from '../utils/menuPermissions'
+import { creditLimits, describeRegistrationState, fetchPrerequisites, isDraftSemester, isFinishedSemester, registrationState } from '../utils/registrationRules'
+import { applyBulkRegistration, fetchPassedByStudent, fetchSemesterEnrollments, planBulkRegistration, selectionWarnings } from '../utils/bulkRegistration'
+import { Badge, Button, ConfirmDialog, EmptyState, PageHeader, Panel, Skeleton, toast } from '../components/ui'
+import { ScheduleLine } from '../components/registration/RegistrationWidgets'
+
+const NS = 'enrollments.bulkPage'
+
+const SEMESTER_SELECT = `
+  id, name_en, name_ar, code, status, start_date, end_date, college_id, is_university_wide,
+  registration_start_date, registration_end_date, late_registration_end_date,
+  course_registration_allowed, late_registration_allowed,
+  min_credit_hours, max_credit_hours, max_credit_hours_with_permission,
+  academic_years ( id, registration_open )
+`
+const CLASS_SELECT = `
+  id, code, section, capacity, enrolled, status, subject_id, college_id, is_university_wide,
+  subjects ( id, name_en, name_ar, code, credit_hours ),
+  instructors ( id, name_en, name_ar ),
+  class_schedules ( day_of_week, start_time, end_time )
+`
+const STUDENT_SELECT = `
+  id, student_id, name_en, name_ar, first_name, last_name, first_name_ar, last_name_ar,
+  major_id, college_id, enrollment_date,
+  majors ( id, name_en, name_ar, code )
+`
+
+const fieldClass =
+  'h-10 w-full rounded-xl border border-[#dde3ef] bg-white px-3 text-sm text-slate-800 outline-none transition-colors focus:border-[#1a3a6b] disabled:bg-slate-50 disabled:text-slate-400'
+const tidy = (value) => String(value || '').trim()
+const intakeYear = (student) => (student.enrollment_date ? String(student.enrollment_date).slice(0, 4) : '')
 
 export default function BulkEnrollment() {
   const { t } = useTranslation()
-  const { isRTL } = useLanguage()
+  const { isRTL, language } = useLanguage()
   const navigate = useNavigate()
   const { userRole, collegeId: authCollegeId } = useAuth()
-  const { selectedCollegeId, requiresCollegeSelection, colleges, setSelectedCollegeId } = useCollege()
-  const collegeId = resolveEffectiveCollegeId(userRole, authCollegeId, selectedCollegeId)
-  const [currentStep, setCurrentStep] = useState(1)
-  const [loading, setLoading] = useState(false)
+  const { selectedCollegeId, colleges } = useCollege()
+  const universityWide = hasUniversityWideScope(userRole, authCollegeId)
+
+  const localName = useCallback((row) => tidy(isRTL ? row?.name_ar || row?.name_en : row?.name_en || row?.name_ar), [isRTL])
+  const studentName = useCallback(
+    (s) => {
+      const en = tidy(s.name_en) || tidy(`${s.first_name || ''} ${s.last_name || ''}`)
+      const ar = tidy(s.name_ar) || tidy(`${s.first_name_ar || ''} ${s.last_name_ar || ''}`)
+      return (isRTL ? ar || en : en || ar) || `#${s.id}`
+    },
+    [isRTL]
+  )
+  const formatDate = useCallback(
+    (value) => new Date(value).toLocaleDateString(language === 'ar' ? 'ar-u-nu-latn' : 'en-GB', { day: 'numeric', month: 'long', year: 'numeric' }),
+    [language]
+  )
+
+  // ---- what the page knows ---------------------------------------------------
+  const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
-  const [success, setSuccess] = useState(false)
-
-  const [academicYears, setAcademicYears] = useState([])
   const [semesters, setSemesters] = useState([])
+  const [semesterId, setSemesterId] = useState('')
+  const [settings, setSettings] = useState({})
+  const [collegeFilter, setCollegeFilter] = useState(universityWide ? (selectedCollegeId ? String(selectedCollegeId) : '') : String(authCollegeId || ''))
+
   const [students, setStudents] = useState([])
-  const [availableClasses, setAvailableClasses] = useState([])
-  const [currentEnrollments, setCurrentEnrollments] = useState([])
-  const [selectedClasses, setSelectedClasses] = useState([])
-  const [studentSearch, setStudentSearch] = useState('')
-  const [classSearch, setClassSearch] = useState('')
-  const [subjectFilter, setSubjectFilter] = useState('all')
-  const [subjects, setSubjects] = useState([])
+  const [classes, setClasses] = useState([])
+  const [loadingClasses, setLoadingClasses] = useState(false)
 
-  const [formData, setFormData] = useState({
-    academic_year_id: '',
-    semester_id: '',
-    student_id: '',
-  })
+  // ---- what the person chose ---------------------------------------------------
+  const [classQuery, setClassQuery] = useState('')
+  const [studentQuery, setStudentQuery] = useState('')
+  const [majorFilter, setMajorFilter] = useState('')
+  const [yearFilter, setYearFilter] = useState('')
+  const [pickedClasses, setPickedClasses] = useState(() => new Set())
+  const [pickedStudents, setPickedStudents] = useState(() => new Set())
 
+  // ---- check and save ----------------------------------------------------------
+  const [phase, setPhase] = useState('pick') // pick | checking | checked | saving | done
+  const [progress, setProgress] = useState('')
+  const [plan, setPlan] = useState(null)
+  const [prerequisiteCodes, setPrerequisiteCodes] = useState({})
+  const [prerequisitesKnown, setPrerequisitesKnown] = useState(true)
+  const [onlyProblems, setOnlyProblems] = useState(false)
+  const [confirmOpen, setConfirmOpen] = useState(false)
+  const [result, setResult] = useState(null)
+
+  const semester = useMemo(() => semesters.find((s) => String(s.id) === String(semesterId)) || null, [semesters, semesterId])
+  const limits = useMemo(() => creditLimits(semester, settings), [semester, settings])
+  const studentState = useMemo(() => registrationState(semester), [semester])
+
+  // ---- loading -----------------------------------------------------------------
   useEffect(() => {
-    if (requiresCollegeSelection) {
-      return
-    }
-    if (collegeId) {
-      fetchAcademicYears()
-      fetchSemesters()
-    } else {
-      setAcademicYears([])
-      setSemesters([])
-    }
-  }, [collegeId, userRole, requiresCollegeSelection])
-
-  useEffect(() => {
-    if (formData.semester_id) {
-      fetchStudents()
-      fetchSubjects()
-    }
-  }, [formData.semester_id])
-
-  useEffect(() => {
-    if (formData.student_id && formData.semester_id) {
-      fetchAvailableClasses()
-      fetchCurrentEnrollments()
-    }
-  }, [formData.student_id, formData.semester_id])
-
-  useEffect(() => {
-    if (studentSearch) {
-      const timeoutId = setTimeout(() => {
-        fetchStudents()
-      }, 300)
-      return () => clearTimeout(timeoutId)
-    } else {
-      fetchStudents()
-    }
-  }, [studentSearch, formData.semester_id])
-
-  const fetchAcademicYears = async () => {
-    if (!collegeId) return
-    try {
-      let query = supabase
-        .from('academic_years')
-        .select('id, name_en, name_ar, code, start_date, end_date')
-        .order('start_date', { ascending: false })
-
-      query = query.or(`college_id.eq.${collegeId},is_university_wide.eq.true`)
-
-      const { data, error } = await query
-      if (error) throw error
-      setAcademicYears(data || [])
-    } catch (err) {
-      console.error('Error fetching academic years:', err)
-    }
-  }
-
-  const fetchSemesters = async () => {
-    // Don't fetch if we don't have required data
-    if (userRole === 'user' && !collegeId) return
-    if (userRole === 'instructor' && !collegeId) return
-
-    try {
-      let query = supabase
-        .from('semesters')
-        .select('id, name_en, name_ar, code, start_date, end_date, status, academic_year_id')
-        .order('start_date', { ascending: false })
-
-      // Filter by college: show college's semesters OR university-wide
-      if (collegeId) {
-        query = query.or(`college_id.eq.${collegeId},is_university_wide.eq.true`)
-      }
-
-      const { data, error } = await query
-      if (error) throw error
-      setSemesters(data || [])
-    } catch (err) {
-      console.error('Error fetching semesters:', err)
-      setError('Failed to load semesters')
-      setSemesters([]) // Set empty array on error to prevent showing stale data
-    }
-  }
-
-  const fetchStudents = async () => {
-    try {
-      let query = supabase
-        .from('students')
-        .select('id, first_name, last_name, student_id, email, majors(name_en, name_ar, code), status')
-        .eq('status', 'active')
-        .order('first_name')
-
-      if (collegeId) {
-        query = query.eq('college_id', collegeId)
-      }
-
-      if (studentSearch) {
-        const orFilter = buildStudentSearchOrFilter(studentSearch)
-        if (orFilter) {
-          query = query.or(orFilter)
-        } else {
-          query = query.ilike('student_id', `%${studentSearch}%`)
+    let alive = true
+    ;(async () => {
+      try {
+        let semesterRequest = supabase.from('semesters').select(SEMESTER_SELECT).order('start_date', { ascending: false })
+        let studentRequest = supabase.from('students').select(STUDENT_SELECT).eq('status', 'active').order('student_id').range(0, 4999)
+        if (!universityWide && authCollegeId) {
+          semesterRequest = semesterRequest.or(`college_id.eq.${authCollegeId},is_university_wide.eq.true`)
+          studentRequest = studentRequest.eq('college_id', authCollegeId)
         }
+        const [semesterResult, studentResult, credits] = await Promise.all([semesterRequest, studentRequest, getSemesterCreditsFromUniversitySettings()])
+        if (semesterResult.error) throw semesterResult.error
+        if (studentResult.error) throw studentResult.error
+        if (!alive) return
+        const list = semesterResult.data || []
+        setSemesters(list)
+        setStudents(studentResult.data || [])
+        setSettings(credits || {})
+        const upcoming = list.filter((s) => !isFinishedSemester(s)).sort((a, b) => String(a.start_date || '').localeCompare(String(b.start_date || '')))
+        const chosen = upcoming.find((s) => registrationState(s).allowed) || upcoming[0] || list[0]
+        setSemesterId(chosen ? String(chosen.id) : '')
+      } catch (err) {
+        console.error('Bulk registration: could not load', err)
+        if (alive) setError(err.message || t(`${NS}.errors.load`))
+      } finally {
+        if (alive) setLoading(false)
       }
-
-      const { data, error } = await query
-      if (error) throw error
-      setStudents(data || [])
-    } catch (err) {
-      console.error('Error fetching students:', err)
+    })()
+    return () => {
+      alive = false
     }
-  }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [universityWide, authCollegeId])
 
-  const fetchSubjects = async () => {
+  const loadClasses = useCallback(async () => {
+    if (!semesterId) return
+    setLoadingClasses(true)
     try {
-      let query = supabase
-        .from('subjects')
-        .select('id, name_en, name_ar, code')
-        .eq('status', 'active')
-        .order('name_en')
-
-      if (collegeId) {
-        query = query.or(`college_id.eq.${collegeId},is_university_wide.eq.true`)
-      }
-
-      const { data, error } = await query
-      if (error) throw error
-      setSubjects(data || [])
+      const { data, error: classError } = await supabase.from('classes').select(CLASS_SELECT).eq('semester_id', parseInt(semesterId, 10)).eq('status', 'active').order('code')
+      if (classError) throw classError
+      setClasses(data || [])
     } catch (err) {
-      console.error('Error fetching subjects:', err)
-    }
-  }
-
-  const fetchAvailableClasses = async () => {
-    try {
-      let query = supabase
-        .from('classes')
-        .select(`
-          id,
-          code,
-          section,
-          capacity,
-          enrolled,
-          subjects (
-            id,
-            name_en,
-            name_ar,
-            code,
-            credit_hours
-          ),
-          instructors (
-            id,
-            name_en,
-            name_ar,
-            email
-          ),
-          class_schedules (
-            day_of_week,
-            start_time,
-            end_time,
-            location
-          )
-        `)
-        .eq('semester_id', formData.semester_id)
-        .eq('status', 'active')
-        .order('code')
-
-      if (collegeId) {
-        query = query.or(`college_id.eq.${collegeId},is_university_wide.eq.true`)
-      }
-
-      if (classSearch) {
-        query = query.or(`code.ilike.%${classSearch}%,subjects.name_en.ilike.%${classSearch}%,subjects.name_ar.ilike.%${classSearch}%`)
-      }
-
-      if (subjectFilter !== 'all') {
-        query = query.eq('subject_id', parseInt(subjectFilter))
-      }
-
-      const { data, error } = await query
-      if (error) throw error
-      setAvailableClasses(data || [])
-    } catch (err) {
-      console.error('Error fetching classes:', err)
-      setError('Failed to load classes')
-    }
-  }
-
-  const fetchCurrentEnrollments = async () => {
-    try {
-      const { data, error } = await supabase
-        .from('enrollments')
-        .select(`
-          id,
-          class_id,
-          classes (
-            id,
-            code,
-            class_schedules (
-              day_of_week,
-              start_time,
-              end_time
-            )
-          )
-        `)
-        .eq('student_id', parseInt(formData.student_id))
-        .eq('semester_id', parseInt(formData.semester_id))
-        .eq('status', 'enrolled')
-
-      if (error) throw error
-      setCurrentEnrollments(data || [])
-    } catch (err) {
-      console.error('Error fetching current enrollments:', err)
-    }
-  }
-
-  const addToCart = (classItem) => {
-    // Check if already in cart
-    if (selectedClasses.find(c => c.id === classItem.id)) {
-      return
-    }
-
-    // Check if already enrolled
-    if (currentEnrollments.find(e => e.class_id === classItem.id)) {
-      setError(t('enrollments.alreadyEnrolled'))
-      return
-    }
-
-    // Check capacity
-    const available = (classItem.capacity || 0) - (classItem.enrolled || 0)
-    if (available <= 0) {
-      setError(t('enrollments.bulkClassFull'))
-      return
-    }
-
-    setSelectedClasses([...selectedClasses, classItem])
-    setError('')
-  }
-
-  const removeFromCart = (classId) => {
-    setSelectedClasses(selectedClasses.filter(c => c.id !== classId))
-  }
-
-  const hasTimeConflict = (class1, class2) => {
-    const schedules1 = class1.class_schedules || []
-    const schedules2 = class2.class_schedules || []
-
-    for (const s1 of schedules1) {
-      for (const s2 of schedules2) {
-        if (s1.day_of_week === s2.day_of_week) {
-          const start1 = s1.start_time
-          const end1 = s1.end_time
-          const start2 = s2.start_time
-          const end2 = s2.end_time
-
-          if ((start1 <= start2 && end1 > start2) || (start2 <= start1 && end2 > start1)) {
-            return true
-          }
-        }
-      }
-    }
-    return false
-  }
-
-  const checkConflicts = (newClass) => {
-    const conflicts = []
-    for (const selected of selectedClasses) {
-      if (hasTimeConflict(newClass, selected)) {
-        conflicts.push(selected.code)
-      }
-    }
-    for (const enrolled of currentEnrollments) {
-      if (enrolled.classes && hasTimeConflict(newClass, enrolled.classes)) {
-        conflicts.push(enrolled.classes.code)
-      }
-    }
-    return conflicts
-  }
-
-  const generateScheduleGrid = () => {
-    const days = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday']
-    const times = []
-    for (let hour = 8; hour <= 17; hour++) {
-      times.push(`${hour.toString().padStart(2, '0')}:00`)
-    }
-
-    const grid = {}
-    days.forEach(day => {
-      grid[day] = {}
-      times.forEach(time => {
-        grid[day][time] = []
-      })
-    })
-
-    // Add current enrollments (blue)
-    currentEnrollments.forEach(enrollment => {
-      if (enrollment.classes?.class_schedules) {
-        enrollment.classes.class_schedules.forEach(schedule => {
-          const day = schedule.day_of_week
-          const start = schedule.start_time?.substring(0, 5)
-          const end = schedule.end_time?.substring(0, 5)
-          if (grid[day] && start && end) {
-            const startHour = parseInt(start.split(':')[0])
-            const endHour = parseInt(end.split(':')[0])
-            for (let h = startHour; h < endHour; h++) {
-              const timeKey = `${h.toString().padStart(2, '0')}:00`
-              if (grid[day][timeKey]) {
-                grid[day][timeKey].push({
-                  type: 'enrolled',
-                  class: enrollment.classes.code,
-                  start,
-                  end
-                })
-              }
-            }
-          }
-        })
-      }
-    })
-
-    // Add selected classes (green)
-    selectedClasses.forEach(classItem => {
-      if (classItem.class_schedules) {
-        classItem.class_schedules.forEach(schedule => {
-          const day = schedule.day_of_week
-          const start = schedule.start_time?.substring(0, 5)
-          const end = schedule.end_time?.substring(0, 5)
-          if (grid[day] && start && end) {
-            const startHour = parseInt(start.split(':')[0])
-            const endHour = parseInt(end.split(':')[0])
-            for (let h = startHour; h < endHour; h++) {
-              const timeKey = `${h.toString().padStart(2, '0')}:00`
-              if (grid[day][timeKey]) {
-                grid[day][timeKey].push({
-                  type: 'selected',
-                  class: classItem.code,
-                  start,
-                  end
-                })
-              }
-            }
-          }
-        })
-      }
-    })
-
-    return { grid, days, times }
-  }
-
-  const calculateTotals = () => {
-    const totalCredits = selectedClasses.reduce((sum, c) => sum + (c.subjects?.credit_hours || 0), 0)
-    const currentCredits = currentEnrollments.reduce((sum, e) => {
-      // Would need to fetch subject credit hours for enrolled classes
-      return sum + 0 // Placeholder
-    }, 0)
-    const totalTuition = selectedClasses.reduce((sum, c) => {
-      const creditHours = c.subjects?.credit_hours || 0
-      const feePerCredit = 500 // This should come from college financial settings
-      return sum + (creditHours * feePerCredit)
-    }, 0)
-
-    return {
-      totalCredits,
-      currentCredits,
-      totalTuition,
-      maxCredits: 18 // This should come from college academic settings
-    }
-  }
-
-  const handleNext = () => {
-    if (currentStep === 1 && !formData.semester_id) {
-      setError(t('enrollments.bulkSelectSemester'))
-      return
-    }
-    if (currentStep === 2 && !formData.student_id) {
-      setError(t('enrollments.bulkSelectStudent'))
-      return
-    }
-    setError('')
-    setCurrentStep(prev => Math.min(prev + 1, 3))
-  }
-
-  const handleBack = () => {
-    setError('')
-    setCurrentStep(prev => Math.max(prev - 1, 1))
-  }
-
-  const handleSubmit = async () => {
-    if (selectedClasses.length === 0) {
-      setError(t('enrollments.bulkSelectAtLeastOne'))
-      return
-    }
-
-    setLoading(true)
-    setError('')
-    setSuccess(false)
-
-    try {
-      // Check for conflicts before enrolling
-      const conflicts = []
-      for (const selectedClass of selectedClasses) {
-        const classConflicts = checkConflicts(selectedClass)
-        if (classConflicts.length > 0) {
-          conflicts.push(`${selectedClass.code} conflicts with: ${classConflicts.join(', ')}`)
-        }
-      }
-
-      if (conflicts.length > 0) {
-        setError(t('enrollments.bulkTimeConflicts') + ': ' + conflicts.join('; '))
-        setLoading(false)
-        return
-      }
-
-      // Create enrollments
-      const enrollments = selectedClasses.map(classItem => ({
-        student_id: parseInt(formData.student_id),
-        class_id: classItem.id,
-        semester_id: parseInt(formData.semester_id),
-        status: 'enrolled',
-        enrollment_date: new Date().toISOString(),
-      }))
-
-      const { data: createdEnrollments, error: insertError } = await supabase
-        .from('enrollments')
-        .insert(enrollments)
-        .select()
-
-      if (insertError) throw insertError
-
-      // Update class enrollment counts
-      for (const classItem of selectedClasses) {
-        const { data: classData } = await supabase
-          .from('classes')
-          .select('enrolled')
-          .eq('id', classItem.id)
-          .limit(1)
-
-        if (classData && classData.length > 0) {
-          await supabase
-            .from('classes')
-            .update({ enrolled: (classData[0].enrolled || 0) + 1 })
-            .eq('id', classItem.id)
-        }
-      }
-
-      setSuccess(true)
-      setTimeout(() => {
-        navigate('/enrollments')
-      }, 2000)
-    } catch (err) {
-      console.error('Error creating enrollments:', err)
-      setError(err.message || 'Failed to create enrollments')
+      console.error('Bulk registration: could not load classes', err)
+      setError(err.message || t(`${NS}.errors.load`))
+      setClasses([])
     } finally {
-      setLoading(false)
+      setLoadingClasses(false)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [semesterId])
+
+  useEffect(() => {
+    setPickedClasses(new Set())
+    setPlan(null)
+    setResult(null)
+    setPhase('pick')
+    loadClasses()
+  }, [loadClasses])
+
+  // ---- lists as shown ----------------------------------------------------------
+  const inCollege = useCallback(
+    (row) => !collegeFilter || String(row.college_id) === String(collegeFilter) || row.is_university_wide === true,
+    [collegeFilter]
+  )
+
+  const shownClasses = useMemo(() => {
+    const needle = classQuery.trim().toLowerCase()
+    return classes.filter((cls) => {
+      if (!inCollege(cls)) return false
+      if (!needle) return true
+      const s = cls.subjects || {}
+      return [s.code, s.name_en, s.name_ar, cls.code, cls.section].some((v) => String(v || '').toLowerCase().includes(needle))
+    })
+  }, [classes, classQuery, inCollege])
+
+  const collegeStudents = useMemo(() => students.filter((s) => !collegeFilter || String(s.college_id) === String(collegeFilter)), [students, collegeFilter])
+
+  const majors = useMemo(() => {
+    const seen = new Map()
+    for (const s of collegeStudents) if (s.majors?.id && !seen.has(s.majors.id)) seen.set(s.majors.id, s.majors)
+    return [...seen.values()].sort((a, b) => localName(a).localeCompare(localName(b)))
+  }, [collegeStudents, localName])
+
+  const years = useMemo(() => [...new Set(collegeStudents.map(intakeYear).filter(Boolean))].sort().reverse(), [collegeStudents])
+
+  const shownStudents = useMemo(() => {
+    const needle = studentQuery.trim().toLowerCase()
+    return collegeStudents.filter((s) => {
+      if (majorFilter && String(s.major_id) !== String(majorFilter)) return false
+      if (yearFilter && intakeYear(s) !== yearFilter) return false
+      if (!needle) return true
+      return [s.student_id, s.name_en, s.name_ar, s.first_name, s.last_name, s.first_name_ar, s.last_name_ar].some((v) => String(v || '').toLowerCase().includes(needle))
+    })
+  }, [collegeStudents, majorFilter, yearFilter, studentQuery])
+
+  const chosenClasses = useMemo(() => classes.filter((c) => pickedClasses.has(c.id)), [classes, pickedClasses])
+  const chosenStudents = useMemo(() => students.filter((s) => pickedStudents.has(s.id)), [students, pickedStudents])
+  const warnings = useMemo(() => selectionWarnings(chosenClasses), [chosenClasses])
+  const allShownPicked = shownStudents.length > 0 && shownStudents.every((s) => pickedStudents.has(s.id))
+  const pairCount = chosenClasses.length * chosenStudents.length
+  const locked = phase === 'checking' || phase === 'saving'
+
+  /** Any change to the choice makes the last check stale. */
+  const touch = () => {
+    setPlan(null)
+    setResult(null)
+    setPhase('pick')
+  }
+  const toggle = (setter) => (id) => {
+    if (locked) return
+    setter((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+    touch()
+  }
+  const toggleClass = toggle(setPickedClasses)
+  const toggleStudent = toggle(setPickedStudents)
+  const toggleAllShown = () => {
+    if (locked) return
+    setPickedStudents((prev) => {
+      const next = new Set(prev)
+      for (const s of shownStudents) {
+        if (allShownPicked) next.delete(s.id)
+        else next.add(s.id)
+      }
+      return next
+    })
+    touch()
+  }
+
+  // ---- check -------------------------------------------------------------------
+  const runCheck = async () => {
+    if (pairCount === 0 || !semester) return
+    setPhase('checking')
+    setError('')
+    setProgress(t(`${NS}.progress.seats`))
+    try {
+      const classIds = chosenClasses.map((c) => c.id)
+      const studentIds = chosenStudents.map((s) => s.id)
+
+      // Seats may have changed since the list was loaded.
+      const { data: fresh, error: freshError } = await supabase.from('classes').select('id, capacity, enrolled').in('id', classIds)
+      if (freshError) throw freshError
+      const freshById = new Map((fresh || []).map((row) => [row.id, row]))
+      const currentClasses = chosenClasses.map((cls) => ({ ...cls, ...(freshById.get(cls.id) || {}) }))
+
+      const prerequisites = await fetchPrerequisites(
+        supabase,
+        currentClasses.map((c) => c.subject_id)
+      )
+      setPrerequisitesKnown(prerequisites !== null)
+      const neededIds = prerequisites ? [...new Set([...prerequisites.values()].flat().map((need) => need.subjectId))] : []
+
+      const existing = await fetchSemesterEnrollments(supabase, semester.id, studentIds, (done, total) =>
+        setProgress(t(`${NS}.progress.existing`, { done, total }))
+      )
+
+      let passedByStudent = null
+      if (neededIds.length > 0) {
+        passedByStudent = await fetchPassedByStudent(supabase, studentIds, neededIds, (done, total) => setProgress(t(`${NS}.progress.history`, { done, total })))
+        const { data: subjectRows } = await supabase.from('subjects').select('id, code').in('id', neededIds)
+        setPrerequisiteCodes(Object.fromEntries((subjectRows || []).map((s) => [s.id, tidy(s.code)])))
+      }
+
+      setPlan(planBulkRegistration({ students: chosenStudents, classes: currentClasses, existing, prerequisites, passedByStudent, maxHours: limits.maxWithPermission }))
+      setOnlyProblems(false)
+      setPhase('checked')
+    } catch (err) {
+      console.error('Bulk registration: check failed', err)
+      setError(t(`${NS}.errors.check`, { message: err.message || '' }))
+      setPhase('pick')
+    } finally {
+      setProgress('')
     }
   }
 
-  const { grid, days, times } = generateScheduleGrid()
-  const totals = calculateTotals()
-  const selectedStudent = students.find(s => s.id === parseInt(formData.student_id))
-  const selectedSemester = semesters.find(s => s.id === parseInt(formData.semester_id))
+  // ---- save --------------------------------------------------------------------
+  const toWrite = plan ? plan.totals.add + plan.totals.reactivate : 0
+
+  const save = async () => {
+    setConfirmOpen(false)
+    setPhase('saving')
+    setError('')
+    try {
+      const outcome = await applyBulkRegistration(supabase, {
+        semesterId: semester.id,
+        plan,
+        onProgress: (done, total) => setProgress(t(`${NS}.progress.saving`, { done, total })),
+      })
+      setResult(outcome)
+      setPhase('done')
+      if (outcome.failed.length === 0) toast(t(`${NS}.saved`, { count: outcome.added }))
+      else toast(t(`${NS}.savedWithProblems`, { count: outcome.added, failed: outcome.failed.length }), 'err')
+      loadClasses()
+    } catch (err) {
+      console.error('Bulk registration: save failed', err)
+      setError(t(`${NS}.errors.save`, { message: err.message || '' }))
+      setPhase('checked')
+    } finally {
+      setProgress('')
+    }
+  }
+
+  const startAgain = () => {
+    setPickedClasses(new Set())
+    setPickedStudents(new Set())
+    touch()
+    window.scrollTo({ top: 0, behavior: 'smooth' })
+  }
+
+  // ---- words for one student x class decision ------------------------------------
+  const describe = (item) => {
+    const code = tidy(item.cls.subjects?.code) || tidy(item.cls.code)
+    if (item.action === 'add') return { tone: 'ok', icon: Check, text: t(`${NS}.item.add`, { code }) }
+    if (item.action === 'reactivate') return { tone: 'ok', icon: RotateCcw, text: t(`${NS}.item.reactivate`, { code }) }
+    switch (item.reason) {
+      case 'already':
+        return { tone: 'neutral', text: t(`${NS}.item.already`, { code }) }
+      case 'otherSection':
+        return { tone: 'neutral', text: t(`${NS}.item.otherSection`, { code }) }
+      case 'full':
+        return { tone: 'err', text: t(`${NS}.item.full`, { code }) }
+      case 'prerequisite':
+        return { tone: 'warn', text: t(`${NS}.item.prerequisite`, { code, needs: (item.detail || []).map((id) => prerequisiteCodes[id] || `#${id}`).join(isRTL ? '، ' : ', ') }) }
+      case 'clash':
+        return { tone: 'warn', text: t(`${NS}.item.clash`, { code, other: tidy(item.detail) }) }
+      default:
+        return { tone: 'warn', text: t(`${NS}.item.overMax`, { code, max: limits.maxWithPermission }) }
+    }
+  }
+
+  const planRows = useMemo(() => (plan ? (onlyProblems ? plan.rows.filter((row) => row.blocked) : plan.rows) : []), [plan, onlyProblems])
+
+  // ---- render --------------------------------------------------------------------
+  if (loading) {
+    return (
+      <div className="space-y-5">
+        <Skeleton className="h-9 w-72" />
+        <Skeleton className="h-24 w-full" />
+        <div className="grid gap-5 lg:grid-cols-2">
+          <Skeleton className="h-80" />
+          <Skeleton className="h-80" />
+        </div>
+      </div>
+    )
+  }
+
+  const upcomingSemesters = semesters.filter((s) => !isFinishedSemester(s))
+  const pastSemesters = semesters.filter((s) => isFinishedSemester(s))
+  const semesterOption = (s) => (
+    <option key={s.id} value={s.id}>
+      {localName(s)} ({tidy(s.code)})
+    </option>
+  )
 
   return (
-    <div className="w-full max-w-none space-y-6" dir={isRTL ? 'rtl' : 'ltr'}>
-      {/* Header: dir=ltr on row so title block can be pinned to the visual right in Arabic */}
-      <div className="flex items-center justify-between gap-4" dir="ltr">
-        {isRTL ? (
-          <>
-            <button
-              type="button"
-              onClick={() => navigate('/enrollments')}
-              className="px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 flex-shrink-0"
-            >
-              {t('enrollments.backToList')}
-            </button>
-            <div className="flex flex-1 items-center justify-end gap-3 min-w-0">
-              <div className="min-w-0 text-right">
-                <h1 className="text-3xl font-bold text-gray-900 text-right">{t('enrollments.bulkEnrollmentTitle')}</h1>
-                <p className="text-gray-600 mt-1 text-right">{t('enrollments.bulkEnrollmentSubtitle')}</p>
-              </div>
-              <div className="w-12 h-12 bg-primary-gradient rounded-lg flex items-center justify-center flex-shrink-0">
-                <ShoppingCart className="w-6 h-6 text-white" />
-              </div>
-            </div>
-          </>
-        ) : (
-          <>
-            <div className="flex items-center gap-3 min-w-0">
-              <div className="w-12 h-12 bg-primary-gradient rounded-lg flex items-center justify-center flex-shrink-0">
-                <ShoppingCart className="w-6 h-6 text-white" />
-              </div>
-              <div className="min-w-0">
-                <h1 className="text-3xl font-bold text-gray-900 text-left">{t('enrollments.bulkEnrollmentTitle')}</h1>
-                <p className="text-gray-600 mt-1 text-left">{t('enrollments.bulkEnrollmentSubtitle')}</p>
-              </div>
-            </div>
-            <button
-              type="button"
-              onClick={() => navigate('/enrollments')}
-              className="px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 flex-shrink-0"
-            >
-              {t('enrollments.backToList')}
-            </button>
-          </>
-        )}
-      </div>
+    <div className="space-y-5 pb-24">
+      <PageHeader
+        title={t(`${NS}.title`)}
+        subtitle={t(`${NS}.subtitle`)}
+        actions={
+          <Button variant="quiet" onClick={() => navigate('/enrollments')}>
+            {t('enrollments.backToList')}
+          </Button>
+        }
+      />
 
-      {/* College Selector for Admin */}
-      {requiresCollegeSelection && (
-        <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
-          {isRTL ? (
-            <div className="flex flex-col sm:flex-row sm:items-center gap-3 sm:justify-between" dir="ltr">
+      {error ? (
+        <div role="alert" className="flex items-start gap-3 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
+          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
+          <span>{error}</span>
+        </div>
+      ) : null}
+
+      {/* Semester and college */}
+      <Panel>
+        <div className="grid gap-4 md:grid-cols-2">
+          <label className="block">
+            <span className="mb-1.5 block text-sm font-bold text-slate-700">{t('enrollments.semester')}</span>
+            <select className={fieldClass} value={semesterId} disabled={locked} onChange={(e) => setSemesterId(e.target.value)}>
+              {upcomingSemesters.length > 0 ? <optgroup label={t(`${NS}.semestersCurrent`)}>{upcomingSemesters.map(semesterOption)}</optgroup> : null}
+              {pastSemesters.length > 0 ? <optgroup label={t(`${NS}.semestersPast`)}>{pastSemesters.map(semesterOption)}</optgroup> : null}
+            </select>
+          </label>
+          {universityWide ? (
+            <label className="block">
+              <span className="mb-1.5 block text-sm font-bold text-slate-700">{t(`${NS}.college`)}</span>
               <select
-                value={selectedCollegeId || ''}
-                onChange={(e) => setSelectedCollegeId(parseInt(e.target.value))}
-                className="px-4 py-2 border border-yellow-300 rounded-lg text-sm bg-white focus:ring-2 focus:ring-yellow-500 focus:border-transparent min-w-[250px] w-full sm:w-auto flex-shrink-0"
-                required
+                className={fieldClass}
+                value={collegeFilter}
+                disabled={locked}
+                onChange={(e) => {
+                  setCollegeFilter(e.target.value)
+                  setMajorFilter('')
+                  setYearFilter('')
+                }}
               >
-                <option value="">{t('enrollments.selectCollege')}</option>
-                {colleges.map(college => (
-                  <option key={college.id} value={college.id}>
-                    {getLocalizedName(college, isRTL)} ({college.code})
+                <option value="">{t(`${NS}.allColleges`)}</option>
+                {colleges.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {localName(c)}
                   </option>
                 ))}
               </select>
-              <div className="flex flex-1 items-start gap-3 justify-end sm:flex-row-reverse min-w-0">
-                <Building2 className="w-5 h-5 text-yellow-600 flex-shrink-0 mt-0.5" />
-                <div className="min-w-0 text-right">
-                  <p className="text-sm font-semibold text-yellow-900">{t('enrollments.collegeSelectionRequired')}</p>
-                  <p className="text-xs text-yellow-700">{t('enrollments.collegeSelectionMessage')}</p>
-                </div>
-              </div>
-            </div>
-          ) : (
-            <div className="flex flex-col sm:flex-row sm:items-center gap-3 sm:justify-between" dir="ltr">
-              <div className="flex flex-1 items-start gap-3 min-w-0">
-                <Building2 className="w-5 h-5 text-yellow-600 flex-shrink-0 mt-0.5" />
-                <div className="min-w-0 text-left">
-                  <p className="text-sm font-semibold text-yellow-900">{t('enrollments.collegeSelectionRequired')}</p>
-                  <p className="text-xs text-yellow-700">{t('enrollments.collegeSelectionMessage')}</p>
-                </div>
-              </div>
-              <select
-                value={selectedCollegeId || ''}
-                onChange={(e) => setSelectedCollegeId(parseInt(e.target.value))}
-                className="px-4 py-2 border border-yellow-300 rounded-lg text-sm bg-white focus:ring-2 focus:ring-yellow-500 focus:border-transparent min-w-[250px] w-full sm:w-auto flex-shrink-0"
-                required
-              >
-                <option value="">{t('enrollments.selectCollege')}</option>
-                {colleges.map(college => (
-                  <option key={college.id} value={college.id}>
-                    {getLocalizedName(college, isRTL)} ({college.code})
-                  </option>
-                ))}
-              </select>
-            </div>
-          )}
+            </label>
+          ) : null}
         </div>
-      )}
+        {semester ? (
+          <div className="mt-4 flex flex-wrap items-center gap-x-3 gap-y-2 text-sm text-slate-600">
+            <Badge tone={studentState.allowed ? 'ok' : 'neutral'}>{t(`${NS}.forStudents`)}</Badge>
+            <span>{describeRegistrationState(studentState, t, formatDate)}</span>
+            {!studentState.allowed ? <span className="text-slate-500">{t(`${NS}.staffCanStill`)}</span> : null}
+            {studentState.allowed && isDraftSemester(semester) ? <Badge tone="warn" icon={AlertTriangle}>{t(`${NS}.draftButOpen`)}</Badge> : null}
+          </div>
+        ) : null}
+      </Panel>
 
-      {error && (
-        <div className="bg-red-50 border border-red-200 rounded-lg p-4 text-red-700">
-          {error}
-        </div>
-      )}
-
-      {success && (
-        <div className={`bg-green-50 border border-green-200 rounded-lg p-4 text-green-700 flex items-center ${isRTL ? 'flex-row-reverse space-x-reverse' : 'space-x-2'}`}>
-          <Check className="w-5 h-5" />
-          <span>{t('enrollments.bulkCreatedSuccess')}</span>
-        </div>
-      )}
-
-      <div className={`grid grid-cols-1 gap-6 ${isRTL ? '' : 'lg:grid-cols-3'}`}>
-        {/* Left Panel */}
-        <div className={`${isRTL ? 'col-span-1' : 'lg:col-span-2'} space-y-6`}>
-          {/* Step 1: Select Academic Year and Semester */}
-          {currentStep === 1 && (
-            <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6">
-              <div className={`mb-4 flex w-full items-center ${isRTL ? 'justify-end' : 'justify-start'}`} dir="ltr">
-                <div className={`flex items-center gap-2 ${isRTL ? 'flex-row-reverse' : 'flex-row'}`}>
-                  <span className="w-8 h-8 bg-primary-gradient rounded-full flex items-center justify-center text-white font-bold">1</span>
-                  <h2 className={`text-xl font-bold text-gray-900 ${isRTL ? 'text-right' : 'text-left'}`}>{t('enrollments.bulkSelectSemester')}</h2>
-                </div>
-              </div>
-              <div className="mb-4">
-                <label className={`block text-sm font-medium text-gray-700 mb-2 ${isRTL ? 'text-right' : 'text-left'}`}>
-                  {t('enrollments.selectAcademicYear', { defaultValue: t('academic.semesters.selectAcademicYear', { defaultValue: 'Select Academic Year...' }) })}
-                </label>
-                <select
-                  value={formData.academic_year_id}
-                  onChange={(e) => setFormData(prev => ({ ...prev, academic_year_id: e.target.value, semester_id: '' }))}
-                  className={`w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent ${isRTL ? 'text-right' : 'text-left'}`}
-                >
-                  <option value="">{t('enrollments.allAcademicYears') || 'All Academic Years'}</option>
-                  {academicYears.map(year => (
-                    <option key={year.id} value={year.id}>{getLocalizedName(year, isRTL)} ({year.code})</option>
-                  ))}
-                </select>
-              </div>
-              <div className="w-full space-y-3 max-h-96 overflow-y-auto">
-                {(formData.academic_year_id
-                  ? semesters.filter(s => s.academic_year_id === parseInt(formData.academic_year_id))
-                  : semesters
-                ).map(semester => (
-                  <button
-                    key={semester.id}
-                    onClick={() => {
-                      setFormData(prev => ({ ...prev, semester_id: semester.id.toString() }))
-                      setError('')
-                    }}
-                    className={`w-full ${isRTL ? 'text-right' : 'text-left'} p-4 rounded-lg border-2 transition-all ${
-                      formData.semester_id === semester.id.toString()
-                        ? 'border-primary-600 bg-primary-50'
-                        : 'border-gray-200 hover:border-gray-300'
-                    }`}
-                  >
-                    <div className="font-semibold text-gray-900">{getLocalizedName(semester, isRTL)}</div>
-                    <div className="text-sm text-gray-500">
-                      {semester.code} - {t(`common.${semester.status}`, { defaultValue: semester.status })}
-                    </div>
-                  </button>
-                ))}
+      {semesters.length === 0 ? (
+        <Panel>
+          <EmptyState icon={BookOpen} title={t(`${NS}.noSemestersTitle`)} hint={t(`${NS}.noSemestersHint`)} action={<Button onClick={() => navigate('/academic/semesters')}>{t(`${NS}.openSemesters`)}</Button>} />
+        </Panel>
+      ) : (
+        <div className="grid items-start gap-5 lg:grid-cols-2">
+          {/* 1. Classes */}
+          <Panel
+            flush
+            title={t(`${NS}.classesTitle`)}
+            aside={<Badge tone={chosenClasses.length ? 'info' : 'neutral'}>{t(`${NS}.chosenCount`, { count: chosenClasses.length })}</Badge>}
+          >
+            <div className="border-b border-[#dde3ef] p-3">
+              <div className="relative">
+                <Search className="pointer-events-none absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" aria-hidden="true" />
+                <input className={`${fieldClass} ps-9`} value={classQuery} onChange={(e) => setClassQuery(e.target.value)} placeholder={t(`${NS}.classSearch`)} aria-label={t(`${NS}.classSearch`)} />
               </div>
             </div>
-          )}
-
-          {/* Step 2: Select Student */}
-          {currentStep === 2 && (
-            <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6">
-              <div className={`mb-4 flex w-full items-center ${isRTL ? 'justify-end' : 'justify-start'}`} dir="ltr">
-                <div className={`flex items-center gap-2 ${isRTL ? 'flex-row-reverse' : 'flex-row'}`}>
-                  <span className="w-8 h-8 bg-primary-gradient rounded-full flex items-center justify-center text-white font-bold">2</span>
-                  <h2 className={`text-xl font-bold text-gray-900 ${isRTL ? 'text-right' : 'text-left'}`}>{t('enrollments.bulkSelectStudent')}</h2>
-                </div>
+            {loadingClasses ? (
+              <div className="space-y-2 p-3">
+                <Skeleton className="h-14" />
+                <Skeleton className="h-14" />
+                <Skeleton className="h-14" />
               </div>
-              <div className="mb-4">
-                <div className="relative">
-                  <Search className={`absolute ${isRTL ? 'right-3' : 'left-3'} top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400`} />
-                  <input
-                    type="text"
-                    placeholder={t('enrollments.bulkSearchStudent')}
-                    value={studentSearch}
-                    onChange={(e) => setStudentSearch(e.target.value)}
-                    className={`w-full ${isRTL ? 'pr-10 pl-4' : 'pl-10 pr-4'} py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent`}
-                  />
-                </div>
-              </div>
-              <div className="space-y-2 max-h-96 overflow-y-auto">
-                {students.map(student => (
-                  <button
-                    key={student.id}
-                    onClick={() => {
-                      setFormData(prev => ({ ...prev, student_id: student.id.toString() }))
-                      setError('')
-                    }}
-                    className={`w-full ${isRTL ? 'text-right' : 'text-left'} p-4 rounded-lg border-2 transition-all ${
-                      formData.student_id === student.id.toString()
-                        ? 'border-primary-600 bg-primary-50'
-                        : 'border-gray-200 hover:border-gray-300'
-                    }`}
-                  >
-                    <div className="font-semibold text-gray-900">
-                      {student.first_name} {student.last_name}
-                    </div>
-                    <div className="text-sm text-gray-500">
-                      {student.student_id} • {getLocalizedName(student.majors, isRTL) || 'N/A'}
-                    </div>
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* Step 3: Select Classes */}
-          {currentStep === 3 && (
-            <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6">
-              <div className="mb-4 flex w-full items-center justify-between gap-3" dir="ltr">
-                {isRTL ? (
-                  <>
-                    <span className="text-sm text-gray-500 flex-shrink-0">
-                      ({availableClasses.length} {t('enrollments.bulkClasses')})
-                    </span>
-                    <div className="flex items-center gap-2 flex-row-reverse min-w-0">
-                      <span className="w-8 h-8 bg-primary-gradient rounded-full flex items-center justify-center text-white font-bold flex-shrink-0">3</span>
-                      <h2 className="text-xl font-bold text-gray-900 text-right truncate">{t('enrollments.bulkAvailableClasses')}</h2>
-                    </div>
-                  </>
-                ) : (
-                  <>
-                    <div className="flex items-center gap-2 min-w-0">
-                      <span className="w-8 h-8 bg-primary-gradient rounded-full flex items-center justify-center text-white font-bold flex-shrink-0">3</span>
-                      <h2 className="text-xl font-bold text-gray-900 text-left truncate">{t('enrollments.bulkAvailableClasses')}</h2>
-                    </div>
-                    <span className="text-sm text-gray-500 flex-shrink-0">
-                      ({availableClasses.length} {t('enrollments.bulkClasses')})
-                    </span>
-                  </>
-                )}
-              </div>
-
-              {/* Search and Filters */}
-              <div className="mb-4 space-y-3">
-                <div className="relative">
-                  <Search className={`absolute ${isRTL ? 'right-3' : 'left-3'} top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400`} />
-                  <input
-                    type="text"
-                    placeholder={t('enrollments.bulkSearchClass')}
-                    value={classSearch}
-                    onChange={(e) => {
-                      setClassSearch(e.target.value)
-                      fetchAvailableClasses()
-                    }}
-                    className={`w-full ${isRTL ? 'pr-10 pl-4' : 'pl-10 pr-4'} py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent`}
-                  />
-                </div>
-                <div className={`flex items-center ${isRTL ? 'flex-row-reverse space-x-reverse' : 'space-x-3'}`}>
-                  <select
-                    value={subjectFilter}
-                    onChange={(e) => {
-                      setSubjectFilter(e.target.value)
-                      fetchAvailableClasses()
-                    }}
-                    className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
-                  >
-                    <option value="all">{t('enrollments.bulkAllSubjects')}</option>
-                    {subjects.map(subject => (
-                    <option key={subject.id} value={subject.id}>
-                        {subject.code} - {getLocalizedName(subject, isRTL)}
-                    </option>
-                    ))}
-                  </select>
-                  <button
-                    onClick={() => {
-                      setClassSearch('')
-                      setSubjectFilter('all')
-                      fetchAvailableClasses()
-                    }}
-                    className="px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50"
-                  >
-                    {t('enrollments.bulkReset')}
-                  </button>
-                </div>
-              </div>
-
-              {/* Class List */}
-              <div className="space-y-3 max-h-96 overflow-y-auto">
-                {availableClasses.map(classItem => {
-                  const available = (classItem.capacity || 0) - (classItem.enrolled || 0)
-                  const isInCart = selectedClasses.find(c => c.id === classItem.id)
-                  const isEnrolled = currentEnrollments.find(e => e.class_id === classItem.id)
-                  const conflicts = checkConflicts(classItem)
-
+            ) : classes.length === 0 ? (
+              <EmptyState
+                icon={BookOpen}
+                title={t(`${NS}.noClassesTitle`)}
+                hint={t(`${NS}.noClassesHint`)}
+                action={<Button onClick={() => navigate('/academic/classes/create')}>{t(`${NS}.createClass`)}</Button>}
+              />
+            ) : shownClasses.length === 0 ? (
+              <p className="px-4 py-8 text-center text-sm text-slate-500">{t(`${NS}.noMatch`)}</p>
+            ) : (
+              <ul className="max-h-[26rem] divide-y divide-[#dde3ef] overflow-y-auto">
+                {shownClasses.map((cls) => {
+                  const picked = pickedClasses.has(cls.id)
+                  const seats = Math.max(0, (cls.capacity || 0) - (cls.enrolled || 0))
                   return (
-                    <div
-                      key={classItem.id}
-                      className={`p-4 rounded-lg border-2 ${
-                        isInCart
-                          ? 'border-green-500 bg-green-50'
-                          : conflicts.length > 0
-                          ? 'border-yellow-500 bg-yellow-50'
-                          : 'border-gray-200'
-                      }`}
-                    >
-                      <div className={`flex items-start justify-between ${isRTL ? 'flex-row-reverse' : ''}`}>
-                        <div className="flex-1">
-                          <div className="font-semibold text-gray-900">
-                            {classItem.code} - {getLocalizedName(classItem.subjects, isRTL)}
-                          </div>
-                          <div className="text-sm text-gray-600 mt-1">
-                            {getLocalizedName(classItem.instructors, isRTL) || 'TBA'} • {classItem.class_schedules?.[0]?.location || 'TBA'} • {available}/{classItem.capacity} seats
-                          </div>
-                          <div className="text-sm font-medium text-gray-900 mt-2">
-                            {classItem.subjects?.credit_hours || 0} Credits • ${((classItem.subjects?.credit_hours || 0) * 500).toFixed(2)}
-                          </div>
-                          {conflicts.length > 0 && !isInCart && (
-                            <div className="text-xs text-yellow-700 mt-1">
-                              ⚠️ Time conflict with: {conflicts.join(', ')}
-                            </div>
-                          )}
-                        </div>
-                        <div className={`flex items-center space-x-2 ${isRTL ? 'space-x-reverse mr-4' : 'ml-4'}`}>
-                          {!isEnrolled && !isInCart && (
-                            <button
-                              onClick={() => addToCart(classItem)}
-                              disabled={available <= 0}
-                              className={`px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center ${isRTL ? 'flex-row-reverse space-x-reverse' : 'space-x-1'}`}
-                            >
-                              <Plus className="w-4 h-4" />
-                              <span>{t('enrollments.bulkAddToCart')}</span>
-                            </button>
-                          )}
-                          {isInCart && (
-                            <button
-                              onClick={() => removeFromCart(classItem.id)}
-                              className={`px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-all flex items-center ${isRTL ? 'flex-row-reverse space-x-reverse' : 'space-x-1'}`}
-                            >
-                              <X className="w-4 h-4" />
-                              <span>{t('enrollments.bulkRemove')}</span>
-                            </button>
-                          )}
-                          {isEnrolled && (
-                            <span className="px-3 py-1 bg-blue-100 text-blue-800 rounded-lg text-sm font-medium">
-                              {t('enrollments.enrolled')}
+                    <li key={cls.id}>
+                      <label className={`flex cursor-pointer items-start gap-3 px-4 py-3 ${picked ? 'bg-[#eef2f9]' : 'hover:bg-slate-50'}`}>
+                        <input type="checkbox" className="mt-1 h-4 w-4 shrink-0 accent-[#1a3a6b]" checked={picked} disabled={locked} onChange={() => toggleClass(cls.id)} />
+                        <span className="min-w-0 flex-1">
+                          <span className="flex flex-wrap items-baseline gap-x-2">
+                            <span className="text-sm font-extrabold text-[#1a3a6b]" dir="ltr">
+                              {tidy(cls.subjects?.code) || tidy(cls.code)}
                             </span>
-                          )}
-                        </div>
-                      </div>
-                    </div>
+                            <span className="text-sm font-semibold text-slate-800">{localName(cls.subjects)}</span>
+                          </span>
+                          <span className="mt-0.5 block text-xs text-slate-500">
+                            {t('enrollments.section')} {tidy(cls.section) || '—'}
+                            {cls.instructors ? ` · ${localName(cls.instructors)}` : ''}
+                            {' · '}
+                            <ScheduleLine schedules={cls.class_schedules} language={language} empty={t(`${NS}.noTime`)} />
+                          </span>
+                        </span>
+                        <Badge tone={seats > 0 ? 'neutral' : 'err'} className="shrink-0 tabular-nums">
+                          {t(`${NS}.seats`, { taken: cls.enrolled || 0, capacity: cls.capacity || 0 })}
+                        </Badge>
+                      </label>
+                    </li>
                   )
                 })}
+              </ul>
+            )}
+            {warnings.sameSubject.length + warnings.overlapping.length > 0 ? (
+              <div className="space-y-1 border-t border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+                {warnings.sameSubject.map(([a, b]) => (
+                  <p key={`s-${a.id}-${b.id}`}>{t(`${NS}.warnSameSubject`, { code: tidy(a.subjects?.code), a: tidy(a.section), b: tidy(b.section) })}</p>
+                ))}
+                {warnings.overlapping.map(([a, b]) => (
+                  <p key={`o-${a.id}-${b.id}`}>{t(`${NS}.warnOverlap`, { a: tidy(a.subjects?.code), b: tidy(b.subjects?.code) })}</p>
+                ))}
               </div>
-            </div>
-          )}
-        </div>
+            ) : null}
+          </Panel>
 
-        {/* Right Panel - Schedule Preview and Summary */}
-        <div className="space-y-6">
-          {/* Weekly Schedule Preview */}
-          {(currentStep === 3 || (formData.student_id && formData.semester_id)) && (
-            <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6">
-              <div className={`flex items-center ${isRTL ? 'flex-row-reverse space-x-reverse' : 'space-x-2'} mb-4`}>
-                <Calendar className="w-5 h-5 text-gray-600" />
-                <h3 className={`text-lg font-semibold text-gray-900 ${isRTL ? 'text-right' : 'text-left'}`}>{t('enrollments.bulkWeeklySchedule')}</h3>
-              </div>
-              <div className="overflow-x-auto">
-                <table className="w-full text-xs">
-                  <thead>
-                    <tr>
-                      <th className="w-16 p-2"></th>
-                      {days.slice(0, 5).map(day => (
-                        <th key={day} className="p-2 text-center font-medium text-gray-700">
-                          {day.charAt(0).toUpperCase() + day.slice(1, 3)}
-                        </th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {times.map(time => (
-                      <tr key={time}>
-                        <td className={`p-2 text-gray-500 ${isRTL ? 'text-left' : 'text-right'}`}>{time}</td>
-                        {days.slice(0, 5).map(day => {
-                          const cellData = grid[day]?.[time] || []
-                          const enrolled = cellData.find(d => d.type === 'enrolled')
-                          const selected = cellData.find(d => d.type === 'selected')
-                          
-                          return (
-                            <td key={`${day}-${time}`} className="p-1 border border-gray-200 relative h-8">
-                              {enrolled && (
-                                <div className="absolute inset-0 bg-blue-500 rounded text-white text-xs flex items-center justify-center font-medium">
-                                  {enrolled.class}
-                                </div>
-                              )}
-                              {selected && !enrolled && (
-                                <div className="absolute inset-0 bg-green-500 rounded text-white text-xs flex items-center justify-center font-medium">
-                                  {selected.class}
-                                </div>
-                              )}
-                            </td>
-                          )
-                        })}
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-              <div className={`mt-4 flex items-center ${isRTL ? 'flex-row-reverse space-x-reverse' : 'space-x-4'} text-xs`}>
-                <div className={`flex items-center ${isRTL ? 'flex-row-reverse space-x-reverse' : 'space-x-2'}`}>
-                  <div className="w-4 h-4 bg-blue-500 rounded"></div>
-                  <span className="text-gray-600">{t('enrollments.bulkCurrentlyEnrolled')}</span>
-                </div>
-                <div className={`flex items-center ${isRTL ? 'flex-row-reverse space-x-reverse' : 'space-x-2'}`}>
-                  <div className="w-4 h-4 bg-green-500 rounded"></div>
-                  <span className="text-gray-600">{t('enrollments.bulkSelectedInCart')}</span>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* Selected Classes Summary */}
-          {currentStep === 3 && (
-            <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6">
-              <div className={`flex items-center ${isRTL ? 'flex-row-reverse space-x-reverse' : 'space-x-2'} mb-4`}>
-                <ShoppingCart className="w-5 h-5 text-gray-600" />
-                <h3 className={`text-lg font-semibold text-gray-900 ${isRTL ? 'text-right' : 'text-left'}`}>
-                  {t('enrollments.bulkSelectedClasses')}
-                </h3>
-                <span className="px-2 py-1 bg-blue-100 text-blue-800 rounded-full text-xs font-medium">
-                  {selectedClasses.length}
-                </span>
-              </div>
-
-              {selectedClasses.length === 0 ? (
-                <div className={`text-center py-8 text-gray-500 ${isRTL ? 'text-right' : 'text-left'}`}>
-                  <p>{t('enrollments.bulkNoClassesSelected')}</p>
-                  <p className="text-sm mt-2">{t('enrollments.bulkNoClassesHint')}</p>
-                </div>
-              ) : (
-                <div className="space-y-2 mb-4">
-                  {selectedClasses.map(classItem => (
-                    <div key={classItem.id} className={`flex items-center ${isRTL ? 'flex-row-reverse justify-between' : 'justify-between'} p-3 bg-gray-50 rounded-lg`}>
-                      <div className={isRTL ? 'text-right' : 'text-left'}>
-                        <div className="font-medium text-gray-900">{classItem.code}</div>
-                        <div className="text-sm text-gray-600">
-                          {classItem.subjects?.credit_hours || 0} {t('enrollments.bulkCredits')}
-                        </div>
-                      </div>
-                      <button
-                        onClick={() => removeFromCart(classItem.id)}
-                        className="text-red-600 hover:text-red-800"
-                      >
-                        <X className="w-4 h-4" />
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              )}
-
-              {/* Credit Hours Progress */}
-              <div className="mb-4">
-                <div className={`flex items-center ${isRTL ? 'flex-row-reverse justify-between' : 'justify-between'} mb-2`}>
-                  <span className={`text-sm font-medium text-gray-700 ${isRTL ? 'text-right' : 'text-left'}`}>{t('enrollments.bulkCreditHours')}</span>
-                  <span className="text-sm text-gray-600">
-                    {totals.currentCredits + totals.totalCredits}/{totals.maxCredits}
-                  </span>
-                </div>
-                <div className="w-full bg-gray-200 rounded-full h-2">
-                  <div
-                    className="bg-primary-600 h-2 rounded-full transition-all"
-                    style={{ width: `${Math.min(100, ((totals.currentCredits + totals.totalCredits) / totals.maxCredits) * 100)}%` }}
-                  ></div>
-                </div>
-                <div className={`text-xs text-gray-500 mt-1 ${isRTL ? 'text-right' : 'text-left'}`}>
-                  {t('enrollments.bulkCurrent')} ({totals.currentCredits}) + {t('enrollments.bulkSelected')} ({totals.totalCredits})
-                </div>
-              </div>
-
-              {/* Summary */}
-              <div className={`space-y-2 pt-4 border-t ${isRTL ? 'text-right' : 'text-left'}`}>
-                <div className={`flex ${isRTL ? 'flex-row-reverse justify-between' : 'justify-between'} text-sm`}>
-                  <span className="text-gray-600">{t('enrollments.bulkSelectedClasses')}:</span>
-                  <span className="font-medium text-gray-900">{selectedClasses.length}</span>
-                </div>
-                <div className={`flex ${isRTL ? 'flex-row-reverse justify-between' : 'justify-between'} text-sm`}>
-                  <span className="text-gray-600">{t('enrollments.bulkTotalTuition')}:</span>
-                  <span className="font-medium text-gray-900">${totals.totalTuition.toFixed(2)}</span>
-                </div>
-                <div className={`flex ${isRTL ? 'flex-row-reverse justify-between' : 'justify-between'} text-sm`}>
-                  <span className="text-gray-600">{t('enrollments.bulkTotalCredits')}:</span>
-                  <span className="font-medium text-gray-900">{totals.totalCredits}</span>
-                </div>
-              </div>
-
-              {/* Action Buttons */}
-              <div className="mt-6 space-y-2">
-                <button
-                  onClick={handleSubmit}
-                  disabled={loading || selectedClasses.length === 0}
-                  className={`w-full flex items-center ${isRTL ? 'flex-row-reverse space-x-reverse' : 'space-x-2'} justify-center px-4 py-3 bg-green-600 text-white rounded-lg font-semibold hover:bg-green-700 transition-all disabled:opacity-50 disabled:cursor-not-allowed`}
-                >
-                  <Check className="w-5 h-5" />
-                  <span>{loading ? t('enrollments.bulkEnrolling') : t('enrollments.bulkEnrollSelected')}</span>
-                </button>
-              </div>
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* Navigation Buttons */}
-      <div className={`flex ${isRTL ? 'flex-row-reverse justify-between' : 'justify-between'}`}>
-        <button
-          onClick={handleBack}
-          disabled={currentStep === 1}
-          className={`flex items-center ${isRTL ? 'flex-row-reverse space-x-reverse' : 'space-x-2'} px-6 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed`}
-        >
-          {isRTL ? <ArrowRight className="w-4 h-4" /> : <ArrowLeft className="w-4 h-4" />}
-          <span>{t('enrollments.previous')}</span>
-        </button>
-        {currentStep < 3 ? (
-          <button
-            onClick={handleNext}
-            className={`flex items-center ${isRTL ? 'flex-row-reverse space-x-reverse' : 'space-x-2'} px-6 py-2 bg-primary-gradient text-white rounded-lg font-semibold hover:shadow-lg transition-all`}
+          {/* 2. Students */}
+          <Panel
+            flush
+            title={t(`${NS}.studentsTitle`)}
+            aside={<Badge tone={chosenStudents.length ? 'info' : 'neutral'}>{t(`${NS}.chosenCount`, { count: chosenStudents.length })}</Badge>}
           >
-            <span>{t('enrollments.next')}</span>
-            {isRTL ? <ArrowLeft className="w-4 h-4" /> : <ArrowRight className="w-4 h-4" />}
-          </button>
-        ) : null}
-      </div>
+            <div className="grid gap-2 border-b border-[#dde3ef] p-3 sm:grid-cols-2">
+              <select className={fieldClass} value={majorFilter} onChange={(e) => setMajorFilter(e.target.value)} aria-label={t(`${NS}.major`)}>
+                <option value="">{t(`${NS}.allMajors`)}</option>
+                {majors.map((m) => (
+                  <option key={m.id} value={m.id}>
+                    {localName(m)}
+                  </option>
+                ))}
+              </select>
+              <select className={fieldClass} value={yearFilter} onChange={(e) => setYearFilter(e.target.value)} aria-label={t(`${NS}.intake`)}>
+                <option value="">{t(`${NS}.allIntakes`)}</option>
+                {years.map((y) => (
+                  <option key={y} value={y}>
+                    {t(`${NS}.intakeYear`, { year: y })}
+                  </option>
+                ))}
+              </select>
+              <div className="relative sm:col-span-2">
+                <Search className="pointer-events-none absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" aria-hidden="true" />
+                <input className={`${fieldClass} ps-9`} value={studentQuery} onChange={(e) => setStudentQuery(e.target.value)} placeholder={t(`${NS}.studentSearch`)} aria-label={t(`${NS}.studentSearch`)} />
+              </div>
+            </div>
+            {shownStudents.length === 0 ? (
+              <EmptyState icon={Users} title={t(`${NS}.noStudentsTitle`)} hint={t(`${NS}.noStudentsHint`)} />
+            ) : (
+              <>
+                <label className="flex cursor-pointer items-center gap-3 border-b border-[#dde3ef] bg-slate-50 px-4 py-2.5 text-sm font-bold text-slate-700">
+                  <input type="checkbox" className="h-4 w-4 accent-[#1a3a6b]" checked={allShownPicked} disabled={locked} onChange={toggleAllShown} />
+                  {t(`${NS}.selectAllShown`, { count: shownStudents.length })}
+                </label>
+                <ul className="max-h-[22.5rem] divide-y divide-[#dde3ef] overflow-y-auto">
+                  {shownStudents.map((s) => {
+                    const picked = pickedStudents.has(s.id)
+                    return (
+                      <li key={s.id}>
+                        <label className={`flex cursor-pointer items-center gap-3 px-4 py-2.5 ${picked ? 'bg-[#eef2f9]' : 'hover:bg-slate-50'}`}>
+                          <input type="checkbox" className="h-4 w-4 shrink-0 accent-[#1a3a6b]" checked={picked} disabled={locked} onChange={() => toggleStudent(s.id)} />
+                          <span className="min-w-0 flex-1">
+                            <span className="block truncate text-sm font-semibold text-slate-800">{studentName(s)}</span>
+                            <span className="block truncate text-xs text-slate-500">
+                              <span dir="ltr">{tidy(s.student_id) || '—'}</span>
+                              {s.majors ? ` · ${localName(s.majors)}` : ''}
+                              {intakeYear(s) ? ` · ${intakeYear(s)}` : ''}
+                            </span>
+                          </span>
+                        </label>
+                      </li>
+                    )
+                  })}
+                </ul>
+              </>
+            )}
+          </Panel>
+        </div>
+      )}
+
+      {/* 3. Check */}
+      {plan && phase !== 'done' ? (
+        <Panel
+          flush
+          title={t(`${NS}.checkTitle`)}
+          aside={
+            plan.totals.studentsBlocked > 0 ? (
+              <label className="flex cursor-pointer items-center gap-2 text-sm font-semibold text-slate-600">
+                <input type="checkbox" className="h-4 w-4 accent-[#1a3a6b]" checked={onlyProblems} onChange={(e) => setOnlyProblems(e.target.checked)} />
+                {t(`${NS}.onlyProblems`)}
+              </label>
+            ) : null
+          }
+        >
+          <div className="grid gap-3 border-b border-[#dde3ef] p-4 sm:grid-cols-3">
+            <div className="rounded-xl bg-emerald-50 px-4 py-3">
+              <div className="text-2xl font-extrabold tabular-nums text-emerald-800">{toWrite}</div>
+              <div className="text-sm font-semibold text-emerald-900">{t(`${NS}.sumWillRegister`, { students: plan.totals.studentsChanged })}</div>
+            </div>
+            <div className="rounded-xl bg-slate-100 px-4 py-3">
+              <div className="text-2xl font-extrabold tabular-nums text-slate-700">{plan.totals.skip}</div>
+              <div className="text-sm font-semibold text-slate-700">{t(`${NS}.sumAlready`)}</div>
+            </div>
+            <div className={`rounded-xl px-4 py-3 ${plan.totals.blocked ? 'bg-amber-50' : 'bg-slate-100'}`}>
+              <div className={`text-2xl font-extrabold tabular-nums ${plan.totals.blocked ? 'text-amber-800' : 'text-slate-700'}`}>{plan.totals.blocked}</div>
+              <div className={`text-sm font-semibold ${plan.totals.blocked ? 'text-amber-900' : 'text-slate-700'}`}>{t(`${NS}.sumBlocked`, { students: plan.totals.studentsBlocked })}</div>
+            </div>
+          </div>
+          {!prerequisitesKnown ? <p className="border-b border-[#dde3ef] bg-amber-50 px-4 py-2.5 text-sm text-amber-900">{t(`${NS}.prerequisitesUnknown`)}</p> : null}
+          <ul className="max-h-[32rem] divide-y divide-[#dde3ef] overflow-y-auto">
+            {planRows.map((row) => (
+              <li key={row.student.id} className="flex flex-col gap-2 px-4 py-3 md:flex-row md:items-start md:gap-4">
+                <div className="min-w-0 md:w-64 md:shrink-0">
+                  <div className="truncate text-sm font-bold text-slate-800">{studentName(row.student)}</div>
+                  <div className="text-xs text-slate-500">
+                    <span dir="ltr">{tidy(row.student.student_id) || '—'}</span>
+                    {' · '}
+                    {row.hoursAfter === row.hoursBefore ? t(`${NS}.hoursSame`, { hours: row.hoursBefore }) : t(`${NS}.hoursChange`, { before: row.hoursBefore, after: row.hoursAfter })}
+                    {row.hoursAfter > 0 && row.hoursAfter < limits.min ? ` · ${t(`${NS}.belowMin`, { min: limits.min })}` : ''}
+                  </div>
+                </div>
+                <div className="flex flex-1 flex-wrap gap-1.5">
+                  {row.items.map((item) => {
+                    const d = describe(item)
+                    return (
+                      <Badge key={item.cls.id} tone={d.tone} icon={d.icon} className="!whitespace-normal !leading-snug">
+                        {d.text}
+                      </Badge>
+                    )
+                  })}
+                </div>
+              </li>
+            ))}
+          </ul>
+        </Panel>
+      ) : null}
+
+      {/* 4. Result */}
+      {phase === 'done' && result ? (
+        <Panel>
+          <div className="flex flex-col items-center px-2 py-4 text-center">
+            <span className={`mb-3 flex h-14 w-14 items-center justify-center rounded-2xl ${result.failed.length ? 'bg-amber-50 text-amber-700' : 'bg-emerald-50 text-emerald-700'}`}>
+              {result.failed.length ? <AlertTriangle className="h-7 w-7" aria-hidden="true" /> : <CheckCircle2 className="h-7 w-7" aria-hidden="true" />}
+            </span>
+            <p className="text-lg font-extrabold text-[#1a3a6b]">{t(`${NS}.saved`, { count: result.added })}</p>
+            <p className="mt-1 text-sm text-slate-600">{t(`${NS}.savedIn`, { semester: localName(semester) })}</p>
+            {result.counterProblems.length > 0 ? <p className="mt-2 text-sm text-amber-800">{t(`${NS}.counterProblem`)}</p> : null}
+            <div className="mt-5 flex flex-wrap justify-center gap-2">
+              <Button onClick={() => navigate(`/enrollments?semester=${semester.id}`)}>{t(`${NS}.viewList`)}</Button>
+              <Button variant="quiet" onClick={startAgain}>
+                {t(`${NS}.another`)}
+              </Button>
+            </div>
+          </div>
+          {result.failed.length > 0 ? (
+            <div className="mt-4 rounded-xl border border-red-200">
+              <p className="border-b border-red-200 bg-red-50 px-4 py-2.5 text-sm font-bold text-red-800">{t(`${NS}.failedTitle`, { count: result.failed.length })}</p>
+              <ul className="divide-y divide-red-100 text-sm">
+                {result.failed.map((f, i) => (
+                  <li key={`${f.student.id}-${f.cls.id}-${i}`} className="flex flex-wrap gap-x-3 px-4 py-2">
+                    <span className="font-semibold text-slate-800">{studentName(f.student)}</span>
+                    <span dir="ltr" className="text-slate-600">
+                      {tidy(f.cls.subjects?.code) || tidy(f.cls.code)}
+                    </span>
+                    <span className="text-red-700">{f.message}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
+        </Panel>
+      ) : null}
+
+      {/* Action bar */}
+      {phase !== 'done' && semesters.length > 0 ? (
+        <div className="sticky bottom-3 z-20 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-[#dde3ef] bg-white/95 px-4 py-3 shadow-lg shadow-[#1a3a6b]/10 backdrop-blur">
+          <div className="min-w-0 text-sm text-slate-600">
+            {locked ? (
+              <span className="font-semibold text-[#1a3a6b]">{progress || t('common.loading')}</span>
+            ) : pairCount === 0 ? (
+              t(`${NS}.barEmpty`)
+            ) : (
+              <span>
+                <strong className="text-slate-800">{t(`${NS}.barChoice`, { classes: chosenClasses.length, students: chosenStudents.length })}</strong>
+                {plan ? ` · ${t(`${NS}.barReady`, { count: toWrite })}` : ''}
+              </span>
+            )}
+          </div>
+          <div className="flex items-center gap-2">
+            {(pickedClasses.size > 0 || pickedStudents.size > 0) && !locked ? (
+              <Button variant="ghost" icon={X} onClick={startAgain}>
+                {t(`${NS}.clear`)}
+              </Button>
+            ) : null}
+            {plan && phase !== 'checking' ? (
+              <Button icon={Check} loading={phase === 'saving'} disabled={toWrite === 0} onClick={() => setConfirmOpen(true)}>
+                {t(`${NS}.register`, { count: toWrite })}
+              </Button>
+            ) : (
+              <Button icon={ListChecks} loading={phase === 'checking'} disabled={pairCount === 0} onClick={runCheck}>
+                {t(`${NS}.check`)}
+              </Button>
+            )}
+          </div>
+        </div>
+      ) : null}
+
+      <ConfirmDialog
+        open={confirmOpen}
+        tone="primary"
+        title={t(`${NS}.confirmTitle`, { count: toWrite })}
+        body={t(`${NS}.confirmBody`, { count: toWrite, students: plan?.totals.studentsChanged || 0, semester: localName(semester) })}
+        confirmLabel={t(`${NS}.register`, { count: toWrite })}
+        cancelLabel={t('common.cancel')}
+        onConfirm={save}
+        onCancel={() => setConfirmOpen(false)}
+      />
     </div>
   )
 }

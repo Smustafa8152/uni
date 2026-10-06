@@ -1,403 +1,387 @@
-import { useState, useEffect } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { useLocation, useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
+import { AlertTriangle, Download, GraduationCap, Plus, RefreshCw, Search, Users } from 'lucide-react'
 import { useLanguage } from '../contexts/LanguageContext'
-import { supabase } from '../lib/supabase'
 import { useAuth } from '../contexts/AuthContext'
+import { supabase } from '../lib/supabase'
 import { exportEnrollmentRecords } from '../utils/exportStudentEnrollments'
-import { Plus, Search, GraduationCap, Download, Loader2 } from 'lucide-react'
+import { buildStudentSearchOrFilter } from '../utils/studentSearchQuery'
+import { Badge, Button, EmptyState, PageHeader, Panel, Skeleton, toast } from '../components/ui'
+
+const NS = 'enrollments.listPage'
+const PAGE_SIZE = 25
+const EXPORT_PAGE_SIZE = 100
+
+const ENROLLMENT_SELECT = `
+  id, enrollment_date, status, grade, numeric_grade, grade_points, created_at, updated_at,
+  students (
+    id, student_id, first_name, middle_name, last_name, name_en, name_ar, email, phone, mobile_phone, gender, nationality,
+    majors ( id, name_en, name_ar, code ),
+    colleges ( id, name_en, name_ar, code )
+  ),
+  classes (
+    id, code, section,
+    class_schedules ( day_of_week, start_time, end_time, location ),
+    subjects ( id, name_en, name_ar, code, credit_hours ),
+    instructors ( id, name_en, name_ar )
+  ),
+  semesters ( id, name_en, name_ar, code )
+`
+
+const STATUS_TONES = { enrolled: 'ok', dropped: 'err', completed: 'info', failed: 'err', withdrawn: 'warn' }
+const STATUSES = ['enrolled', 'dropped', 'completed', 'failed', 'withdrawn']
+const fieldClass = 'h-10 w-full rounded-xl border border-[#dde3ef] bg-white px-3 text-sm text-slate-800 outline-none transition-colors focus:border-[#1a3a6b]'
+const tidy = (value) => String(value || '').trim()
 
 export default function Enrollments() {
   const { t } = useTranslation()
   const { isRTL, language } = useLanguage()
   const navigate = useNavigate()
-  const { userRole, collegeId, departmentId } = useAuth()
-  const [enrollments, setEnrollments] = useState([])
+  const location = useLocation()
+  const { userRole, collegeId } = useAuth()
+  const collegeStaff = (userRole === 'user' || userRole === 'instructor') && Boolean(collegeId)
+  const scopedToCollege = userRole === 'user' && Boolean(collegeId)
+  const ready = userRole === 'admin' || collegeStaff
+
+  const [rows, setRows] = useState([])
   const [loading, setLoading] = useState(true)
-  const [searchQuery, setSearchQuery] = useState('')
-  const [statusFilter, setStatusFilter] = useState('all')
-  const [semesterFilter, setSemesterFilter] = useState('all')
+  const [loadingMore, setLoadingMore] = useState(false)
+  const [hasMore, setHasMore] = useState(false)
+  const [error, setError] = useState('')
   const [semesters, setSemesters] = useState([])
-  const [exporting, setExporting] = useState(false)
-  const [exportToast, setExportToast] = useState('')
+  const [search, setSearch] = useState('')
+  const [term, setTerm] = useState('')
+  const [statusFilter, setStatusFilter] = useState('all')
+  const [semesterFilter, setSemesterFilter] = useState(() => new URLSearchParams(location.search || '').get('semester') || 'all')
+  const [exporting, setExporting] = useState('')
+  const requestId = useRef(0)
+
+  const localName = useCallback((row) => tidy(isRTL ? row?.name_ar || row?.name_en : row?.name_en || row?.name_ar), [isRTL])
+  const studentName = useCallback(
+    (s) => {
+      if (!s) return '—'
+      const en = tidy(s.name_en) || tidy(`${s.first_name || ''} ${s.last_name || ''}`)
+      return (isRTL ? tidy(s.name_ar) || en : en || tidy(s.name_ar)) || '—'
+    },
+    [isRTL]
+  )
+  const formatDate = useCallback(
+    (value) => (value ? new Date(value).toLocaleDateString(language === 'ar' ? 'ar-u-nu-latn' : 'en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : '—'),
+    [language]
+  )
+
+  // The search box filters on the server, a moment after typing stops.
+  useEffect(() => {
+    const id = setTimeout(() => setTerm(search.trim()), 350)
+    return () => clearTimeout(id)
+  }, [search])
 
   useEffect(() => {
-    // Only fetch when we have the necessary data based on role
-    if (userRole === 'admin') {
-      fetchEnrollments()
-      fetchSemesters()
-    } else if (userRole === 'user' && collegeId) {
-      fetchEnrollments()
-      fetchSemesters()
-    } else if (userRole === 'instructor' && collegeId) {
-      fetchEnrollments()
-      fetchSemesters()
-    }
-    // Don't fetch if we don't have required data
-  }, [collegeId, userRole, departmentId])
-
-  const fetchSemesters = async () => {
-    // Don't fetch if we don't have required data
-    if (userRole === 'user' && !collegeId) return
-    if (userRole === 'instructor' && !collegeId) return
-
-    try {
-      let query = supabase
-        .from('semesters')
-        .select('id, name_en, code')
-        .order('start_date', { ascending: false })
-
-      if (userRole === 'user' && collegeId) {
-        query = query.or(`college_id.eq.${collegeId},is_university_wide.eq.true`)
-      }
-      // For instructors, filter by their college
-      else if (userRole === 'instructor' && collegeId) {
-        query = query.or(`college_id.eq.${collegeId},is_university_wide.eq.true`)
-      }
-
-      const { data, error } = await query
-      if (error) throw error
+    if (!ready) return
+    let request = supabase.from('semesters').select('id, name_en, name_ar, code').order('start_date', { ascending: false })
+    if (collegeStaff) request = request.or(`college_id.eq.${collegeId},is_university_wide.eq.true`)
+    request.then(({ data, error: semError }) => {
+      if (semError) console.error('Error fetching semesters:', semError)
       setSemesters(data || [])
-    } catch (err) {
-      console.error('Error fetching semesters:', err)
-      setSemesters([]) // Set empty array on error to prevent showing stale data
-    }
-  }
+    })
+  }, [ready, collegeStaff, collegeId])
 
-  const fetchEnrollments = async () => {
+  /**
+   * Student ids the list is limited to, or null for no limit.
+   * A search term is looked up in the students table; a college user only ever sees their college.
+   */
+  const studentScope = useCallback(async () => {
+    if (term.length < 2 && !scopedToCollege) return null
+    let request = supabase.from('students').select('id').limit(term.length >= 2 ? 300 : 5000)
+    if (scopedToCollege) request = request.eq('college_id', collegeId)
+    if (term.length >= 2) request = request.or(buildStudentSearchOrFilter(term))
+    const { data, error: studentError } = await request
+    if (studentError) throw studentError
+    return (data || []).map((s) => s.id)
+  }, [term, scopedToCollege, collegeId])
+
+  /** One page, newest first. Pages are cut by id so a long table never has to be counted. */
+  const fetchPage = useCallback(
+    async (beforeId, size) => {
+      const ids = await studentScope()
+      if (ids && ids.length === 0) return []
+      let request = supabase.from('enrollments').select(ENROLLMENT_SELECT).order('id', { ascending: false }).limit(size)
+      if (ids) request = request.in('student_id', ids)
+      if (statusFilter !== 'all') request = request.eq('status', statusFilter)
+      if (semesterFilter !== 'all') request = request.eq('semester_id', parseInt(semesterFilter, 10))
+      if (beforeId) request = request.lt('id', beforeId)
+      const { data, error: pageError } = await request
+      if (pageError) throw pageError
+      return data || []
+    },
+    [studentScope, statusFilter, semesterFilter]
+  )
+
+  const load = useCallback(async () => {
+    if (!ready) return
+    const mine = ++requestId.current
+    setLoading(true)
+    setError('')
     try {
-      setLoading(true)
-      let query = supabase
-        .from('enrollments')
-        .select(`
-          id,
-          enrollment_date,
-          status,
-          grade,
-          numeric_grade,
-          grade_points,
-          created_at,
-          updated_at,
-          students (
-            id,
-            student_id,
-            first_name,
-            middle_name,
-            last_name,
-            name_en,
-            name_ar,
-            email,
-            phone,
-            mobile_phone,
-            gender,
-            nationality,
-            majors(id, name_en, name_ar, code),
-            colleges(id, name_en, name_ar, code)
-          ),
-          classes (
-            id,
-            code,
-            section,
-            class_schedules(day_of_week, start_time, end_time, location),
-            subjects (
-              id,
-              name_en,
-              name_ar,
-              code,
-              credit_hours
-            ),
-            instructors (
-              id,
-              name_en,
-              name_ar
-            )
-          ),
-          semesters (
-            id,
-            name_en,
-            name_ar,
-            code
-          )
-        `)
-        .order('enrollment_date', { ascending: false })
-
-      // Filter by college for college admins
-      if (userRole === 'user' && collegeId) {
-        // Get student IDs for this college
-        const { data: collegeStudents } = await supabase
-          .from('students')
-          .select('id')
-          .eq('college_id', collegeId)
-
-        if (collegeStudents && collegeStudents.length > 0) {
-          const studentIds = collegeStudents.map(s => s.id)
-          query = query.in('student_id', studentIds)
-        } else {
-          query = query.eq('student_id', -1) // No students, return empty
-        }
-      }
-
-      if (statusFilter !== 'all') {
-        query = query.eq('status', statusFilter)
-      }
-
-      if (semesterFilter !== 'all') {
-        query = query.eq('semester_id', parseInt(semesterFilter))
-      }
-
-      const { data, error } = await query
-      if (error) throw error
-      setEnrollments(data || [])
+      const page = await fetchPage(null, PAGE_SIZE + 1)
+      if (mine !== requestId.current) return
+      setHasMore(page.length > PAGE_SIZE)
+      setRows(page.slice(0, PAGE_SIZE))
     } catch (err) {
+      if (mine !== requestId.current) return
       console.error('Error fetching enrollments:', err)
+      setRows([])
+      setHasMore(false)
+      setError(err.code === '57014' ? t(`${NS}.errorSlow`) : t(`${NS}.errorLoad`, { message: err.message || '' }))
     } finally {
-      setLoading(false)
+      if (mine === requestId.current) setLoading(false)
     }
-  }
+  }, [ready, fetchPage, t])
 
   useEffect(() => {
-    fetchEnrollments()
-  }, [statusFilter, semesterFilter])
+    load()
+  }, [load])
 
-  const filteredEnrollments = enrollments.filter(enrollment => {
-    if (!searchQuery) return true
-    const student = enrollment.students
-    const searchLower = searchQuery.toLowerCase()
-    return (
-      (student?.first_name?.toLowerCase().includes(searchLower)) ||
-      (student?.last_name?.toLowerCase().includes(searchLower)) ||
-      (student?.student_id?.toLowerCase().includes(searchLower)) ||
-      (student?.email?.toLowerCase().includes(searchLower))
-    )
-  })
-
-  const handleExportEnrollments = async (format) => {
-    const list = searchQuery.trim()
-      ? filteredEnrollments
-      : enrollments
-    if (!list.length) {
-      setExportToast(t('enrollments.exportNone', 'No registrations to export.'))
-      setTimeout(() => setExportToast(''), 4000)
-      return
-    }
+  const loadMore = async () => {
+    if (rows.length === 0) return
+    setLoadingMore(true)
     try {
-      setExporting(true)
-      const count = exportEnrollmentRecords(list, isRTL || language === 'ar', format)
-      setExportToast(t('enrollments.exportSuccess', { count, defaultValue: 'Exported {{count}} registrations.' }))
-      setTimeout(() => setExportToast(''), 4000)
-    } catch (e) {
-      console.error('Export enrollments failed:', e)
-      setExportToast(e?.message || t('enrollments.exportFailed', 'Export failed.'))
-      setTimeout(() => setExportToast(''), 6000)
+      const page = await fetchPage(rows[rows.length - 1].id, PAGE_SIZE + 1)
+      setHasMore(page.length > PAGE_SIZE)
+      setRows((prev) => [...prev, ...page.slice(0, PAGE_SIZE)])
+    } catch (err) {
+      console.error('Error fetching more enrollments:', err)
+      toast(t(`${NS}.errorLoad`, { message: err.message || '' }), 'err')
     } finally {
-      setExporting(false)
+      setLoadingMore(false)
     }
   }
 
-  const getStatusColor = (status) => {
-    switch (status) {
-      case 'enrolled':
-        return 'bg-green-100 text-green-800'
-      case 'dropped':
-        return 'bg-red-100 text-red-800'
-      case 'completed':
-        return 'bg-blue-100 text-blue-800'
-      case 'failed':
-        return 'bg-red-100 text-red-800'
-      case 'withdrawn':
-        return 'bg-yellow-100 text-yellow-800'
-      default:
-        return 'bg-gray-100 text-gray-800'
+  /** Export everything the filters match, not only the rows on screen. */
+  const handleExport = async (format) => {
+    setExporting(t(`${NS}.exportPreparing`, { count: 0 }))
+    try {
+      const all = []
+      let cursor = null
+      for (;;) {
+        const page = await fetchPage(cursor, EXPORT_PAGE_SIZE)
+        all.push(...page)
+        setExporting(t(`${NS}.exportPreparing`, { count: all.length }))
+        if (page.length < EXPORT_PAGE_SIZE) break
+        cursor = page[page.length - 1].id
+      }
+      if (all.length === 0) {
+        toast(t('enrollments.exportNone'), 'err')
+        return
+      }
+      const count = exportEnrollmentRecords(all, isRTL || language === 'ar', format)
+      toast(t('enrollments.exportSuccess', { count }))
+    } catch (err) {
+      console.error('Export enrollments failed:', err)
+      toast(err?.message || t('enrollments.exportFailed'), 'err')
+    } finally {
+      setExporting('')
     }
+  }
+
+  const filtered = term.length >= 2 || statusFilter !== 'all' || semesterFilter !== 'all'
+  const clearFilters = () => {
+    setSearch('')
+    setStatusFilter('all')
+    setSemesterFilter('all')
+  }
+
+  const subjectLine = (row) => {
+    const subject = row.classes?.subjects
+    return { code: tidy(subject?.code) || tidy(row.classes?.code), name: localName(subject) }
   }
 
   return (
-    <div className="space-y-6">
-      <div className={`flex items-center ${isRTL ? 'flex-row-reverse justify-between' : 'justify-between'}`}>
-        <div>
-          <h1 className="text-3xl font-bold text-gray-900">{t('enrollments.title')}</h1>
-          <p className="text-gray-600 mt-1">{t('enrollments.subtitle')}</p>
-        </div>
-        <div className={`flex flex-wrap items-center gap-2 ${isRTL ? 'flex-row-reverse' : ''}`}>
-          <button
-            type="button"
-            disabled={exporting || enrollments.length === 0}
-            onClick={() => handleExportEnrollments('xlsx')}
-            className={`flex items-center ${isRTL ? 'flex-row-reverse space-x-reverse' : 'space-x-2'} px-4 py-3 rounded-xl font-semibold border border-gray-300 bg-white text-gray-800 hover:bg-gray-50 disabled:opacity-50`}
-          >
-            {exporting ? <Loader2 className="w-5 h-5 animate-spin" /> : <Download className="w-5 h-5" />}
-            <span>{t('enrollments.exportExcel', 'Export Excel')}</span>
-          </button>
-          <button
-            type="button"
-            disabled={exporting || enrollments.length === 0}
-            onClick={() => handleExportEnrollments('csv')}
-            className={`flex items-center ${isRTL ? 'flex-row-reverse space-x-reverse' : 'space-x-2'} px-4 py-3 rounded-xl font-semibold border border-gray-300 bg-white text-gray-800 hover:bg-gray-50 disabled:opacity-50`}
-          >
-            {exporting ? <Loader2 className="w-5 h-5 animate-spin" /> : <Download className="w-5 h-5" />}
-            <span>{t('enrollments.exportCsv', 'Export CSV')}</span>
-          </button>
-          <button
-            onClick={() => navigate('/enrollments/create')}
-            className={`flex items-center ${isRTL ? 'flex-row-reverse space-x-reverse' : 'space-x-2'} bg-primary-gradient text-white px-6 py-3 rounded-xl font-semibold shadow-lg hover:shadow-xl transform hover:-translate-y-0.5 transition-all`}
-          >
-            <Plus className="w-5 h-5" />
-            <span>{t('enrollments.create')}</span>
-          </button>
-        </div>
-      </div>
+    <div className="space-y-5">
+      <PageHeader
+        title={t('enrollments.title')}
+        subtitle={t('enrollments.subtitle')}
+        actions={
+          <>
+            <Button variant="quiet" icon={Download} loading={Boolean(exporting)} disabled={rows.length === 0} onClick={() => handleExport('xlsx')}>
+              {t('enrollments.exportExcel')}
+            </Button>
+            <Button variant="quiet" icon={Download} disabled={Boolean(exporting) || rows.length === 0} onClick={() => handleExport('csv')}>
+              {t('enrollments.exportCsv')}
+            </Button>
+            <Button variant="quiet" icon={Users} onClick={() => navigate('/enrollments/bulk')}>
+              {t('navigation.bulkEnrollment')}
+            </Button>
+            <Button icon={Plus} onClick={() => navigate('/enrollments/create')}>
+              {t('enrollments.create')}
+            </Button>
+          </>
+        }
+      />
 
-      {exportToast && (
-        <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900">
-          {exportToast}
-        </div>
-      )}
+      {exporting ? <p className="rounded-xl border border-[#dde3ef] bg-[#eef2f9] px-4 py-2.5 text-sm font-semibold text-[#1a3a6b]">{exporting}</p> : null}
 
-      {/* Filters */}
-      <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6">
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+      <Panel>
+        <div className="grid gap-3 md:grid-cols-3">
           <div className="relative">
-            <Search className={`absolute ${isRTL ? 'right-3' : 'left-3'} top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400`} />
-            <input
-              type="text"
-              placeholder={t('enrollments.searchPlaceholder')}
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className={`w-full ${isRTL ? 'pr-10 pl-4' : 'pl-10 pr-4'} py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-primary-500 focus:border-transparent`}
-            />
+            <Search className="pointer-events-none absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" aria-hidden="true" />
+            <input className={`${fieldClass} ps-9`} value={search} onChange={(e) => setSearch(e.target.value)} placeholder={t('enrollments.searchPlaceholder')} aria-label={t('enrollments.searchPlaceholder')} />
           </div>
-          <div>
-            <select
-              value={semesterFilter}
-              onChange={(e) => setSemesterFilter(e.target.value)}
-              className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-primary-500 focus:border-transparent"
-            >
-              <option value="all">{t('enrollments.allSemesters')}</option>
-              {semesters.map(semester => (
-                <option key={semester.id} value={semester.id}>
-                  {semester.name_en} ({semester.code})
-                </option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <select
-              value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value)}
-              className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-primary-500 focus:border-transparent"
-            >
-              <option value="all">{t('enrollments.allStatus')}</option>
-              <option value="enrolled">{t('enrollments.enrolled')}</option>
-              <option value="dropped">{t('enrollments.dropped')}</option>
-              <option value="completed">{t('enrollments.completed')}</option>
-              <option value="failed">{t('enrollments.failed')}</option>
-              <option value="withdrawn">{t('enrollments.withdrawn')}</option>
-            </select>
-          </div>
+          <select className={fieldClass} value={semesterFilter} onChange={(e) => setSemesterFilter(e.target.value)} aria-label={t('enrollments.semester')}>
+            <option value="all">{t('enrollments.allSemesters')}</option>
+            {semesters.map((s) => (
+              <option key={s.id} value={s.id}>
+                {localName(s)} ({tidy(s.code)})
+              </option>
+            ))}
+          </select>
+          <select className={fieldClass} value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} aria-label={t('enrollments.status')}>
+            <option value="all">{t('enrollments.allStatus')}</option>
+            {STATUSES.map((s) => (
+              <option key={s} value={s}>
+                {t(`enrollments.${s}`)}
+              </option>
+            ))}
+          </select>
         </div>
-      </div>
+      </Panel>
 
-      {/* Enrollments Table */}
-      {loading ? (
-        <div className="text-center py-12">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-600 mx-auto"></div>
-        </div>
-      ) : (
-        <div className="bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="min-w-full divide-y divide-gray-200">
-              <thead className="bg-gray-50">
-                <tr>
-                  <th className={`px-6 py-4 ${isRTL ? 'text-right' : 'text-left'} text-xs font-medium text-gray-500 uppercase tracking-wider`}>
-                    {t('enrollments.student')}
-                  </th>
-                  <th className={`px-6 py-4 ${isRTL ? 'text-right' : 'text-left'} text-xs font-medium text-gray-500 uppercase tracking-wider`}>
-                    {t('enrollments.class')}
-                  </th>
-                  <th className={`px-6 py-4 ${isRTL ? 'text-right' : 'text-left'} text-xs font-medium text-gray-500 uppercase tracking-wider`}>
-                    {t('enrollments.semester')}
-                  </th>
-                  <th className={`px-6 py-4 ${isRTL ? 'text-right' : 'text-left'} text-xs font-medium text-gray-500 uppercase tracking-wider`}>
-                    {t('enrollments.enrollmentDate')}
-                  </th>
-                  <th className={`px-6 py-4 ${isRTL ? 'text-right' : 'text-left'} text-xs font-medium text-gray-500 uppercase tracking-wider`}>
-                    {t('enrollments.status')}
-                  </th>
-                  <th className={`px-6 py-4 ${isRTL ? 'text-right' : 'text-left'} text-xs font-medium text-gray-500 uppercase tracking-wider`}>
-                    {t('enrollments.grade')}
-                  </th>
-                  <th className={`px-6 py-4 ${isRTL ? 'text-left' : 'text-right'} text-xs font-medium text-gray-500 uppercase tracking-wider`}>
-                    {t('enrollments.actions')}
-                  </th>
-                </tr>
-              </thead>
-              <tbody className="bg-white divide-y divide-gray-200">
-                {filteredEnrollments.length === 0 ? (
-                  <tr>
-                    <td colSpan="7" className="px-6 py-12 text-center text-gray-500">
-                      {t('enrollments.noEnrollmentsFound')}
-                    </td>
-                  </tr>
-                ) : (
-                  filteredEnrollments.map((enrollment) => (
-                    <tr key={enrollment.id} className="hover:bg-gray-50 transition-colors">
-                      <td className={`px-6 py-4 whitespace-nowrap ${isRTL ? 'text-right' : 'text-left'}`}>
-                        <div>
-                          <div className="text-sm font-medium text-gray-900">
-                            {enrollment.students?.first_name} {enrollment.students?.last_name}
-                          </div>
-                          <div className="text-sm text-gray-500">
-                            {enrollment.students?.student_id || 'N/A'}
-                          </div>
-                        </div>
-                      </td>
-                      <td className={`px-6 py-4 whitespace-nowrap ${isRTL ? 'text-right' : 'text-left'}`}>
-                        <div>
-                          <div className="text-sm font-medium text-gray-900">
-                            {enrollment.classes?.subjects?.code} - {enrollment.classes?.subjects?.name_en}
-                          </div>
-                          <div className="text-sm text-gray-500">
-                            {t('enrollments.section')}: {enrollment.classes?.section || 'N/A'}
-                          </div>
-                        </div>
-                      </td>
-                      <td className={`px-6 py-4 whitespace-nowrap ${isRTL ? 'text-right' : 'text-left'}`}>
-                        <div className="text-sm text-gray-900">
-                          {enrollment.semesters?.name_en || 'N/A'}
-                        </div>
-                      </td>
-                      <td className={`px-6 py-4 whitespace-nowrap ${isRTL ? 'text-right' : 'text-left'}`}>
-                        <div className="text-sm text-gray-900">
-                          {new Date(enrollment.enrollment_date).toLocaleDateString()}
-                        </div>
-                      </td>
-                      <td className={`px-6 py-4 whitespace-nowrap ${isRTL ? 'text-right' : 'text-left'}`}>
-                        <span className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-medium ${getStatusColor(enrollment.status)}`}>
-                          {t(`enrollments.${enrollment.status || 'enrolled'}`)}
-                        </span>
-                      </td>
-                      <td className={`px-6 py-4 whitespace-nowrap ${isRTL ? 'text-right' : 'text-left'}`}>
-                        <div className="text-sm text-gray-900">
-                          {enrollment.grade || '-'}
-                        </div>
-                      </td>
-                      <td className={`px-6 py-4 whitespace-nowrap ${isRTL ? 'text-left' : 'text-right'}`}>
-                        <button
-                          onClick={() => navigate(`/enrollments/${enrollment.id}`)}
-                          className="text-primary-600 hover:text-primary-800 font-medium text-sm"
-                        >
-                          {t('enrollments.viewDetails')}
-                        </button>
-                      </td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
+      <Panel flush>
+        {loading ? (
+          <div className="space-y-2 p-4">
+            {Array.from({ length: 6 }, (_, i) => (
+              <Skeleton key={i} className="h-12" />
+            ))}
           </div>
-        </div>
-      )}
+        ) : error ? (
+          <EmptyState
+            icon={AlertTriangle}
+            title={t(`${NS}.errorTitle`)}
+            hint={error}
+            action={
+              <Button icon={RefreshCw} onClick={load}>
+                {t(`${NS}.retry`)}
+              </Button>
+            }
+          />
+        ) : rows.length === 0 ? (
+          <EmptyState
+            icon={GraduationCap}
+            title={filtered ? t(`${NS}.noMatchTitle`) : t('enrollments.noEnrollmentsFound')}
+            hint={filtered ? t(`${NS}.noMatchHint`) : t(`${NS}.emptyHint`)}
+            action={
+              filtered ? (
+                <Button variant="quiet" onClick={clearFilters}>
+                  {t(`${NS}.clearFilters`)}
+                </Button>
+              ) : (
+                <Button icon={Plus} onClick={() => navigate('/enrollments/create')}>
+                  {t('enrollments.create')}
+                </Button>
+              )
+            }
+          />
+        ) : (
+          <>
+            {/* Phones: one card per registration */}
+            <ul className="divide-y divide-[#dde3ef] md:hidden">
+              {rows.map((row) => {
+                const subject = subjectLine(row)
+                return (
+                  <li key={row.id}>
+                    <button type="button" onClick={() => navigate(`/enrollments/${row.id}`)} className="block w-full px-4 py-3 text-start hover:bg-slate-50">
+                      <span className="flex items-start justify-between gap-3">
+                        <span className="min-w-0">
+                          <span className="block truncate text-sm font-bold text-slate-800">{studentName(row.students)}</span>
+                          <span className="block text-xs text-slate-500">
+                            <span dir="ltr">{tidy(row.students?.student_id) || '—'}</span>
+                          </span>
+                        </span>
+                        <Badge tone={STATUS_TONES[row.status] || 'neutral'}>{t(`enrollments.${row.status || 'enrolled'}`)}</Badge>
+                      </span>
+                      <span className="mt-1.5 block text-sm text-slate-700">
+                        <span dir="ltr" className="font-bold text-[#1a3a6b]">
+                          {subject.code}
+                        </span>{' '}
+                        {subject.name}
+                      </span>
+                      <span className="mt-0.5 block text-xs text-slate-500">
+                        {localName(row.semesters) || '—'} · {formatDate(row.enrollment_date)}
+                        {row.grade ? ` · ${row.grade}` : ''}
+                      </span>
+                    </button>
+                  </li>
+                )
+              })}
+            </ul>
+
+            {/* Wider screens: a table */}
+            <div className="hidden overflow-x-auto md:block">
+              <table className="min-w-full text-sm">
+                <thead>
+                  <tr className="border-b border-[#dde3ef] bg-slate-50 text-xs font-bold text-slate-500">
+                    {['student', 'class', 'semester', 'enrollmentDate', 'status', 'grade'].map((key) => (
+                      <th key={key} scope="col" className="px-4 py-3 text-start">
+                        {t(`enrollments.${key}`)}
+                      </th>
+                    ))}
+                    <th scope="col" className="px-4 py-3 text-end">
+                      {t('enrollments.actions')}
+                    </th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-[#dde3ef]">
+                  {rows.map((row) => {
+                    const subject = subjectLine(row)
+                    return (
+                      <tr key={row.id} className="hover:bg-slate-50">
+                        <td className="px-4 py-3">
+                          <div className="font-semibold text-slate-800">{studentName(row.students)}</div>
+                          <div className="text-xs text-slate-500">
+                            <span dir="ltr">{tidy(row.students?.student_id) || '—'}</span>
+                          </div>
+                        </td>
+                        <td className="px-4 py-3">
+                          <div className="text-slate-800">
+                            <span dir="ltr" className="font-bold text-[#1a3a6b]">
+                              {subject.code}
+                            </span>{' '}
+                            {subject.name}
+                          </div>
+                          <div className="text-xs text-slate-500">
+                            {t('enrollments.section')} {tidy(row.classes?.section) || '—'}
+                          </div>
+                        </td>
+                        <td className="px-4 py-3 text-slate-700">{localName(row.semesters) || '—'}</td>
+                        <td className="whitespace-nowrap px-4 py-3 text-slate-700">{formatDate(row.enrollment_date)}</td>
+                        <td className="px-4 py-3">
+                          <Badge tone={STATUS_TONES[row.status] || 'neutral'}>{t(`enrollments.${row.status || 'enrolled'}`)}</Badge>
+                        </td>
+                        <td className="px-4 py-3 font-semibold text-slate-800">{row.grade || '—'}</td>
+                        <td className="px-4 py-3 text-end">
+                          <Button variant="ghost" size="sm" onClick={() => navigate(`/enrollments/${row.id}`)}>
+                            {t('enrollments.viewDetails')}
+                          </Button>
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
+
+            <div className="flex flex-wrap items-center justify-between gap-3 border-t border-[#dde3ef] px-4 py-3">
+              <span className="text-sm text-slate-500">{hasMore ? t(`${NS}.showingSome`, { count: rows.length }) : t(`${NS}.showingAll`, { count: rows.length })}</span>
+              {hasMore ? (
+                <Button variant="quiet" loading={loadingMore} onClick={loadMore}>
+                  {t(`${NS}.showMore`)}
+                </Button>
+              ) : null}
+            </div>
+          </>
+        )}
+      </Panel>
     </div>
   )
 }
-

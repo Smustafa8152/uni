@@ -5,13 +5,16 @@ import { useLanguage } from '../../contexts/LanguageContext'
 import { getLocalizedName } from '../../utils/localizedName'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
-import { Plus, Calendar, Search, Eye, Edit, CalendarDays, TrendingUp, Users, Clock, CheckCircle, XCircle } from 'lucide-react'
+import { Plus, Calendar, Search, Eye, Edit, CalendarDays, TrendingUp, Users, Clock, CheckCircle, XCircle, AlertTriangle } from 'lucide-react'
+import { describeRegistrationState, isDraftSemester, isFinishedSemester, isRunningSemester, registrationState } from '../../utils/registrationRules'
 
 export default function Semesters() {
   const { t } = useTranslation()
-  const { isRTL } = useLanguage()
+  const { isRTL, language } = useLanguage()
   const navigate = useNavigate()
   const { userRole, collegeId } = useAuth()
+  const formatDate = (value) =>
+    new Date(value).toLocaleDateString(language === 'ar' ? 'ar-u-nu-latn' : 'en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
   const [semesters, setSemesters] = useState([])
   const [loading, setLoading] = useState(true)
   const [searchQuery, setSearchQuery] = useState('')
@@ -23,6 +26,7 @@ export default function Semesters() {
     semesterHealth: 'healthy'
   })
   const [semesterStats, setSemesterStats] = useState({}) // Store enrollments, courses, classes counts per semester
+  const [statsLoaded, setStatsLoaded] = useState(false)
 
   useEffect(() => {
     if (userRole === 'admin') {
@@ -39,7 +43,7 @@ export default function Semesters() {
       setLoading(true)
       let query = supabase
         .from('semesters')
-        .select('*, academic_years(name_en, name_ar, code, start_date, end_date), colleges(id, name_en, name_ar, code)')
+        .select('*, academic_years(name_en, name_ar, code, start_date, end_date, registration_open), colleges(id, name_en, name_ar, code)')
         .order('start_date', { ascending: false })
 
       if ((userRole === 'user' || userRole === 'instructor') && collegeId) {
@@ -88,40 +92,32 @@ export default function Semesters() {
     }
   }
 
+  /**
+   * Classes, courses and registered students per semester, from one read of the classes table.
+   * "Registered" is the sum of each class's seat counter, the same number the class pages show.
+   */
   const fetchSemesterStatistics = async (semesters) => {
     try {
+      const { data, error } = await supabase
+        .from('classes')
+        .select('id, semester_id, subject_id, enrolled')
+        .in('semester_id', semesters.map(s => s.id))
+      if (error) throw error
+
       const stats = {}
-      
-      const promises = semesters.map(async (semester) => {
-        // Fetch enrollments for this semester
-        const { count: enrollmentCount, error: enrollError } = await supabase
-          .from('enrollments')
-          .select('*', { count: 'exact', head: true })
-          .eq('semester_id', semester.id)
-        
-        // Fetch classes for this semester directly
-        const { data: classes, count: classCount, error: classError } = await supabase
-          .from('classes')
-          .select('id, subject_id', { count: 'exact' })
-          .eq('semester_id', semester.id)
-        
-        const subjectIds = classes?.map(c => c.subject_id).filter(Boolean) || []
-        const courseCount = new Set(subjectIds).size
-        
-        return {
-          semesterId: semester.id,
-          enrollmentCount: enrollError ? 0 : (enrollmentCount || 0),
-          courseCount,
-          classCount: classError ? 0 : (classCount || 0)
+      const subjects = {}
+      for (const row of data || []) {
+        if (!stats[row.semester_id]) {
+          stats[row.semester_id] = { enrollmentCount: 0, courseCount: 0, classCount: 0 }
+          subjects[row.semester_id] = new Set()
         }
-      })
-      
-      const results = await Promise.all(promises)
-      results.forEach(({ semesterId, enrollmentCount, courseCount, classCount }) => {
-        stats[semesterId] = { enrollmentCount, courseCount, classCount }
-      })
-      
+        stats[row.semester_id].classCount += 1
+        stats[row.semester_id].enrollmentCount += row.enrolled || 0
+        if (row.subject_id) subjects[row.semester_id].add(row.subject_id)
+      }
+      Object.keys(stats).forEach(id => { stats[id].courseCount = subjects[id].size })
       setSemesterStats(stats)
+      setStatsLoaded(true)
     } catch (err) {
       console.error('Error fetching semester statistics:', err)
     }
@@ -142,19 +138,18 @@ export default function Semesters() {
     }
 
     const now = new Date()
-    const currentSemester = semesters.find(semester => {
-      const start = new Date(semester.start_date)
-      const end = new Date(semester.end_date)
-      return semester.is_current || (now >= start && now <= end && (semester.status === 'active' || semester.status === 'registration_open'))
-    })
+    const running = semesters
+      .filter(semester => isRunningSemester(semester, now))
+      .sort((a, b) => String(b.start_date || '').localeCompare(String(a.start_date || '')))
+    const currentSemester = semesters.find(semester => semester.is_current && !isFinishedSemester(semester, now)) || running[0] || null
+    const activeSemesters = running.length
 
-    const activeSemesters = semesters.filter(semester => 
-      ['active', 'registration_open'].includes(semester.status)
-    ).length
+    // Registration is "open" when students can register in at least one semester today.
+    const openSemester = semesters
+      .filter(semester => registrationState(semester, now).allowed)
+      .sort((a, b) => String(a.start_date || '').localeCompare(String(b.start_date || '')))[0] || null
+    const registrationStatus = openSemester ? 'open' : 'closed'
 
-    // Check registration status from control flags or status
-    const registrationStatus = currentSemester?.status === 'registration_open' ? 'open' : 'closed'
-    
     let daysRemaining = 0
     if (currentSemester) {
       const endDate = new Date(currentSemester.end_date)
@@ -167,6 +162,7 @@ export default function Semesters() {
       currentSemester,
       activeSemesters,
       registrationStatus,
+      openSemester,
       daysRemaining: daysRemaining > 0 ? daysRemaining : 0,
       semesterHealth
     })
@@ -180,32 +176,45 @@ export default function Semesters() {
 
   const getStatusBadge = (status) => {
     const statusMap = {
-      draft: { bg: 'bg-gray-100', text: 'text-gray-600', label: 'DRAFT' },
-      planned: { bg: 'bg-gray-100', text: 'text-gray-600', label: 'DRAFT' },
-      scheduled: { bg: 'bg-blue-100', text: 'text-blue-700', label: 'SCHEDULED' },
-      registration_open: { bg: 'bg-green-100', text: 'text-green-700', label: 'IN PROGRESS' },
-      active: { bg: 'bg-green-100', text: 'text-green-700', label: 'IN PROGRESS' },
-      completed: { bg: 'bg-gray-100', text: 'text-gray-500', label: 'CLOSED' },
-      closed: { bg: 'bg-gray-100', text: 'text-gray-500', label: 'CLOSED' },
-      archived: { bg: 'bg-gray-50', text: 'text-gray-400', label: 'ARCHIVED' }
+      draft: { bg: 'bg-gray-100', text: 'text-gray-600' },
+      planned: { bg: 'bg-gray-100', text: 'text-gray-600', key: 'draft' },
+      scheduled: { bg: 'bg-blue-100', text: 'text-blue-700' },
+      registration_open: { bg: 'bg-green-100', text: 'text-green-700' },
+      registration_closed: { bg: 'bg-yellow-100', text: 'text-yellow-800' },
+      in_progress: { bg: 'bg-green-100', text: 'text-green-700' },
+      active: { bg: 'bg-green-100', text: 'text-green-700', key: 'in_progress' },
+      ending: { bg: 'bg-yellow-100', text: 'text-yellow-800' },
+      completed: { bg: 'bg-gray-100', text: 'text-gray-500', key: 'closed' },
+      closed: { bg: 'bg-gray-100', text: 'text-gray-500' },
+      archived: { bg: 'bg-gray-50', text: 'text-gray-400' }
     }
-    const style = statusMap[status] || statusMap.planned
+    const style = statusMap[status] || { bg: 'bg-gray-100', text: 'text-gray-600' }
     return (
       <span className={`px-3 py-1 ${style.bg} ${style.text} rounded-full text-xs font-semibold whitespace-nowrap`}>
-        {style.label}
+        {t(`academic.semesters.statusLabels.${style.key || status}`, { defaultValue: String(status || '') })}
       </span>
     )
   }
+
+  /** What is wrong with a semester's setup for registration, if anything. */
+  const setupIssues = (semester) => {
+    const issues = []
+    const stats = semesterStats[semester.id]
+    const state = registrationState(semester)
+    if (state.allowed && statsLoaded && !(stats?.classCount > 0)) issues.push(t('academic.semesters.issueNoClasses'))
+    if (state.allowed && isDraftSemester(semester)) issues.push(t('academic.semesters.issueDraftOpen'))
+    if (isDraftSemester(semester) && !isFinishedSemester(semester) && semester.start_date && new Date(semester.start_date) <= new Date()) {
+      issues.push(t('academic.semesters.issueDraftStarted', { date: formatDate(semester.start_date) }))
+    }
+    if (isFinishedSemester(semester) && semester.start_date && new Date(semester.start_date) > new Date()) issues.push(t('academic.semesters.issueClosedBeforeStart'))
+    return issues
+  }
+  const allIssues = semesters.flatMap(semester => setupIssues(semester).map(text => ({ semester, text })))
 
   const getCollegeName = (semester) => {
     if (semester.is_university_wide) return t('academic.semesters.universityWide')
     if (semester.colleges) return getLocalizedName(semester.colleges, isRTL)
     return t('academic.semesters.collegeSpecific')
-  }
-
-  const handleQuickAction = async (action, semesterId) => {
-    // TODO: Implement lifecycle actions
-    console.log('Quick action:', action, semesterId)
   }
 
   return (
@@ -232,7 +241,7 @@ export default function Semesters() {
           <div className="mb-4">
             <div className="text-xs opacity-80 mb-1">{t('academic.semesters.currentSemester')}</div>
             <div className="text-lg font-bold mb-2">
-              {kpis.currentSemester ? (getLocalizedName(kpis.currentSemester, isRTL) || kpis.currentSemester.code) : 'N/A'}
+              {kpis.currentSemester ? (getLocalizedName(kpis.currentSemester, isRTL) || kpis.currentSemester.code) : t('academic.semesters.noCurrent')}
             </div>
             {kpis.currentSemester && (
               <span className="inline-block bg-white/20 px-3 py-1 rounded-full text-xs font-semibold">
@@ -264,8 +273,10 @@ export default function Semesters() {
           <div className={`text-lg font-bold ${kpis.registrationStatus === 'open' ? 'text-yellow-600' : 'text-gray-600'}`}>
             {kpis.registrationStatus === 'open' ? t('academic.semesters.open').toUpperCase() : t('academic.semesters.closed').toUpperCase()}
           </div>
-          {kpis.registrationStatus === 'open' && (
-            <div className="text-xs text-gray-500 mt-1">{t('academic.semesters.opensInDays', { days: 45 })}</div>
+          {kpis.openSemester && (
+            <div className="text-xs text-gray-500 mt-1">
+              {getLocalizedName(kpis.openSemester, isRTL)}: {describeRegistrationState(registrationState(kpis.openSemester), t, formatDate)}
+            </div>
           )}
         </div>
 
@@ -289,8 +300,17 @@ export default function Semesters() {
             </div>
           </div>
           <div className="text-xs text-gray-500 mb-1">{t('academic.semesters.semesterHealth')}</div>
-          <div className="text-lg font-bold text-green-600">{t('academic.semesters.healthy').toUpperCase()}</div>
-          <div className="text-xs text-gray-500 mt-1">{t('academic.semesters.allSystemsNormal')}</div>
+          {allIssues.length === 0 ? (
+            <>
+              <div className="text-lg font-bold text-green-600">{t('academic.semesters.healthy').toUpperCase()}</div>
+              <div className="text-xs text-gray-500 mt-1">{t('academic.semesters.allSystemsNormal')}</div>
+            </>
+          ) : (
+            <>
+              <div className="text-lg font-bold text-amber-600">{t('academic.semesters.needsAttention', { count: allIssues.length })}</div>
+              <div className="text-xs text-gray-500 mt-1">{getLocalizedName(allIssues[0].semester, isRTL)}: {allIssues[0].text}</div>
+            </>
+          )}
         </div>
       </div>
 
@@ -317,8 +337,9 @@ export default function Semesters() {
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {filteredSemesters.map((semester) => {
             const stats = semesterStats[semester.id] || { enrollmentCount: 0, courseCount: 0, classCount: 0 }
-            const isInProgress = semester.status === 'active' || semester.status === 'registration_open'
-            const isDraft = semester.status === 'planned' || semester.status === 'draft'
+            const isInProgress = isRunningSemester(semester)
+            const regState = registrationState(semester)
+            const issues = setupIssues(semester)
 
             return (
               <div
@@ -353,13 +374,13 @@ export default function Semesters() {
                     <div>
                       <div className="text-xs text-gray-400 mb-1">{t('academic.semesters.start')}</div>
                       <div className="text-sm font-medium text-gray-900">
-                        {new Date(semester.start_date).toLocaleDateString('en-US', { month: 'numeric', day: 'numeric', year: 'numeric' })}
+                        {formatDate(semester.start_date)}
                       </div>
                     </div>
                     <div>
                       <div className="text-xs text-gray-400 mb-1">{t('academic.semesters.end')}</div>
                       <div className="text-sm font-medium text-gray-900">
-                        {new Date(semester.end_date).toLocaleDateString('en-US', { month: 'numeric', day: 'numeric', year: 'numeric' })}
+                        {formatDate(semester.end_date)}
                       </div>
                     </div>
                   </div>
@@ -398,44 +419,19 @@ export default function Semesters() {
                   </div>
                 </div>
 
-                {/* Quick Actions Bar */}
-                <div className={`px-6 py-3 border-t ${
-                  isInProgress ? 'bg-green-50 border-green-200' : 
-                  isDraft ? 'bg-gray-50 border-gray-200' : 
-                  'bg-gray-50 border-gray-200'
-                } flex justify-center gap-2`}>
-                  {isInProgress && (
-                    <>
-                      <button
-                        onClick={() => handleQuickAction('close_registration', semester.id)}
-                        className="px-3 py-1.5 bg-yellow-100 text-yellow-700 border border-yellow-300 rounded-md text-xs font-medium hover:bg-yellow-200 transition-colors"
-                      >
-                        {t('academic.semesters.closeRegistration')}
-                      </button>
-                      <button
-                        onClick={() => handleQuickAction('end_semester', semester.id)}
-                        className="px-3 py-1.5 bg-red-100 text-red-600 border border-red-300 rounded-md text-xs font-medium hover:bg-red-200 transition-colors"
-                      >
-                        {t('academic.semesters.endSemester')}
-                      </button>
-                    </>
-                  )}
-                  {isDraft && (
-                    <>
-                      <button
-                        onClick={() => handleQuickAction('open_registration', semester.id)}
-                        className="px-3 py-1.5 bg-blue-100 text-blue-700 border border-blue-300 rounded-md text-xs font-medium hover:bg-blue-200 transition-colors"
-                      >
-                        {t('academic.semesters.openRegistration')}
-                      </button>
-                      <button
-                        onClick={() => handleQuickAction('start_semester', semester.id)}
-                        className="px-3 py-1.5 bg-green-100 text-green-700 border border-green-300 rounded-md text-xs font-medium hover:bg-green-200 transition-colors"
-                      >
-                        {t('academic.semesters.startSemester')}
-                      </button>
-                    </>
-                  )}
+                {/* What students see for this semester, and anything that needs fixing first */}
+                <div className={`px-6 py-3 border-t text-xs ${
+                  issues.length > 0 ? 'bg-amber-50 border-amber-200' : regState.allowed ? 'bg-green-50 border-green-200' : 'bg-gray-50 border-gray-200'
+                }`}>
+                  <div className={`font-semibold ${regState.allowed ? 'text-green-800' : 'text-gray-600'}`}>
+                    {t('academic.semesters.forStudents')} {describeRegistrationState(regState, t, formatDate)}
+                  </div>
+                  {issues.map(text => (
+                    <div key={text} className="mt-1 flex items-start gap-1.5 text-amber-800">
+                      <AlertTriangle className="w-3.5 h-3.5 mt-0.5 flex-shrink-0" />
+                      <span>{text}</span>
+                    </div>
+                  ))}
                 </div>
               </div>
             )

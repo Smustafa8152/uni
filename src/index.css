@@ -97,3 +97,96 @@ table thead th[class*="text-center"],
 table tbody td[class*="text-center"] {
   text-align: center;
 }
+
+/* ------------------------------------------------------------------
+   Shared polish for every portal screen.
+   Low-specificity rules (:where) so a page's own classes still win.
+   ------------------------------------------------------------------ */
+@layer base {
+  html {
+    /* One family for Arabic and Latin: Cairo carries both scripts, so both languages share one look. */
+    font-family: 'Cairo', system-ui, 'Segoe UI', Tahoma, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+    -webkit-tap-highlight-color: transparent;
+    scrollbar-color: #c3cee3 transparent;
+    scrollbar-width: thin;
+  }
+
+  body {
+    color: #1e2a3a;
+    background-color: #f4f6fb;
+  }
+
+  ::selection {
+    background-color: #f3e8c4;
+    color: #12284c;
+  }
+
+  /* Keyboard users always see where they are; mouse users never get a stray ring. */
+  :where(a, button, [role='button'], [tabindex], summary):focus-visible {
+    outline: 2px solid #c8a84b;
+    outline-offset: 2px;
+    border-radius: 0.5rem;
+  }
+
+  /* Numbers line up in columns: grades, hours, amounts, dates. */
+  :where(table, [role='table']) {
+    font-variant-numeric: tabular-nums lining-nums;
+  }
+
+  /* Rows answer the pointer so a wide table is easy to read across. */
+  :where(table tbody tr) {
+    transition: background-color 120ms ease;
+  }
+
+  :where(button, a, input, select, textarea) {
+    transition-property: color, background-color, border-color, box-shadow, opacity;
+    transition-duration: 150ms;
+    transition-timing-function: ease;
+  }
+
+  /* Western digits in Arabic screens, the way student numbers and grades are written here. */
+  :where([dir='rtl']) :where(input[type='number'], input[type='tel'], input[type='date'], input[type='time']) {
+    direction: ltr;
+    text-align: right;
+  }
+
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background-color: #c3cee3;
+    border-radius: 999px;
+    border: 2px solid transparent;
+    background-clip: content-box;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    background-color: #9fb0d1;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+}
+
+@media print {
+  body {
+    background-color: #ffffff;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *:not(.animate-spin),
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
