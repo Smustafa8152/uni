@@ -2,6 +2,7 @@ import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import nodemailer from 'npm:nodemailer@6.9.16'
 import { buildBrandedEmailHtml, buildPlainTextEmail } from './email.ts'
+import { buildApplicationSubmittedEmail, normalizeLang } from './submittedEmail.ts'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -26,6 +27,18 @@ function notificationsEnabled(raw: unknown): boolean {
   const o = raw as Record<string, unknown>
   if (typeof o.enable_email_notifications === 'boolean') return o.enable_email_notifications
   if (typeof o.enableEmailNotifications === 'boolean') return o.enableEmailNotifications
+  const nested = o.notifications
+  if (nested && typeof nested === 'object') {
+    const n = nested as Record<string, unknown>
+    if (typeof n.enableEmailNotifications === 'boolean') return n.enableEmailNotifications
+    if (typeof n.enable_email_notifications === 'boolean') return n.enable_email_notifications
+  }
+  return true
+}
+
+function smtpReady(cfg: SmtpShape | null): boolean {
+  if (!cfg?.host || !cfg.fromEmail) return false
+  if (!cfg.username || !cfg.password) return false
   return true
 }
 
@@ -129,6 +142,46 @@ async function sendSmtpMessage(cfg: SmtpShape, to: string, subject: string, text
 }
 
 const STAFF_ROLES = new Set(['admin', 'college', 'user'])
+
+/** Where the "Follow your application" button goes. Set PUBLIC_APP_URL when the site address changes. */
+const DEFAULT_APP_URL = 'https://qalam.nuzum.tech'
+/** The sender name in the mail settings is English; Arabic emails are signed with this instead. Override with BRAND_NAME_AR. */
+const DEFAULT_BRAND_NAME_AR = 'جامعة الإمام البخاري'
+
+type NamedRow = { name_en?: string | null; name_ar?: string | null } | null
+
+function pickName(row: NamedRow, lang: 'ar' | 'en') {
+  if (!row) return ''
+  const en = String(row.name_en || '').trim()
+  const ar = String(row.name_ar || '').trim()
+  return lang === 'ar' ? ar || en : en || ar
+}
+
+/**
+ * Everything the submission confirmation shows, read from the saved application.
+ * Returns null when the application does not exist.
+ */
+// deno-lint-ignore no-explicit-any
+async function loadSubmittedApplication(supabaseAdmin: any, applicationId: number) {
+  const { data: app, error } = await supabaseAdmin
+    .from('applications')
+    .select('id, email, application_number, created_at, first_name, last_name, first_name_ar, college_id, major_id, semester_id')
+    .eq('id', applicationId)
+    .maybeSingle()
+  if (error || !app) return null
+
+  const named = async (table: string, id: number | null): Promise<NamedRow> => {
+    if (!id) return null
+    const { data } = await supabaseAdmin.from(table).select('name_en, name_ar').eq('id', id).maybeSingle()
+    return (data as NamedRow) ?? null
+  }
+  const [major, college, semester] = await Promise.all([
+    named('majors', app.major_id),
+    named('colleges', app.college_id),
+    named('semesters', app.semester_id),
+  ])
+  return { app, major, college, semester }
+}
 
 serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response(null, { status: 204, headers: corsHeaders })
@@ -238,31 +291,50 @@ serve(async (req) => {
       ;(body as Record<string, unknown>).collegeId = app.college_id
     } else if (isApplicant) {
       const authEmail = (authUser?.email || '').trim().toLowerCase()
-      const allowedApplicantTypes = new Set(['submitted', 'application_message'])
-      if (!allowedApplicantTypes.has(type) || to.trim().toLowerCase() !== authEmail) {
-        // Applicant messaging to staff: to may be admissions inbox — allow application_message_staff
-        if (type === 'application_message_staff' && Number.isFinite(applicationId)) {
-          const { data: app } = await supabaseAdmin
-            .from('applications')
-            .select('id, email, applicant_user_id')
-            .eq('id', applicationId)
-            .maybeSingle()
-          const owns =
-            app &&
-            (app.applicant_user_id === authUser?.id ||
-              String(app.email || '').trim().toLowerCase() === authEmail)
-          if (!owns) {
-            return new Response(JSON.stringify({ error: 'Forbidden' }), {
-              status: 403,
-              headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-            })
-          }
-        } else if (type !== 'submitted' || to.trim().toLowerCase() !== authEmail) {
+      const toEmail = to.trim().toLowerCase()
+      const ownsApplication = async () => {
+        if (!Number.isFinite(applicationId)) return false
+        const { data: app } = await supabaseAdmin
+          .from('applications')
+          .select('id, email, applicant_user_id')
+          .eq('id', applicationId)
+          .maybeSingle()
+        if (!app) return false
+        const appEmail = String(app.email || '').trim().toLowerCase()
+        const owns =
+          app.applicant_user_id === authUser?.id || (authEmail.length > 0 && appEmail === authEmail)
+        if (!owns) return false
+        // Confirmation goes to the address on the application, which may differ from the login email.
+        if (type === 'submitted') return toEmail === appEmail
+        return true
+      }
+
+      if (type === 'submitted') {
+        if (!(await ownsApplication())) {
           return new Response(JSON.stringify({ error: 'Forbidden' }), {
             status: 403,
             headers: { ...corsHeaders, 'Content-Type': 'application/json' },
           })
         }
+      } else if (type === 'application_message') {
+        if (toEmail !== authEmail) {
+          return new Response(JSON.stringify({ error: 'Forbidden' }), {
+            status: 403,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          })
+        }
+      } else if (type === 'application_message_staff') {
+        if (!(await ownsApplication())) {
+          return new Response(JSON.stringify({ error: 'Forbidden' }), {
+            status: 403,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          })
+        }
+      } else {
+        return new Response(JSON.stringify({ error: 'Forbidden' }), {
+          status: 403,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        })
       }
     } else if (isStudent) {
       const authEmail = (authUser?.email || '').trim().toLowerCase()
@@ -360,8 +432,8 @@ serve(async (req) => {
       }
     }
 
-    // Fallback: if college SMTP missing, use university SMTP automatically.
-    if (!smtpCfg?.host || !smtpCfg.fromEmail) {
+    // A college row can store a host with no mailbox. That is not a working account.
+    if (!smtpReady(smtpCfg)) {
       smtpCfg = await loadUniversitySmtp()
     }
     if (!smtpCfg?.host || !smtpCfg.fromEmail) {
@@ -393,6 +465,51 @@ serve(async (req) => {
         return { label: String(item.label || ''), value: String(item.value || '') }
       })
       .filter((row): row is { label: string; value: string } => Boolean(row))
+    // The submission confirmation is written here from the saved application, in the language
+    // the applicant used, so its wording and details never depend on what the browser sent.
+    if (type === 'submitted' && applicationId != null && Number.isFinite(applicationId) && applicationId > 0) {
+      const found = await loadSubmittedApplication(supabaseAdmin, applicationId)
+      if (!found) {
+        return new Response(JSON.stringify({ error: 'Application not found' }), {
+          status: 404,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        })
+      }
+      const isStaffCaller = isAdmin || isCollegeStaff || isAdmissionsUser
+      if (!isStaffCaller && to.trim().toLowerCase() !== String(found.app.email || '').trim().toLowerCase()) {
+        return new Response(JSON.stringify({ error: 'Recipient does not match application' }), {
+          status: 403,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        })
+      }
+
+      const requested = body.language ?? body.lang
+      const lang = requested ? normalizeLang(requested) : /[\u0600-\u06FF]/.test(`${subject}${message}`) ? 'ar' : 'en'
+      const latinName = `${found.app.first_name || ''} ${found.app.last_name || ''}`.trim()
+      const arabicName = String(found.app.first_name_ar || '').trim()
+      const appUrl = String(Deno.env.get('PUBLIC_APP_URL') || DEFAULT_APP_URL).replace(/\/+$/, '')
+
+      const built = buildApplicationSubmittedEmail({
+        lang,
+        applicantName: lang === 'ar' ? arabicName || latinName : latinName || arabicName,
+        applicationNumber: String(found.app.application_number || found.app.id),
+        program: pickName(found.major, lang),
+        college: pickName(found.college, lang),
+        semester: pickName(found.semester, lang),
+        submittedAt: found.app.created_at,
+        recipientEmail: String(found.app.email || to),
+        portalUrl: `${appUrl}/login/applicant`,
+        brandName: lang === 'ar' ? Deno.env.get('BRAND_NAME_AR') || DEFAULT_BRAND_NAME_AR : brandName,
+        brandEmail,
+        timeZone: Deno.env.get('APP_TIME_ZONE') || 'Asia/Kuwait',
+      })
+      await sendSmtpMessage(smtpCfg, to, built.subject, built.text, built.html)
+      return new Response(JSON.stringify({ success: true, template: 'application_submitted', language: built.lang }), {
+        status: 200,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      })
+    }
+
     const html = buildBrandedEmailHtml({
       brandName,
       brandEmail,

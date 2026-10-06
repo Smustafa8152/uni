@@ -5,6 +5,8 @@ import { useLanguage } from '../../contexts/LanguageContext'
 import { getLocalizedName } from '../../utils/localizedName'
 import { supabase } from '../../lib/supabase'
 import SubjectCurriculumMapPanel from '../../components/academic/SubjectCurriculumMapPanel'
+import { PageHeader, Panel, Skeleton } from '../../components/ui'
+import { fieldClass } from '../../components/academic/catalogUi'
 
 export default function AdminCurriculumMap() {
   const { t } = useTranslation()
@@ -138,8 +140,9 @@ export default function AdminCurriculumMap() {
 
   if (loading && !allSubjects.length) {
     return (
-      <div className="flex justify-center items-center min-h-[200px]">
-        <div className="w-10 h-10 border-[3px] border-gray-200 border-t-primary-600 rounded-full animate-spin" />
+      <div className="space-y-3">
+        <Skeleton className="h-10 w-64" />
+        <Skeleton className="h-40" />
       </div>
     )
   }
@@ -149,23 +152,23 @@ export default function AdminCurriculumMap() {
     : ''
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-wrap items-center justify-between gap-4">
-        <div>
-          <h1 className="text-3xl font-bold text-gray-900">{t('admin.curriculumMap.title')}</h1>
-          <p className="text-gray-600 mt-1">{t('admin.curriculumMap.subtitle')}</p>
-        </div>
-        <Link to="/admin/colleges" className="text-primary-600 hover:underline text-sm">
-          {t('admin.curriculumMap.backToColleges')}
-        </Link>
-      </div>
+    <div className="space-y-5">
+      <PageHeader
+        title={t('admin.curriculumMap.title')}
+        subtitle={t('admin.curriculumMap.subtitle')}
+        actions={
+          <Link to="/admin/colleges" className="text-sm font-bold text-[#1a3a6b] underline-offset-2 hover:underline">
+            {t('admin.curriculumMap.backToColleges')}
+          </Link>
+        }
+      />
 
-      <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6">
+      <Panel>
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4 mb-6">
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">{t('admin.curriculumMap.filterCollege')}</label>
             <select
-              className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-primary-500"
+              className={fieldClass}
               value={collegeFilter}
               onChange={(e) => {
                 setCollegeFilter(e.target.value)
@@ -187,7 +190,7 @@ export default function AdminCurriculumMap() {
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">{t('admin.curriculumMap.filterMajor')}</label>
             <select
-              className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-primary-500"
+              className={fieldClass}
               value={majorFilter}
               onChange={(e) => {
                 setMajorFilter(e.target.value)
@@ -206,7 +209,7 @@ export default function AdminCurriculumMap() {
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">{t('admin.curriculumMap.filterSemester')}</label>
             <select
-              className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-primary-500"
+              className={fieldClass}
               value={semesterFilter}
               onChange={(e) => setSemesterFilter(e.target.value)}
             >
@@ -221,7 +224,7 @@ export default function AdminCurriculumMap() {
           <div className="md:col-span-2 xl:col-span-1">
             <label className="block text-sm font-medium text-gray-700 mb-2">{t('admin.curriculumMap.selectSubject')}</label>
             <select
-              className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-primary-500"
+              className={fieldClass}
               value={selectedSubjectId || ''}
               onChange={(e) => setSelectedSubjectId(e.target.value ? Number(e.target.value) : null)}
               disabled={!filteredSubjects.length}
@@ -235,11 +238,11 @@ export default function AdminCurriculumMap() {
           </div>
         </div>
         {!filteredSubjects.length && (
-          <p className="text-sm text-amber-800 bg-amber-50 border border-amber-100 rounded-lg px-4 py-3">
+          <p className="mt-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
             {t('admin.curriculumMap.noSubjectsForFilters')}
           </p>
         )}
-      </div>
+      </Panel>
 
       {selectedSubjectId && filteredSubjects.some((s) => s.id === selectedSubjectId) && (
         <SubjectCurriculumMapPanel subjectId={selectedSubjectId} subjectLabel={subjectLabel} embedAboutColumn />

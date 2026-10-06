@@ -4,7 +4,7 @@ import { useTranslation } from 'react-i18next'
 import { useLanguage } from '../../contexts/LanguageContext'
 import { useAuth } from '../../contexts/AuthContext'
 import { supabase } from '../../lib/supabase'
-import { Loader2, Printer, CheckCircle, XCircle } from 'lucide-react'
+import { Loader2, Printer, CheckCircle } from 'lucide-react'
 import { getLocalizedName } from '../../utils/localizedName'
 import PaymentModal from '../../components/payment/PaymentModal'
 import { getPaymentsEnabled } from '../../utils/getPaymentsEnabled'
@@ -19,7 +19,6 @@ export default function ApplicantOfferLetter() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [application, setApplication] = useState(null)
-  const [accepting, setAccepting] = useState(false)
   const [showTuitionPayment, setShowTuitionPayment] = useState(false)
   const [paymentsEnabled, setPaymentsEnabled] = useState(true)
 
@@ -100,24 +99,6 @@ export default function ApplicantOfferLetter() {
 
   const handlePrint = () => window.print()
 
-  const handleAcceptOffer = async () => {
-    if (!applicationId) return
-    setAccepting(true)
-    setError('')
-    try {
-      const { data, error: fnErr } = await supabase.functions.invoke('accept-offer', {
-        body: { applicationId },
-      })
-      if (fnErr) throw fnErr
-      if (!data?.success) throw new Error(data?.error || 'Failed to accept offer')
-      setApplication((prev) => (prev ? { ...prev, status_code: 'DCFA', status: 'accepted' } : prev))
-    } catch (e) {
-      setError(e?.message || 'Failed to accept offer')
-    } finally {
-      setAccepting(false)
-    }
-  }
-
   if (loading) {
     return (
       <div className="py-16 flex justify-center">
@@ -183,17 +164,11 @@ export default function ApplicantOfferLetter() {
         </div>
       ) : (
         <>
-          <div className={`rounded-md border-s-4 px-4 py-3.5 mb-6 text-sm flex items-start gap-2.5 print:hidden ${isRTL ? 'flex-row-reverse' : ''} ${
-            hasPaidRegistration ? 'bg-[#e6f7ef] text-[#1a7a4a] border-[#1a7a4a]' : 'bg-[#fef3c7] text-[#92400e] border-[#b45309]'
-          }`}>
-            {hasPaidRegistration ? <CheckCircle className="w-5 h-5 shrink-0 mt-0.5" /> : <XCircle className="w-5 h-5 shrink-0 mt-0.5" />}
+          <div className={`rounded-md border-s-4 border-[#1a7a4a] bg-[#e6f7ef] text-[#1a7a4a] px-4 py-3.5 mb-6 text-sm flex items-start gap-2.5 print:hidden ${isRTL ? 'flex-row-reverse' : ''}`}>
+            <CheckCircle className="w-5 h-5 shrink-0 mt-0.5" />
             <div className="min-w-0">
               <div className="font-bold">
-                {!paymentsEnabled
-                  ? t('offerLetter.ready', 'Your offer is ready.')
-                  : hasPaidRegistration
-                    ? t('offerLetter.paidOk', 'Registration fee received. You can accept the offer.')
-                    : t('offerLetter.payFirst', 'Please pay the registration fee before accepting the offer.')}
+                {t('offerLetter.admittedBanner', 'You have been admitted.')}
               </div>
               <div className="text-xs mt-1 opacity-90">
                 {t('offerLetter.applicationNumber', 'Application #')}: <span className="font-mono font-bold">{application.application_number}</span>
@@ -249,14 +224,14 @@ export default function ApplicantOfferLetter() {
               <div className="rounded-[10px] border border-[#dde3ef] bg-white shadow-sm p-6">
                 <div className="font-bold text-[#1a3a6b] mb-3">{t('offerLetter.nextSteps', 'Next steps')}</div>
                 <ol className="space-y-3 text-sm text-[#1e2a3a]">
-                  <li><span className="font-bold">1)</span> {t('offerLetter.stepAccept', 'Accept the offer')}</li>
-                  {paymentsEnabled && (
-                    <li><span className="font-bold">2)</span> {t('offerLetter.stepPayTuition', 'Pay the tuition fee')}</li>
-                  )}
+                  <li><span className="font-bold">1)</span> {t('offerLetter.stepAdmitted', 'You have been admitted')}</li>
                   <li>
-                    <span className="font-bold">{paymentsEnabled ? '3)' : '2)'}</span>{' '}
-                    {t('offerLetter.stepStudentId', 'Your student record will be created automatically')}
+                    <span className="font-bold">2)</span>{' '}
+                    {t('offerLetter.stepStudentId', 'Your student record is created automatically')}
                   </li>
+                  {paymentsEnabled && (
+                    <li><span className="font-bold">3)</span> {t('offerLetter.stepPayTuition', 'Pay any remaining fees from the student portal')}</li>
+                  )}
                 </ol>
                 <div className="mt-4 grid grid-cols-1 gap-2">
                   {paymentsEnabled && (
@@ -271,22 +246,6 @@ export default function ApplicantOfferLetter() {
                         : t('offerLetter.payTuition', 'Pay tuition fee')}
                     </button>
                   )}
-                  <button
-                    type="button"
-                    onClick={handleAcceptOffer}
-                    disabled={
-                      accepting ||
-                      isFinalAccepted ||
-                      (paymentsEnabled && (!hasPaidRegistration || !hasPaidTuition))
-                    }
-                    className="w-full py-2.5 px-4 rounded-md bg-[#1a7a4a] hover:bg-[#16663f] text-white font-extrabold disabled:opacity-60"
-                  >
-                    {isFinalAccepted
-                      ? t('offerLetter.acceptedFinal', 'Accepted (Final)')
-                      : accepting
-                        ? t('offerLetter.accepting', 'Accepting…')
-                        : t('offerLetter.acceptOffer', 'Accept offer')}
-                  </button>
                   <Link
                     to={`/portal/applications/${applicationId}`}
                     className="w-full py-2.5 px-4 rounded-md border border-[#dde3ef] bg-white hover:bg-[#f4f6fb] text-center font-extrabold text-[#1e2a3a] no-underline"
@@ -294,15 +253,13 @@ export default function ApplicantOfferLetter() {
                     {t('offerLetter.backToApplication', 'Back to application')}
                   </Link>
                 </div>
-                {isFinalAccepted && (
-                  <div className="mt-4 text-xs text-[#6b7a99]">
-                    {t('offerLetter.studentLoginHint', 'You can now log in as a student using the same email and password.')}
-                    {' '}
-                    <Link to="/login/student" className="text-[#1a3a6b] font-bold hover:underline no-underline">
-                      {t('offerLetter.loginStudent', 'Student login')}
-                    </Link>
-                  </div>
-                )}
+                <div className="mt-4 text-xs text-[#6b7a99]">
+                  {t('offerLetter.studentLoginHint', 'Log in as a student using the same email and password.')}
+                  {' '}
+                  <Link to="/login/student" className="text-[#1a3a6b] font-bold hover:underline no-underline">
+                    {t('offerLetter.loginStudent', 'Student login')}
+                  </Link>
+                </div>
               </div>
             </div>
           </div>

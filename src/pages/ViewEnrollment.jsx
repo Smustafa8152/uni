@@ -171,6 +171,22 @@ export default function ViewEnrollment() {
 
       if (error) throw error
 
+      // An enrolled record was holding a seat; give it back to the class.
+      if (enrollment?.status === 'enrolled' && enrollment?.classes?.id) {
+        const { data: classData } = await supabase
+          .from('classes')
+          .select('enrolled')
+          .eq('id', enrollment.classes.id)
+          .limit(1)
+
+        if (classData && classData.length > 0) {
+          await supabase
+            .from('classes')
+            .update({ enrolled: Math.max(0, (classData[0].enrolled || 0) - 1) })
+            .eq('id', enrollment.classes.id)
+        }
+      }
+
       navigate('/enrollments')
     } catch (err) {
       console.error('Error deleting enrollment:', err)

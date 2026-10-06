@@ -2,9 +2,11 @@ import { useState, useEffect } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
 import { Mail, Lock, Eye, EyeOff, ArrowLeft, AlertCircle } from 'lucide-react'
+import { useTranslation } from 'react-i18next'
 import LanguageToggle from '../components/LanguageToggle'
 
 export default function LoginCollege() {
+  const { t } = useTranslation()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
@@ -26,7 +28,7 @@ export default function LoginCollege() {
       <div className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-slate-100 flex items-center justify-center">
         <div className="text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-2 border-slate-300 border-t-slate-700 mx-auto" />
-          <p className="mt-4 text-slate-600 font-medium">Loading…</p>
+          <p className="mt-4 text-slate-600 font-medium">{t('collegeLogin.loading')}</p>
         </div>
       </div>
     )
@@ -42,7 +44,7 @@ export default function LoginCollege() {
       if (signInError) throw signInError
       navigate('/dashboard')
     } catch (err) {
-      setError(err.message || 'Failed to sign in')
+      setError(err.message || t('collegeLogin.failedToSignIn'))
     } finally {
       setLoading(false)
     }
@@ -58,8 +60,8 @@ export default function LoginCollege() {
           to="/"
           className="absolute top-6 left-6 z-20 inline-flex items-center gap-2 rounded-full bg-white/80 px-4 py-2 text-sm font-semibold text-slate-700 shadow-sm ring-1 ring-slate-200 backdrop-blur hover:bg-white transition"
         >
-          <ArrowLeft className="w-4 h-4" />
-          Back
+          <ArrowLeft className="w-4 h-4 rtl:rotate-180" />
+          {t('collegeLogin.back')}
         </Link>
 
         <div className="mx-auto grid min-h-screen w-full max-w-6xl grid-cols-1 lg:grid-cols-2">
@@ -81,29 +83,29 @@ export default function LoginCollege() {
               <img src="/assets/IBU Logo.png" alt="IBU Logo" className="h-20 w-auto object-contain" />
               <div className="mt-10 max-w-lg">
                 <div className="inline-flex items-center rounded-full bg-white/70 px-3 py-1 text-xs font-extrabold text-slate-700 ring-1 ring-slate-200">
-                  College Portal
+                  {t('collegeLogin.portalBadge')}
                 </div>
-                <h1 className="mt-4 text-4xl font-black tracking-tight text-slate-900">Manage your college settings.</h1>
-                <p className="mt-3 text-slate-600">Sign in to access college administration tools.</p>
+                <h1 className="mt-4 text-4xl font-black tracking-tight text-slate-900">{t('collegeLogin.heroTitle')}</h1>
+                <p className="mt-3 text-slate-600">{t('collegeLogin.heroSubtitle')}</p>
 
                 <div className="mt-7 grid grid-cols-1 gap-3">
                   <div className="rounded-2xl bg-white/70 ring-1 ring-slate-200 px-4 py-3">
-                    <div className="text-xs font-extrabold text-slate-500">Operations</div>
-                    <div className="mt-1 text-sm font-extrabold text-slate-900">Students, instructors, classes</div>
+                    <div className="text-xs font-extrabold text-slate-500">{t('collegeLogin.cards.operations.title')}</div>
+                    <div className="mt-1 text-sm font-extrabold text-slate-900">{t('collegeLogin.cards.operations.value')}</div>
                   </div>
                   <div className="rounded-2xl bg-white/70 ring-1 ring-slate-200 px-4 py-3">
-                    <div className="text-xs font-extrabold text-slate-500">Finance</div>
-                    <div className="mt-1 text-sm font-extrabold text-slate-900">Invoices, receipts, reports</div>
+                    <div className="text-xs font-extrabold text-slate-500">{t('collegeLogin.cards.finance.title')}</div>
+                    <div className="mt-1 text-sm font-extrabold text-slate-900">{t('collegeLogin.cards.finance.value')}</div>
                   </div>
                   <div className="rounded-2xl bg-white/70 ring-1 ring-slate-200 px-4 py-3">
-                    <div className="text-xs font-extrabold text-slate-500">Settings</div>
-                    <div className="mt-1 text-sm font-extrabold text-slate-900">Configure your college portal</div>
+                    <div className="text-xs font-extrabold text-slate-500">{t('collegeLogin.cards.settings.title')}</div>
+                    <div className="mt-1 text-sm font-extrabold text-slate-900">{t('collegeLogin.cards.settings.value')}</div>
                   </div>
                 </div>
               </div>
             </div>
 
-            <div className="relative text-sm text-slate-500">University Management System • Imam Bukhari University (IBU)</div>
+            <div className="relative text-sm text-slate-500">{t('collegeLogin.footer')}</div>
           </div>
 
           {/* Right: Form */}
@@ -116,11 +118,11 @@ export default function LoginCollege() {
               <div className="rounded-3xl bg-white shadow-xl ring-1 ring-slate-200 p-7 lg:p-8">
                 <div className="flex items-start justify-between gap-4">
                   <div>
-                    <h2 className="text-2xl font-black text-slate-900">Welcome back</h2>
-                    <p className="mt-1 text-sm text-slate-600">Sign in with your college account.</p>
+                    <h2 className="text-2xl font-black text-slate-900">{t('collegeLogin.title')}</h2>
+                    <p className="mt-1 text-sm text-slate-600">{t('collegeLogin.subtitle')}</p>
                   </div>
                   <div className="hidden sm:flex items-center rounded-full bg-slate-50 px-3 py-1 text-xs font-extrabold text-slate-700 ring-1 ring-slate-200">
-                    College
+                    {t('collegeLogin.rolePill')}
                   </div>
                 </div>
 
@@ -136,7 +138,7 @@ export default function LoginCollege() {
                 <form onSubmit={handleSubmit} className="mt-6 space-y-5">
                   <div>
                     <label htmlFor="email" className="block text-sm font-bold text-slate-700 mb-2">
-                      Email address
+                      {t('collegeLogin.emailAddress')}
                     </label>
                     <div className="relative">
                       <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
@@ -151,13 +153,14 @@ export default function LoginCollege() {
                         autoComplete="email"
                         className="block w-full rounded-2xl border border-slate-200 bg-white pl-10 pr-3 py-3 text-slate-900 placeholder-slate-400 shadow-sm outline-none transition focus:border-slate-400 focus:ring-4 focus:ring-slate-100"
                         placeholder="admin@college.edu"
+                        dir="ltr"
                       />
                     </div>
                   </div>
 
                   <div>
                     <label htmlFor="password" className="block text-sm font-bold text-slate-700 mb-2">
-                      Password
+                      {t('collegeLogin.password')}
                     </label>
                     <div className="relative">
                       <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
@@ -171,13 +174,13 @@ export default function LoginCollege() {
                         required
                         autoComplete="current-password"
                         className="block w-full rounded-2xl border border-slate-200 bg-white pl-10 pr-12 py-3 text-slate-900 placeholder-slate-400 shadow-sm outline-none transition focus:border-slate-400 focus:ring-4 focus:ring-slate-100"
-                        placeholder="Enter your password"
+                        placeholder={t('collegeLogin.enterPassword')}
                       />
                       <button
                         type="button"
                         onClick={() => setShowPassword(!showPassword)}
                         className="absolute inset-y-0 right-0 pr-3 flex items-center text-slate-400 hover:text-slate-700"
-                        aria-label={showPassword ? 'Hide password' : 'Show password'}
+                        aria-label={showPassword ? t('collegeLogin.hidePassword') : t('collegeLogin.showPassword')}
                       >
                         {showPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
                       </button>
@@ -186,7 +189,7 @@ export default function LoginCollege() {
 
                   <div className="flex items-center justify-end">
                     <Link to="/forgot-password" className="text-sm font-bold text-slate-700 hover:text-slate-900">
-                      Forgot password?
+                      {t('collegeLogin.forgotPassword')}
                     </Link>
                   </div>
 
@@ -198,16 +201,16 @@ export default function LoginCollege() {
                     {loading ? (
                       <span className="flex items-center justify-center gap-2">
                         <span className="h-5 w-5 rounded-full border-2 border-white/40 border-t-white animate-spin" />
-                        Signing in…
+                        {t('collegeLogin.signingIn')}
                       </span>
                     ) : (
-                      'Sign in'
+                      t('collegeLogin.signIn')
                     )}
                   </button>
                 </form>
               </div>
 
-              <p className="mt-6 text-center text-xs text-slate-500 lg:hidden">University Management System • Imam Bukhari University (IBU)</p>
+              <p className="mt-6 text-center text-xs text-slate-500 lg:hidden">{t('collegeLogin.footer')}</p>
             </div>
           </div>
         </div>

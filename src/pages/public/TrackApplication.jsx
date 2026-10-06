@@ -1,10 +1,13 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { useTranslation } from 'react-i18next'
 import { supabase } from '../../lib/supabase'
+import LanguageToggle from '../../components/LanguageToggle'
 import { Search, Calendar, AlertCircle, CheckCircle, XCircle, Clock, FileText, CreditCard, UserCheck, GraduationCap } from 'lucide-react'
 
 export default function TrackApplication() {
   const navigate = useNavigate()
+  const { t } = useTranslation()
   const [applicationNumber, setApplicationNumber] = useState('')
   const [dateOfBirth, setDateOfBirth] = useState('')
   const [loading, setLoading] = useState(false)
@@ -15,7 +18,7 @@ export default function TrackApplication() {
     e.preventDefault()
     
     if (!applicationNumber.trim() || !dateOfBirth) {
-      setError('Please enter both application number and date of birth')
+      setError(t('trackApplication.errors.bothRequired'))
       return
     }
 
@@ -47,7 +50,7 @@ export default function TrackApplication() {
 
       if (fetchError) {
         if (fetchError.code === 'PGRST116') {
-          setError('Application not found. Please check your application number and date of birth.')
+          setError(t('trackApplication.errors.notFound'))
         } else {
           throw fetchError
         }
@@ -59,7 +62,7 @@ export default function TrackApplication() {
       navigate(`/application-status/${data.id}`, { state: { application: data } })
     } catch (err) {
       console.error('Error fetching application:', err)
-      setError(err.message || 'Failed to fetch application. Please try again.')
+      setError(t('trackApplication.errors.fetchFailed'))
     } finally {
       setLoading(false)
     }
@@ -93,26 +96,30 @@ export default function TrackApplication() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center p-4">
+    <div className="relative min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center p-4">
+      <div className="absolute top-4 end-4">
+        <LanguageToggle />
+      </div>
       <div className="max-w-2xl w-full bg-white rounded-2xl shadow-xl p-8 md:p-12">
         <div className="text-center mb-8">
           <div className="mx-auto w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center mb-4">
             <Search className="w-8 h-8 text-blue-600" />
           </div>
-          <h1 className="text-3xl font-bold text-gray-900 mb-2">Track Your Application</h1>
-          <p className="text-gray-600">Enter your application number and date of birth to view your application status</p>
+          <h1 className="text-3xl font-bold text-gray-900 mb-2">{t('trackApplication.title')}</h1>
+          <p className="text-gray-600">{t('trackApplication.subtitle')}</p>
         </div>
 
         <form onSubmit={handleSearch} className="space-y-6">
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">
-              Application Number *
+              {t('trackApplication.applicationNumber')} *
             </label>
             <input
               type="text"
               value={applicationNumber}
               onChange={(e) => setApplicationNumber(e.target.value.toUpperCase())}
               placeholder="APP-2025-000001"
+              dir="ltr"
               className="w-full px-4 py-3 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent font-mono text-lg"
               required
             />
@@ -120,7 +127,7 @@ export default function TrackApplication() {
 
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">
-              Date of Birth *
+              {t('trackApplication.dateOfBirth')} *
             </label>
             <input
               type="date"
@@ -140,17 +147,17 @@ export default function TrackApplication() {
           <button
             type="submit"
             disabled={loading}
-            className="w-full px-6 py-3 bg-primary-gradient text-white rounded-lg font-semibold hover:shadow-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center space-x-2"
+            className="w-full px-6 py-3 bg-primary-gradient text-white rounded-lg font-semibold hover:shadow-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
           >
             {loading ? (
               <>
                 <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div>
-                <span>Searching...</span>
+                <span>{t('trackApplication.searching')}</span>
               </>
             ) : (
               <>
                 <Search className="w-5 h-5" />
-                <span>Track Application</span>
+                <span>{t('trackApplication.submit')}</span>
               </>
             )}
           </button>
@@ -158,12 +165,12 @@ export default function TrackApplication() {
 
         <div className="mt-8 pt-8 border-t border-gray-200">
           <p className="text-sm text-gray-600 text-center">
-            Don't have an application number?{' '}
+            {t('trackApplication.noNumber')}{' '}
             <button
               onClick={() => navigate('/apply')}
               className="text-blue-600 hover:text-blue-700 font-medium"
             >
-              Register here
+              {t('trackApplication.registerHere')}
             </button>
           </p>
         </div>

@@ -6,9 +6,11 @@ import { canLoginWithoutSemesterPm10Milestone, checkFinancePermission } from '..
 import { getPaymentsEnabled } from '../utils/getPaymentsEnabled'
 import { getEmailLookupCandidates } from '../utils/emailLookup'
 import { Mail, Lock, Eye, EyeOff, ArrowLeft, AlertCircle } from 'lucide-react'
+import { useTranslation } from 'react-i18next'
 import LanguageToggle from '../components/LanguageToggle'
 
 export default function LoginStudent() {
+  const { t } = useTranslation()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
@@ -30,7 +32,7 @@ export default function LoginStudent() {
       <div className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-slate-100 flex items-center justify-center">
         <div className="text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-2 border-slate-300 border-t-slate-700 mx-auto" />
-          <p className="mt-4 text-slate-600 font-medium">Loading…</p>
+          <p className="mt-4 text-slate-600 font-medium">{t('studentLogin.loading')}</p>
         </div>
       </div>
     )
@@ -109,7 +111,11 @@ export default function LoginStudent() {
         if (signOut) {
           await signOut()
         }
-        setError(`Access Denied: ${permission.reason || 'You need to make an initial payment (10%) to access the student portal. Please contact the finance office or make a payment.'}`)
+        setError(
+          t('studentLogin.accessDenied', {
+            reason: permission.reason || t('studentLogin.initialPaymentRequired'),
+          })
+        )
         setLoading(false)
         return
       }
@@ -125,14 +131,20 @@ export default function LoginStudent() {
         if (signOut) {
           await signOut()
         }
-        setError(`Access Denied: Your account status (${studentData.current_status_code || 'Unknown'}) does not allow portal access. Please contact the admissions office.`)
+        setError(
+          t('studentLogin.accessDenied', {
+            reason: t('studentLogin.statusNotAllowed', {
+              status: studentData.current_status_code || t('studentLogin.statusUnknown'),
+            }),
+          })
+        )
         setLoading(false)
         return
       }
 
       navigate('/dashboard')
     } catch (err) {
-      setError(err.message || 'Failed to sign in')
+      setError(err.message || t('studentLogin.failedToSignIn'))
     } finally {
       setLoading(false)
     }
@@ -149,8 +161,8 @@ export default function LoginStudent() {
           to="/"
           className="absolute top-6 left-6 z-20 inline-flex items-center gap-2 rounded-full bg-white/80 px-4 py-2 text-sm font-semibold text-slate-700 shadow-sm ring-1 ring-slate-200 backdrop-blur hover:bg-white transition"
         >
-          <ArrowLeft className="w-4 h-4" />
-          Back
+          <ArrowLeft className="w-4 h-4 rtl:rotate-180" />
+          {t('studentLogin.back')}
         </Link>
 
         <div className="mx-auto grid min-h-screen w-full max-w-6xl grid-cols-1 lg:grid-cols-2">
@@ -172,34 +184,34 @@ export default function LoginStudent() {
               <img src="/assets/IBU Logo.png" alt="IBU Logo" className="h-20 w-auto object-contain" />
               <div className="mt-10 max-w-lg">
                 <div className="inline-flex items-center rounded-full bg-white/70 px-3 py-1 text-xs font-extrabold text-slate-700 ring-1 ring-slate-200">
-                  Student Portal
+                  {t('studentLogin.portalBadge')}
                 </div>
                 <h1 className="mt-4 text-4xl font-black tracking-tight text-slate-900">
-                  Learn, track progress, and manage your studies.
+                  {t('studentLogin.heroTitle')}
                 </h1>
                 <p className="mt-3 text-slate-600">
-                  Sign in to access courseware, grades, requests, and all your student services in one place.
+                  {t('studentLogin.heroSubtitle')}
                 </p>
 
                 <div className="mt-7 grid grid-cols-1 gap-3">
                   <div className="rounded-2xl bg-white/70 ring-1 ring-slate-200 px-4 py-3">
-                    <div className="text-xs font-extrabold text-slate-500">Courseware</div>
-                    <div className="mt-1 text-sm font-extrabold text-slate-900">Lessons, quizzes, exams</div>
+                    <div className="text-xs font-extrabold text-slate-500">{t('studentLogin.cards.courseware.title')}</div>
+                    <div className="mt-1 text-sm font-extrabold text-slate-900">{t('studentLogin.cards.courseware.value')}</div>
                   </div>
                   <div className="rounded-2xl bg-white/70 ring-1 ring-slate-200 px-4 py-3">
-                    <div className="text-xs font-extrabold text-slate-500">Progress</div>
-                    <div className="mt-1 text-sm font-extrabold text-slate-900">Track completion & performance</div>
+                    <div className="text-xs font-extrabold text-slate-500">{t('studentLogin.cards.progress.title')}</div>
+                    <div className="mt-1 text-sm font-extrabold text-slate-900">{t('studentLogin.cards.progress.value')}</div>
                   </div>
                   <div className="rounded-2xl bg-white/70 ring-1 ring-slate-200 px-4 py-3">
-                    <div className="text-xs font-extrabold text-slate-500">Requests</div>
-                    <div className="mt-1 text-sm font-extrabold text-slate-900">Submit and follow up easily</div>
+                    <div className="text-xs font-extrabold text-slate-500">{t('studentLogin.cards.requests.title')}</div>
+                    <div className="mt-1 text-sm font-extrabold text-slate-900">{t('studentLogin.cards.requests.value')}</div>
                   </div>
                 </div>
               </div>
             </div>
 
             <div className="relative text-sm text-slate-500">
-              University Management System • Imam Bukhari University (IBU)
+              {t('studentLogin.footer')}
             </div>
           </div>
 
@@ -213,11 +225,11 @@ export default function LoginStudent() {
               <div className="rounded-3xl bg-white shadow-xl ring-1 ring-slate-200 p-7 lg:p-8">
                 <div className="flex items-start justify-between gap-4">
                   <div>
-                    <h2 className="text-2xl font-black text-slate-900">Welcome back</h2>
-                    <p className="mt-1 text-sm text-slate-600">Sign in with your student account.</p>
+                    <h2 className="text-2xl font-black text-slate-900">{t('studentLogin.title')}</h2>
+                    <p className="mt-1 text-sm text-slate-600">{t('studentLogin.subtitle')}</p>
                   </div>
                   <div className="hidden sm:flex items-center rounded-full bg-slate-50 px-3 py-1 text-xs font-extrabold text-slate-700 ring-1 ring-slate-200">
-                    Student
+                    {t('studentLogin.rolePill')}
                   </div>
                 </div>
 
@@ -233,7 +245,7 @@ export default function LoginStudent() {
                 <form onSubmit={handleSubmit} className="mt-6 space-y-5">
                   <div>
                     <label htmlFor="email" className="block text-sm font-bold text-slate-700 mb-2">
-                      Email address
+                      {t('studentLogin.emailAddress')}
                     </label>
                     <div className="relative">
                       <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
@@ -248,13 +260,14 @@ export default function LoginStudent() {
                         autoComplete="email"
                         className="block w-full rounded-2xl border border-slate-200 bg-white pl-10 pr-3 py-3 text-slate-900 placeholder-slate-400 shadow-sm outline-none transition focus:border-slate-400 focus:ring-4 focus:ring-slate-100"
                         placeholder="you@university.edu"
+                        dir="ltr"
                       />
                     </div>
                   </div>
 
                   <div>
                     <label htmlFor="password" className="block text-sm font-bold text-slate-700 mb-2">
-                      Password
+                      {t('studentLogin.password')}
                     </label>
                     <div className="relative">
                       <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
@@ -268,13 +281,13 @@ export default function LoginStudent() {
                         required
                         autoComplete="current-password"
                         className="block w-full rounded-2xl border border-slate-200 bg-white pl-10 pr-12 py-3 text-slate-900 placeholder-slate-400 shadow-sm outline-none transition focus:border-slate-400 focus:ring-4 focus:ring-slate-100"
-                        placeholder="Enter your password"
+                        placeholder={t('studentLogin.enterPassword')}
                       />
                       <button
                         type="button"
                         onClick={() => setShowPassword(!showPassword)}
                         className="absolute inset-y-0 right-0 pr-3 flex items-center text-slate-400 hover:text-slate-700"
-                        aria-label={showPassword ? 'Hide password' : 'Show password'}
+                        aria-label={showPassword ? t('studentLogin.hidePassword') : t('studentLogin.showPassword')}
                       >
                         {showPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
                       </button>
@@ -283,7 +296,7 @@ export default function LoginStudent() {
 
                   <div className="flex items-center justify-end">
                     <Link to="/forgot-password" className="text-sm font-bold text-slate-700 hover:text-slate-900">
-                      Forgot password?
+                      {t('studentLogin.forgotPassword')}
                     </Link>
                   </div>
 
@@ -295,21 +308,21 @@ export default function LoginStudent() {
                     {loading ? (
                       <span className="flex items-center justify-center gap-2">
                         <span className="h-5 w-5 rounded-full border-2 border-white/40 border-t-white animate-spin" />
-                        Signing in…
+                        {t('studentLogin.signingIn')}
                       </span>
                     ) : (
-                      'Sign in'
+                      t('studentLogin.signIn')
                     )}
                   </button>
 
                   <p className="text-center text-xs text-slate-500">
-                    By signing in, you agree to the university’s acceptable use policy.
+                    {t('studentLogin.policyNote')}
                   </p>
                 </form>
               </div>
 
               <p className="mt-6 text-center text-xs text-slate-500 lg:hidden">
-                University Management System • Imam Bukhari University (IBU)
+                {t('studentLogin.footer')}
               </p>
             </div>
           </div>

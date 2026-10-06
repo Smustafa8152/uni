@@ -121,22 +121,22 @@ export default function LoginApplicant() {
 
                 <div className="mt-7 grid grid-cols-1 gap-3">
                   <div className="rounded-2xl bg-white/70 ring-1 ring-slate-200 px-4 py-3">
-                    <div className="text-xs font-extrabold text-slate-500">Application</div>
-                    <div className="mt-1 text-sm font-extrabold text-slate-900">Track steps and required documents</div>
+                    <div className="text-xs font-extrabold text-slate-500">{t('applicantLogin.cards.application.title')}</div>
+                    <div className="mt-1 text-sm font-extrabold text-slate-900">{t('applicantLogin.cards.application.value')}</div>
                   </div>
                   <div className="rounded-2xl bg-white/70 ring-1 ring-slate-200 px-4 py-3">
-                    <div className="text-xs font-extrabold text-slate-500">Updates</div>
-                    <div className="mt-1 text-sm font-extrabold text-slate-900">See status changes instantly</div>
+                    <div className="text-xs font-extrabold text-slate-500">{t('applicantLogin.cards.updates.title')}</div>
+                    <div className="mt-1 text-sm font-extrabold text-slate-900">{t('applicantLogin.cards.updates.value')}</div>
                   </div>
                   <div className="rounded-2xl bg-white/70 ring-1 ring-slate-200 px-4 py-3">
-                    <div className="text-xs font-extrabold text-slate-500">Offer letter</div>
-                    <div className="mt-1 text-sm font-extrabold text-slate-900">Review and accept online</div>
+                    <div className="text-xs font-extrabold text-slate-500">{t('applicantLogin.cards.offerLetter.title')}</div>
+                    <div className="mt-1 text-sm font-extrabold text-slate-900">{t('applicantLogin.cards.offerLetter.value')}</div>
                   </div>
                 </div>
               </div>
             </div>
 
-            <div className="relative text-sm text-slate-500">University Management System • Imam Bukhari University (IBU)</div>
+            <div className="relative text-sm text-slate-500">{t('applicantLogin.footer')}</div>
           </div>
 
           {/* Right: Form */}
@@ -153,7 +153,7 @@ export default function LoginApplicant() {
                     <p className="mt-1 text-sm text-slate-600">{t('applicantLogin.subtitle', 'Sign in to your applicant account.')}</p>
                   </div>
                   <div className="hidden sm:flex items-center rounded-full bg-slate-50 px-3 py-1 text-xs font-extrabold text-slate-700 ring-1 ring-slate-200">
-                    Applicant
+                    {t('applicantLogin.rolePill')}
                   </div>
                 </div>
 
@@ -222,7 +222,7 @@ export default function LoginApplicant() {
                         type="button"
                         onClick={() => setShowPassword((v) => !v)}
                         className={`absolute inset-y-0 ${isRTL ? 'left-0 pl-3' : 'right-0 pr-3'} flex items-center text-slate-400 hover:text-slate-700`}
-                        aria-label={showPassword ? 'Hide password' : 'Show password'}
+                        aria-label={showPassword ? t('applicantLogin.hidePassword') : t('applicantLogin.showPassword')}
                       >
                         {showPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
                       </button>
@@ -253,7 +253,7 @@ export default function LoginApplicant() {
                 </form>
               </div>
 
-              <p className="mt-6 text-center text-xs text-slate-500 lg:hidden">University Management System • Imam Bukhari University (IBU)</p>
+              <p className="mt-6 text-center text-xs text-slate-500 lg:hidden">{t('applicantLogin.footer')}</p>
             </div>
           </div>
         </div>

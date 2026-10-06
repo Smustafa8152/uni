@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Video, GraduationCap, Loader2, Save } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
+import { getAdmissionTemplate } from '../../utils/admissionMessageTemplates'
 
 /**
  * Staff: schedule interview (RVIV) / entrance exam (RVEX) and email invite.
@@ -106,9 +107,6 @@ export default function InterviewExamInvitePanel({
         })
       }
 
-      const applicantName =
-        [application?.first_name, application?.last_name].filter(Boolean).join(' ').trim() ||
-        t('admissions.exam.applicantFallback', 'Applicant')
       const formatWhen = (localValue, tbaKey) => {
         if (!localValue) return t(tbaKey, 'To be announced')
         const d = new Date(localValue)
@@ -119,21 +117,13 @@ export default function InterviewExamInvitePanel({
         })
       }
 
-      if ((kind === 'interview' || kind === 'both') && form.emailInterview && sendAdmissionNotification) {
+      if ((kind === 'interview' || kind === 'both') && (form.emailInterview || form.setStatusInterview) && sendAdmissionNotification) {
         const link = form.interview_meeting_url.trim()
+        const tpl = getAdmissionTemplate('interview_invite', isArabicLayout)
         await sendAdmissionNotification({
           type: 'interview_invite',
-          subject: t('admissions.interview.emailSubject', 'Interview invitation for your admission application'),
-          message: [
-            t('admissions.interview.emailGreeting', { name: applicantName, defaultValue: 'Dear {{name}},' }),
-            '',
-            t(
-              'admissions.interview.emailIntro',
-              'You are invited to an admission interview for your application. The details are below.',
-            ),
-            '',
-            t('admissions.interview.emailFooter', 'Please join on time. The same details are in your applicant portal.'),
-          ].join('\n'),
+          subject: tpl.subject,
+          message: tpl.body,
           details: [
             {
               label: t('admissions.interview.when', 'When'),
@@ -151,25 +141,13 @@ export default function InterviewExamInvitePanel({
         })
       }
 
-      if ((kind === 'exam' || kind === 'both') && form.emailExam && sendAdmissionNotification) {
+      if ((kind === 'exam' || kind === 'both') && (form.emailExam || form.setStatusExam) && sendAdmissionNotification) {
         const location = form.exam_location_or_link.trim()
+        const tpl = getAdmissionTemplate('exam_invite', isArabicLayout)
         await sendAdmissionNotification({
           type: 'exam_invite',
-          subject: t('admissions.exam.emailSubject', 'Entrance exam / admission test details'),
-          message: [
-            t('admissions.exam.emailGreeting', { name: applicantName, defaultValue: 'Dear {{name}},' }),
-            '',
-            t(
-              'admissions.exam.emailIntro',
-              'You are invited to sit the entrance exam / admission test for your application. The details are below.',
-            ),
-            '',
-            t(
-              'admissions.exam.emailBringId',
-              'Please arrive on time and bring a valid photo ID (passport or national ID).',
-            ),
-            t('admissions.exam.emailFooter', 'The same details are available in your applicant portal.'),
-          ].join('\n'),
+          subject: tpl.subject,
+          message: tpl.body,
           details: [
             {
               label: t('admissions.exam.when', 'When'),

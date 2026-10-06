@@ -2,8 +2,11 @@ import { useState } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
 import { GraduationCap, Mail, Lock, Eye, EyeOff, User } from 'lucide-react'
+import { useTranslation } from 'react-i18next'
+import LanguageToggle from '../components/LanguageToggle'
 
 export default function Signup() {
+  const { t } = useTranslation()
   const [formData, setFormData] = useState({
     name: '',
     email: '',
@@ -26,12 +29,12 @@ export default function Signup() {
     setError('')
 
     if (formData.password !== formData.confirmPassword) {
-      setError('Passwords do not match')
+      setError(t('signup.errors.passwordMismatch'))
       return
     }
 
     if (formData.password.length < 6) {
-      setError('Password must be at least 6 characters')
+      setError(t('signup.errors.passwordShort'))
       return
     }
 
@@ -44,7 +47,7 @@ export default function Signup() {
       if (signUpError) throw signUpError
       navigate('/dashboard')
     } catch (err) {
-      setError(err.message || 'Failed to sign up')
+      setError(err.message || t('signup.errors.failed'))
     } finally {
       setLoading(false)
     }
@@ -59,6 +62,10 @@ export default function Signup() {
         }}
       ></div>
       
+      <div className="absolute top-4 end-4 z-20">
+        <LanguageToggle />
+      </div>
+
       <div className="w-full max-w-md relative z-10">
         <div className="bg-white/95 backdrop-blur-lg rounded-3xl shadow-2xl p-8 border border-white/20">
           {/* Logo and Header */}
@@ -70,8 +77,8 @@ export default function Signup() {
                 className="h-20 w-auto object-contain"
               />
             </div>
-            <h1 className="text-3xl font-bold text-gray-900 mb-2">Create Account</h1>
-            <p className="text-gray-600">Join Imam Bukhari University (IBU)</p>
+            <h1 className="text-3xl font-bold text-gray-900 mb-2">{t('signup.title')}</h1>
+            <p className="text-gray-600">{t('signup.subtitle')}</p>
           </div>
 
           {/* Error Message */}
@@ -85,7 +92,7 @@ export default function Signup() {
           <form onSubmit={handleSubmit} className="space-y-6">
             <div>
               <label htmlFor="name" className="block text-sm font-medium text-gray-700 mb-2">
-                Full Name
+                {t('signup.fullName')}
               </label>
               <div className="relative">
                 <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
@@ -99,14 +106,14 @@ export default function Signup() {
                   onChange={handleChange}
                   required
                   className="block w-full pl-10 pr-3 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all"
-                  placeholder="John Doe"
+                  placeholder={t('signup.fullNamePlaceholder')}
                 />
               </div>
             </div>
 
             <div>
               <label htmlFor="email" className="block text-sm font-medium text-gray-700 mb-2">
-                Email Address
+                {t('signup.emailAddress')}
               </label>
               <div className="relative">
                 <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
@@ -121,13 +128,14 @@ export default function Signup() {
                   required
                   className="block w-full pl-10 pr-3 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all"
                   placeholder="you@university.edu"
+                  dir="ltr"
                 />
               </div>
             </div>
 
             <div>
               <label htmlFor="password" className="block text-sm font-medium text-gray-700 mb-2">
-                Password
+                {t('signup.password')}
               </label>
               <div className="relative">
                 <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
@@ -141,7 +149,7 @@ export default function Signup() {
                   onChange={handleChange}
                   required
                   className="block w-full pl-10 pr-12 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all"
-                  placeholder="At least 6 characters"
+                  placeholder={t('signup.passwordPlaceholder')}
                 />
                 <button
                   type="button"
@@ -159,7 +167,7 @@ export default function Signup() {
 
             <div>
               <label htmlFor="confirmPassword" className="block text-sm font-medium text-gray-700 mb-2">
-                Confirm Password
+                {t('signup.confirmPassword')}
               </label>
               <div className="relative">
                 <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
@@ -173,7 +181,7 @@ export default function Signup() {
                   onChange={handleChange}
                   required
                   className="block w-full pl-10 pr-12 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all"
-                  placeholder="Confirm your password"
+                  placeholder={t('signup.confirmPasswordPlaceholder')}
                 />
                 <button
                   type="button"
@@ -194,15 +202,15 @@ export default function Signup() {
               disabled={loading}
               className="w-full bg-primary-gradient text-white py-3 rounded-xl font-semibold shadow-lg hover:shadow-xl transform hover:-translate-y-0.5 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none"
             >
-              {loading ? 'Creating account...' : 'Create Account'}
+              {loading ? t('signup.creating') : t('signup.submit')}
             </button>
           </form>
 
           <div className="mt-6 text-center">
             <p className="text-sm text-gray-600">
-              Already have an account?{' '}
-              <Link to="/login" className="font-medium text-primary-600 hover:text-primary-700">
-                Sign in
+              {t('signup.haveAccount')}{' '}
+              <Link to="/" className="font-medium text-primary-600 hover:text-primary-700">
+                {t('signup.signIn')}
               </Link>
             </p>
           </div>
@@ -210,7 +218,7 @@ export default function Signup() {
 
         {/* Footer */}
         <p className="text-center mt-6 text-white/80 text-sm">
-          © 2025 University Management System. All rights reserved.
+          © {new Date().getFullYear()} {t('landing.footer')}
         </p>
       </div>
     </div>

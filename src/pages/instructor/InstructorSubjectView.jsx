@@ -87,7 +87,7 @@ export default function InstructorSubjectView() {
     try {
       // Fetch instructor
       const instructorData = await getActiveInstructorByEmail(user.email)
-      if (!instructorData) throw new Error('Instructor not found')
+      if (!instructorData) throw new Error(t('instructorPortal.subjectDetail.errors.instructorNotFound'))
       setInstructor(instructorData)
 
       const { data: userRow } = await supabase.from('users').select('id').eq('email', user.email).maybeSingle()
@@ -133,7 +133,7 @@ export default function InstructorSubjectView() {
 
       // If instructor has no classes for this subject, show error
       if (!instructorClasses || instructorClasses.length === 0) {
-        setError('You are not assigned to teach any classes for this subject')
+        setError(t('instructorPortal.subjectDetail.errors.notAssigned'))
         setLoading(false)
         return
       }
@@ -153,7 +153,7 @@ export default function InstructorSubjectView() {
       ])
     } catch (err) {
       console.error('Error fetching data:', err)
-      setError(err.message || 'Failed to load subject data')
+      setError(err.message || t('instructorPortal.subjectDetail.errors.loadFailed'))
     } finally {
       setLoading(false)
     }
@@ -478,21 +478,21 @@ export default function InstructorSubjectView() {
 
   const getHomeworkStatus = (hw) => {
     const statusMap = {
-      'HW_DRF': { label: 'Draft', color: 'bg-gray-100 text-gray-800' },
-      'HW_PUB': { label: 'Published', color: 'bg-green-100 text-green-800' },
-      'HW_CLD': { label: 'Closed', color: 'bg-red-100 text-red-800' },
+      'HW_DRF': { label: t('instructorPortal.subjectDetail.status.draft'), color: 'bg-gray-100 text-gray-800' },
+      'HW_PUB': { label: t('instructorPortal.subjectDetail.status.published'), color: 'bg-green-100 text-green-800' },
+      'HW_CLD': { label: t('instructorPortal.subjectDetail.status.closed'), color: 'bg-red-100 text-red-800' },
     }
     return statusMap[hw.status] || { label: hw.status, color: 'bg-gray-100 text-gray-800' }
   }
 
   const getExamStatus = (exam) => {
     const statusMap = {
-      'EX_DRF': { label: 'Draft', color: 'bg-gray-100 text-gray-800' },
-      'EX_SCH': { label: 'Scheduled', color: 'bg-yellow-100 text-yellow-800' },
-      'EX_OPN': { label: 'Open', color: 'bg-blue-100 text-blue-800' },
-      'EX_CLS': { label: 'Closed', color: 'bg-red-100 text-red-800' },
-      'EX_GRD': { label: 'Graded', color: 'bg-green-100 text-green-800' },
-      'EX_REL': { label: 'Results Released', color: 'bg-purple-100 text-purple-800' },
+      'EX_DRF': { label: t('instructorPortal.subjectDetail.status.draft'), color: 'bg-gray-100 text-gray-800' },
+      'EX_SCH': { label: t('instructorPortal.subjectDetail.status.scheduled'), color: 'bg-yellow-100 text-yellow-800' },
+      'EX_OPN': { label: t('instructorPortal.subjectDetail.status.open'), color: 'bg-blue-100 text-blue-800' },
+      'EX_CLS': { label: t('instructorPortal.subjectDetail.status.closed'), color: 'bg-red-100 text-red-800' },
+      'EX_GRD': { label: t('instructorPortal.subjectDetail.status.graded'), color: 'bg-green-100 text-green-800' },
+      'EX_REL': { label: t('instructorPortal.subjectDetail.status.resultsReleased'), color: 'bg-purple-100 text-purple-800' },
     }
     return statusMap[exam.status] || { label: exam.status, color: 'bg-gray-100 text-gray-800' }
   }
@@ -511,7 +511,7 @@ export default function InstructorSubjectView() {
       fetchHomework()
     } catch (err) {
       console.error('Error publishing homework:', err)
-      alert('Failed to update homework status')
+      alert(t('instructorPortal.subjectDetail.errors.updateHomework'))
     }
   }
 
@@ -529,7 +529,7 @@ export default function InstructorSubjectView() {
       fetchHomework()
     } catch (err) {
       console.error('Error closing homework:', err)
-      alert('Failed to close homework')
+      alert(t('instructorPortal.subjectDetail.errors.closeHomework'))
     }
   }
 
@@ -551,7 +551,7 @@ export default function InstructorSubjectView() {
       fetchExams()
     } catch (err) {
       console.error('Error updating exam status:', err)
-      alert('Failed to update exam status')
+      alert(t('instructorPortal.subjectDetail.errors.updateExam'))
     }
   }
 
@@ -569,14 +569,14 @@ export default function InstructorSubjectView() {
       fetchExams()
     } catch (err) {
       console.error('Error releasing exam results:', err)
-      alert('Failed to release exam results')
+      alert(t('instructorPortal.subjectDetail.errors.releaseResults'))
     }
   }
 
   const refetchMaterials = () => fetchMaterials(classes.map(c => c.id))
 
   const handleDeleteMaterial = async (materialId) => {
-    if (!confirm('Are you sure you want to delete this material?')) return
+    if (!confirm(t('instructorPortal.subjectDetail.confirm.deleteMaterial'))) return
 
     try {
       const { error } = await supabase
@@ -588,12 +588,12 @@ export default function InstructorSubjectView() {
       refetchMaterials()
     } catch (err) {
       console.error('Error deleting material:', err)
-      alert('Failed to delete material')
+      alert(t('instructorPortal.subjectDetail.errors.deleteMaterial'))
     }
   }
 
   const handleDeleteClassMaterial = async (materialId) => {
-    if (!confirm('Are you sure you want to delete this material?')) return
+    if (!confirm(t('instructorPortal.subjectDetail.confirm.deleteMaterial'))) return
 
     try {
       const { error } = await supabase
@@ -605,12 +605,12 @@ export default function InstructorSubjectView() {
       refetchMaterials()
     } catch (err) {
       console.error('Error deleting class material:', err)
-      alert('Failed to delete material')
+      alert(t('instructorPortal.subjectDetail.errors.deleteMaterial'))
     }
   }
 
   const handleDeleteHomework = async (homeworkId) => {
-    if (!confirm('Are you sure you want to delete this homework? All submissions will be deleted.')) return
+    if (!confirm(t('instructorPortal.subjectDetail.confirm.deleteHomework'))) return
 
     try {
       const { error } = await supabase
@@ -622,12 +622,12 @@ export default function InstructorSubjectView() {
       fetchHomework()
     } catch (err) {
       console.error('Error deleting homework:', err)
-      alert('Failed to delete homework')
+      alert(t('instructorPortal.subjectDetail.errors.deleteHomework'))
     }
   }
 
   const handleDeleteExam = async (examId) => {
-    if (!confirm('Are you sure you want to delete this exam? All submissions will be deleted.')) return
+    if (!confirm(t('instructorPortal.subjectDetail.confirm.deleteExam'))) return
 
     try {
       const { error } = await supabase
@@ -639,7 +639,7 @@ export default function InstructorSubjectView() {
       fetchExams()
     } catch (err) {
       console.error('Error deleting exam:', err)
-      alert('Failed to delete exam')
+      alert(t('instructorPortal.subjectDetail.errors.deleteExam'))
     }
   }
 
@@ -678,12 +678,12 @@ export default function InstructorSubjectView() {
             className="flex items-center space-x-2 text-gray-600 hover:text-gray-900 mb-6"
           >
             <ArrowLeft className="w-5 h-5" />
-            <span>Back</span>
+            <span>{t('instructorPortal.subjectDetail.back')}</span>
           </button>
           <div className="bg-red-50 border border-red-200 rounded-lg p-6 text-center">
             <AlertCircle className="w-12 h-12 text-red-500 mx-auto mb-4" />
-            <h2 className="text-xl font-bold text-red-900 mb-2">Error</h2>
-            <p className="text-red-700">{error || 'Subject not found or you are not assigned to teach any classes for this subject'}</p>
+            <h2 className="text-xl font-bold text-red-900 mb-2">{t('instructorPortal.subjectDetail.error')}</h2>
+            <p className="text-red-700">{error || t('instructorPortal.subjectDetail.errors.notFound')}</p>
           </div>
         </div>
       </div>
@@ -943,11 +943,11 @@ export default function InstructorSubjectView() {
                   <p className="font-semibold text-gray-900 capitalize">{subject.type}</p>
                 </div>
                 <div>
-                  <p className="text-sm text-gray-600 mb-1">Semester</p>
-                  <p className="font-semibold text-gray-900">Semester {subject.semester_number}</p>
+                  <p className="text-sm text-gray-600 mb-1">{t('instructorPortal.subjectDetail.overview.semester')}</p>
+                  <p className="font-semibold text-gray-900">{t('instructorPortal.subjectDetail.overview.semesterNumber', { n: subject.semester_number })}</p>
                 </div>
                 <div>
-                  <p className="text-sm text-gray-600 mb-1">College</p>
+                  <p className="text-sm text-gray-600 mb-1">{t('instructorPortal.subjectDetail.overview.college')}</p>
                   <p className="font-semibold text-gray-900">{subject.colleges?.name_en}</p>
                 </div>
               </div>
@@ -973,8 +973,8 @@ export default function InstructorSubjectView() {
           <div className="space-y-6">
             {/* Subject materials (default) */}
             <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-              <h2 className="text-xl font-bold text-gray-900 mb-2">Subject materials (default)</h2>
-              <p className="text-sm text-gray-500 mb-4">Default materials for this subject, visible to all students.</p>
+              <h2 className="text-xl font-bold text-gray-900 mb-2">{t('instructorPortal.subjectDetail.materials.subjectTitle')}</h2>
+              <p className="text-sm text-gray-500 mb-4">{t('instructorPortal.subjectDetail.materials.subjectHint')}</p>
               {materials.length > 0 ? (
                 <div className="space-y-3">
                   {materials.map(material => (
@@ -1007,7 +1007,7 @@ export default function InstructorSubjectView() {
                   ))}
                 </div>
               ) : (
-                <p className="text-gray-500 text-center py-6">No subject materials yet</p>
+                <p className="text-gray-500 text-center py-6">{t('instructorPortal.subjectDetail.materials.subjectEmpty')}</p>
               )}
             </div>
 
@@ -1016,8 +1016,8 @@ export default function InstructorSubjectView() {
               <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
                 <div className="flex items-center justify-between mb-4">
                   <div>
-                    <h2 className="text-xl font-bold text-gray-900">Class materials</h2>
-                    <p className="text-sm text-gray-500">Materials you added for your classes.</p>
+                    <h2 className="text-xl font-bold text-gray-900">{t('instructorPortal.subjectDetail.materials.classTitle')}</h2>
+                    <p className="text-sm text-gray-500">{t('instructorPortal.subjectDetail.materials.classHint')}</p>
                   </div>
                   <div className="flex flex-wrap gap-2">
                     {classes.map(cls => (
@@ -1067,7 +1067,7 @@ export default function InstructorSubjectView() {
                     ))}
                   </div>
                 ) : (
-                  <p className="text-gray-500 text-center py-6">No class materials yet. Click above to add.</p>
+                  <p className="text-gray-500 text-center py-6">{t('instructorPortal.subjectDetail.materials.classEmpty')}</p>
                 )}
               </div>
             )}
@@ -1079,7 +1079,7 @@ export default function InstructorSubjectView() {
           <div className="space-y-4">
             <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
               <div className="flex items-center justify-between mb-4">
-                <h2 className="text-xl font-bold text-gray-900">Homework Assignments</h2>
+                <h2 className="text-xl font-bold text-gray-900">{t('instructorPortal.subjectDetail.homework.title')}</h2>
                 <button
                   onClick={() => {
                     navigate(`/instructor/subjects/${id}/homework/create`)
@@ -1087,7 +1087,7 @@ export default function InstructorSubjectView() {
                   className="px-4 py-2 bg-primary-gradient text-white rounded-lg hover:shadow-lg transition-all flex items-center space-x-2"
                 >
                   <Plus className="w-4 h-4" />
-                  <span>Create Homework</span>
+                  <span>{t('instructorPortal.subjectDetail.homework.create')}</span>
                 </button>
               </div>
               {homework.length > 0 ? (
@@ -1101,10 +1101,10 @@ export default function InstructorSubjectView() {
                             <h3 className="text-lg font-semibold text-gray-900 mb-2">{hw.title}</h3>
                             <p className="text-gray-600 mb-3">{hw.description}</p>
                             <div className="flex items-center space-x-4 text-sm text-gray-600">
-                              <span>Due: {new Date(hw.due_date).toLocaleDateString()}</span>
-                              <span>{hw.total_points} points</span>
-                              <span>{hw.submissionCount || 0} submissions</span>
-                              <span>{hw.gradedCount || 0} graded</span>
+                              <span>{t('instructorPortal.subjectDetail.homework.due')} {new Date(hw.due_date).toLocaleDateString()}</span>
+                              <span>{t('instructorPortal.subjectDetail.points', { n: hw.total_points })}</span>
+                              <span>{t('instructorPortal.subjectDetail.submissionsCount', { n: hw.submissionCount || 0 })}</span>
+                              <span>{t('instructorPortal.subjectDetail.gradedCount', { n: hw.gradedCount || 0 })}</span>
                             </div>
                           </div>
                           <span className={`px-3 py-1 rounded-full text-sm font-medium ${status.color}`}>
@@ -1125,7 +1125,7 @@ export default function InstructorSubjectView() {
                               onClick={() => handlePublishHomework(hw.id, true)}
                               className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
                             >
-                              Publish
+                              {t('instructorPortal.subjectDetail.actions.publish')}
                             </button>
                           )}
                           {hw.status === 'HW_PUB' && (
@@ -1133,7 +1133,7 @@ export default function InstructorSubjectView() {
                               onClick={() => handleCloseHomework(hw.id)}
                               className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors"
                             >
-                              Close
+                              {t('instructorPortal.subjectDetail.actions.close')}
                             </button>
                           )}
                           <button
@@ -1142,7 +1142,7 @@ export default function InstructorSubjectView() {
                             }}
                             className="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
                           >
-                            Edit
+                            {t('instructorPortal.subjectDetail.actions.edit')}
                           </button>
                           <button
                             onClick={() => handleDeleteHomework(hw.id)}
@@ -1156,7 +1156,7 @@ export default function InstructorSubjectView() {
                   })}
                 </div>
               ) : (
-                <p className="text-gray-500 text-center py-8">No homework assignments yet</p>
+                <p className="text-gray-500 text-center py-8">{t('instructorPortal.subjectDetail.homework.empty')}</p>
               )}
             </div>
           </div>
@@ -1167,7 +1167,7 @@ export default function InstructorSubjectView() {
           <div className="space-y-4">
             <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
               <div className="flex items-center justify-between mb-4">
-                <h2 className="text-xl font-bold text-gray-900">Exams</h2>
+                <h2 className="text-xl font-bold text-gray-900">{t('instructorPortal.subjectDetail.tabs.exams')}</h2>
                 <button
                   onClick={() => {
                     navigate(`/instructor/subjects/${id}/exams/create`)
@@ -1175,7 +1175,7 @@ export default function InstructorSubjectView() {
                   className="px-4 py-2 bg-primary-gradient text-white rounded-lg hover:shadow-lg transition-all flex items-center space-x-2"
                 >
                   <Plus className="w-4 h-4" />
-                  <span>Create Exam</span>
+                  <span>{t('instructorPortal.subjectDetail.exams.create')}</span>
                 </button>
               </div>
               {exams.length > 0 ? (
@@ -1191,9 +1191,9 @@ export default function InstructorSubjectView() {
                             <div className="flex items-center space-x-4 text-sm text-gray-600">
                               <span>{new Date(exam.scheduled_date).toLocaleDateString()}</span>
                               <span>{exam.start_time} - {exam.end_time}</span>
-                              <span>{exam.total_points} points</span>
-                              <span>{exam.submissionCount || 0} submissions</span>
-                              <span>{exam.gradedCount || 0} graded</span>
+                              <span>{t('instructorPortal.subjectDetail.points', { n: exam.total_points })}</span>
+                              <span>{t('instructorPortal.subjectDetail.submissionsCount', { n: exam.submissionCount || 0 })}</span>
+                              <span>{t('instructorPortal.subjectDetail.gradedCount', { n: exam.gradedCount || 0 })}</span>
                             </div>
                           </div>
                           <span className={`px-3 py-1 rounded-full text-sm font-medium ${status.color}`}>
@@ -1214,7 +1214,7 @@ export default function InstructorSubjectView() {
                               onClick={() => handlePublishExam(exam.id, 'EX_SCH')}
                               className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
                             >
-                              Schedule
+                              {t('instructorPortal.subjectDetail.actions.schedule')}
                             </button>
                           )}
                           {exam.status === 'EX_SCH' && (
@@ -1222,7 +1222,7 @@ export default function InstructorSubjectView() {
                               onClick={() => handlePublishExam(exam.id, 'EX_OPN')}
                               className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
                             >
-                              Open Exam
+                              {t('instructorPortal.subjectDetail.actions.openExam')}
                             </button>
                           )}
                           {exam.status === 'EX_OPN' && (
@@ -1231,13 +1231,13 @@ export default function InstructorSubjectView() {
                                 onClick={() => handlePublishExam(exam.id, 'EX_CLS')}
                                 className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors"
                               >
-                                Close Exam
+                                {t('instructorPortal.subjectDetail.actions.closeExam')}
                               </button>
                               <button
                                 onClick={() => handleReleaseExamResults(exam.id)}
                                 className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors"
                               >
-                                Release Results
+                                {t('instructorPortal.subjectDetail.actions.releaseResults')}
                               </button>
                             </>
                           )}
@@ -1247,7 +1247,7 @@ export default function InstructorSubjectView() {
                             }}
                             className="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
                           >
-                            Edit
+                            {t('instructorPortal.subjectDetail.actions.edit')}
                           </button>
                           <button
                             onClick={() => handleDeleteExam(exam.id)}
@@ -1261,7 +1261,7 @@ export default function InstructorSubjectView() {
                   })}
                 </div>
               ) : (
-                <p className="text-gray-500 text-center py-8">No exams created yet</p>
+                <p className="text-gray-500 text-center py-8">{t('instructorPortal.subjectDetail.exams.empty')}</p>
               )}
             </div>
           </div>
@@ -1272,7 +1272,7 @@ export default function InstructorSubjectView() {
           <div className="space-y-4">
             <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
               <div className="flex items-center justify-between mb-4">
-                <h2 className="text-xl font-bold text-gray-900">Recorded Lectures</h2>
+                <h2 className="text-xl font-bold text-gray-900">{t('instructorPortal.subjectDetail.recordings.title')}</h2>
                 <button
                   onClick={() => {
                     navigate(`/instructor/subjects/${id}/recordings/create`)
@@ -1280,7 +1280,7 @@ export default function InstructorSubjectView() {
                   className="px-4 py-2 bg-primary-gradient text-white rounded-lg hover:shadow-lg transition-all flex items-center space-x-2"
                 >
                   <Plus className="w-4 h-4" />
-                  <span>Upload Recording</span>
+                  <span>{t('instructorPortal.subjectDetail.recordings.upload')}</span>
                 </button>
               </div>
               {recordings.length > 0 ? (
@@ -1299,11 +1299,11 @@ export default function InstructorSubjectView() {
                           }}
                           className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
                         >
-                          Edit
+                          {t('instructorPortal.subjectDetail.actions.edit')}
                         </button>
                         <button
                           onClick={() => {
-                            if (confirm('Delete this recording?')) {
+                            if (confirm(t('instructorPortal.subjectDetail.confirm.deleteRecording'))) {
                               supabase.from('subject_recordings').delete().eq('id', recording.id).then(() => fetchRecordings())
                             }
                           }}
@@ -1316,7 +1316,7 @@ export default function InstructorSubjectView() {
                   ))}
                 </div>
               ) : (
-                <p className="text-gray-500 text-center py-8">No recordings uploaded yet</p>
+                <p className="text-gray-500 text-center py-8">{t('instructorPortal.subjectDetail.recordings.empty')}</p>
               )}
             </div>
           </div>
@@ -1337,7 +1337,7 @@ export default function InstructorSubjectView() {
                     </div>
                   )}
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">Select Class</label>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">{t('instructorPortal.subjectDetail.attendance.selectClassLabel')}</label>
                     <select
                       value={attendanceClassId != null ? String(attendanceClassId) : ''}
                       onChange={(e) => {
@@ -1351,7 +1351,7 @@ export default function InstructorSubjectView() {
                       <option value="">{t('instructorPortal.subjectDetail.attendance.selectClass')}</option>
                       {classes.map(cls => (
                         <option key={cls.id} value={cls.id}>
-                          {cls.code} - Section {cls.section} ({cls.enrollmentCount || 0} students)
+                          {t('instructorPortal.subjectDetail.attendance.classOption', { code: cls.code, section: cls.section, n: cls.enrollmentCount || 0 })}
                         </option>
                       ))}
                     </select>
@@ -1370,7 +1370,7 @@ export default function InstructorSubjectView() {
 
                   {attendance.length > 0 && (
                     <div>
-                      <h3 className="text-lg font-semibold text-gray-900 mb-3">Recent Attendance Records</h3>
+                      <h3 className="text-lg font-semibold text-gray-900 mb-3">{t('instructorPortal.subjectDetail.attendance.recentRecords')}</h3>
                       <div className="space-y-2">
                         {attendance.slice(0, 20).map(record => {
                           const statusIcons = {
@@ -1384,9 +1384,9 @@ export default function InstructorSubjectView() {
                               <div className="flex items-center space-x-4">
                                 {statusIcons[record.status] || <XCircle className="w-5 h-5 text-gray-600" />}
                                 <div>
-                                  <p className="font-medium text-gray-900">{record.students?.name_en || 'Unknown'}</p>
+                                  <p className="font-medium text-gray-900">{record.students?.name_en || t('instructorPortal.subjectDetail.unknown')}</p>
                                   <p className="text-sm text-gray-600">
-                                    {new Date(record.date).toLocaleDateString()} - {record.status}
+                                    {new Date(record.date).toLocaleDateString()} - {t(`instructorPortal.subjectDetail.attendance.status${String(record.status || '').charAt(0).toUpperCase()}${String(record.status || '').slice(1)}`, { defaultValue: record.status })}
                                   </p>
                                 </div>
                               </div>
@@ -1410,7 +1410,7 @@ export default function InstructorSubjectView() {
                   )}
                 </div>
               ) : (
-                <p className="text-gray-500 text-center py-8">No classes available. Create a class first.</p>
+                <p className="text-gray-500 text-center py-8">{t('instructorPortal.subjectDetail.attendance.noClasses')}</p>
               )}
             </div>
           </div>
@@ -1434,7 +1434,7 @@ export default function InstructorSubjectView() {
                     <div key={post.id} className="border border-gray-200 rounded-lg p-4">
                       <div className="flex items-start justify-between mb-2">
                         <div className="flex-1">
-                          <h3 className="font-semibold text-gray-900">{post.title || 'Untitled'}</h3>
+                          <h3 className="font-semibold text-gray-900">{post.title || t('instructorPortal.subjectDetail.forum.untitled')}</h3>
                           <p className="text-sm text-gray-600">{new Date(post.created_at).toLocaleString()}</p>
                         </div>
                         <div className="flex items-center flex-wrap gap-2">
@@ -1471,7 +1471,7 @@ export default function InstructorSubjectView() {
                       <p className="text-gray-700 mb-3">{post.content}</p>
                       {post.reply_count > 0 && (
                         <button className="text-sm text-blue-600 hover:text-blue-700">
-                          View {post.reply_count} {post.reply_count === 1 ? 'reply' : 'replies'}
+                          {t('instructorPortal.subjectDetail.forum.viewReplies', { n: post.reply_count })}
                         </button>
                       )}
                     </div>

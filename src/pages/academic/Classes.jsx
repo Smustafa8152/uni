@@ -5,7 +5,9 @@ import { useLanguage } from '../../contexts/LanguageContext'
 import { getLocalizedName } from '../../utils/localizedName'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
-import { Plus, Library, Search, Eye, Edit, Trash2, Loader2 } from 'lucide-react'
+import { Plus, Library, Search, Eye, Edit, Trash2 } from 'lucide-react'
+import { Button, EmptyState, PageHeader, Panel, Skeleton } from '../../components/ui'
+import { fieldClass } from '../../components/academic/catalogUi'
 
 export default function Classes() {
   const { t } = useTranslation()
@@ -97,20 +99,16 @@ export default function Classes() {
   })
 
   return (
-    <div className="space-y-6">
-      <div className={`flex items-center ${isRTL ? 'flex-row-reverse justify-between' : 'justify-between'}`}>
-        <div>
-          <h1 className="text-3xl font-bold text-gray-900">{t('classes.title')}</h1>
-          <p className="text-gray-600 mt-1">{t('classes.subtitle')}</p>
-        </div>
-        <button
-          onClick={() => navigate('/academic/classes/create')}
-          className={`flex items-center ${isRTL ? 'flex-row-reverse space-x-reverse' : 'space-x-2'} bg-primary-gradient text-white px-6 py-3 rounded-xl font-semibold shadow-lg hover:shadow-xl transform hover:-translate-y-0.5 transition-all`}
-        >
-          <Plus className="w-5 h-5" />
-          <span>{t('classes.create')}</span>
-        </button>
-      </div>
+    <div className="space-y-5">
+      <PageHeader
+        title={t('classes.title')}
+        subtitle={t('classes.subtitle')}
+        actions={
+          <Button icon={Plus} onClick={() => navigate('/academic/classes/create')}>
+            {t('classes.create')}
+          </Button>
+        }
+      />
 
       {toast && (
         <div
@@ -124,37 +122,44 @@ export default function Classes() {
         </div>
       )}
 
-      <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6">
+      <Panel>
         <div className="relative">
-          <Search className={`absolute ${isRTL ? 'right-3' : 'left-3'} top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400`} />
+          <Search className="pointer-events-none absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" aria-hidden="true" />
           <input
             type="text"
             placeholder={t('classes.searchPlaceholder')}
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className={`w-full ${isRTL ? 'pr-10 pl-4' : 'pl-10 pr-4'} py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-primary-500 focus:border-transparent`}
+            className={`${fieldClass} ps-9`}
+            aria-label={t('classes.searchPlaceholder')}
           />
         </div>
-      </div>
+      </Panel>
 
       {loading ? (
-        <div className="text-center py-12">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-600 mx-auto"></div>
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3">
+          {Array.from({ length: 3 }, (_, i) => (
+            <Skeleton key={i} className="h-48" />
+          ))}
         </div>
+      ) : filteredClasses.length === 0 ? (
+        <Panel>
+          <EmptyState icon={Library} title={t('classes.title')} hint={t('classes.searchPlaceholder')} />
+        </Panel>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
           {filteredClasses.map((cls) => (
             <div
               key={cls.id}
-              className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6 hover:shadow-md transition-shadow"
+              className="rounded-2xl border border-[#dde3ef] bg-white p-5"
             >
-              <div className={`flex items-center ${isRTL ? 'flex-row-reverse space-x-reverse' : 'space-x-3'} mb-4`}>
-                <div className="w-12 h-12 bg-primary-gradient rounded-lg flex items-center justify-center">
-                  <Library className="w-6 h-6 text-white" />
+              <div className="mb-4 flex items-center gap-3">
+                <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-[#eef2f9] text-[#1a3a6b]">
+                  <Library className="h-6 w-6" />
                 </div>
-                <div>
-                  <h3 className="text-lg font-bold text-gray-900">{getLocalizedName(cls.subjects, isRTL)}</h3>
-                  <p className="text-sm text-gray-500">{cls.code}</p>
+                <div className="min-w-0">
+                  <h3 className="truncate text-base font-extrabold text-[#1a3a6b]">{getLocalizedName(cls.subjects, isRTL)}</h3>
+                  <p className="text-sm text-slate-500">{cls.code}</p>
                 </div>
               </div>
               <div className="space-y-2 text-sm text-gray-600">
@@ -168,35 +173,23 @@ export default function Classes() {
                   </span>
                 )}
               </div>
-              <div className={`mt-4 flex items-center ${isRTL ? 'space-x-reverse' : 'space-x-2'}`}>
-                <button
-                  onClick={() => navigate(`/academic/classes/${cls.id}`)}
-                  className={`flex-1 flex items-center justify-center ${isRTL ? 'flex-row-reverse space-x-reverse' : 'space-x-2'} px-3 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors`}
-                >
-                  <Eye className="w-4 h-4" />
-                  <span>{t('common.view')}</span>
-                </button>
-                <button
-                  onClick={() => navigate(`/academic/classes/${cls.id}/edit`)}
-                  className={`flex-1 flex items-center justify-center ${isRTL ? 'flex-row-reverse space-x-reverse' : 'space-x-2'} px-3 py-2 bg-primary-gradient text-white rounded-lg hover:shadow-lg transition-all`}
-                >
-                  <Edit className="w-4 h-4" />
-                  <span>{t('common.edit')}</span>
-                </button>
+              <div className="mt-4 flex items-center gap-2">
+                <Button variant="quiet" size="sm" className="flex-1" icon={Eye} onClick={() => navigate(`/academic/classes/${cls.id}`)}>
+                  {t('common.view')}
+                </Button>
+                <Button size="sm" className="flex-1" icon={Edit} onClick={() => navigate(`/academic/classes/${cls.id}/edit`)}>
+                  {t('common.edit')}
+                </Button>
                 {(userRole === 'admin' || userRole === 'user') && (
-                  <button
-                    type="button"
+                  <Button
+                    variant="danger"
+                    size="sm"
+                    icon={Trash2}
+                    loading={deletingId === cls.id}
                     onClick={() => deleteSession(cls)}
-                    disabled={deletingId === cls.id}
-                    className={`flex items-center justify-center px-3 py-2 rounded-lg border border-red-200 bg-red-50 text-red-700 hover:bg-red-100 transition-colors disabled:opacity-50 disabled:cursor-not-allowed`}
                     title={t('common.delete', 'Delete')}
-                  >
-                    {deletingId === cls.id ? (
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                    ) : (
-                      <Trash2 className="w-4 h-4" />
-                    )}
-                  </button>
+                    aria-label={t('common.delete', 'Delete')}
+                  />
                 )}
               </div>
             </div>

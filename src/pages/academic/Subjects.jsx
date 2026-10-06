@@ -6,7 +6,9 @@ import { getLocalizedName } from '../../utils/localizedName'
 import { exportSubjectStudentsList, exportAllSubjectsStudentsWorkbook } from '../../utils/exportStudents'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
-import { Plus, BookOpen, Search, Eye, Edit, Download, Loader2 } from 'lucide-react'
+import { Plus, BookOpen, Search, Eye, Edit, Download } from 'lucide-react'
+import { Button, EmptyState, PageHeader, Panel, Skeleton } from '../../components/ui'
+import { fieldClass } from '../../components/academic/catalogUi'
 
 export default function Subjects() {
   const { t, i18n } = useTranslation()
@@ -167,119 +169,54 @@ export default function Subjects() {
   }
 
   return (
-    <div className="space-y-6">
-      <div
-        dir={isArabicLayout ? 'rtl' : 'ltr'}
-        className="flex items-center justify-between"
-      >
-        <div className={isArabicLayout ? 'text-right' : 'text-left'}>
-          <h1 className="text-3xl font-bold text-gray-900">{t('academic.subjects.title')}</h1>
-          <p className="text-gray-600 mt-1">{t('academic.subjects.subtitle')}</p>
-        </div>
-        <div className={`flex flex-wrap items-center gap-2 ${isArabicLayout ? 'flex-row-reverse' : ''}`}>
-          <button
-            type="button"
-            disabled={exportingAll || loading || filteredSubjects.length === 0}
-            onClick={handleExportAllSubjects}
-            className={`flex items-center ${isArabicLayout ? 'flex-row-reverse space-x-reverse' : 'space-x-2'} px-5 py-3 rounded-xl font-semibold border border-gray-300 bg-white text-gray-800 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-all`}
-          >
-            {exportingAll ? <Loader2 className="w-5 h-5 animate-spin" /> : <Download className="w-5 h-5" />}
-            <span>{t('academic.subjects.exportAllExcel', 'Export all subjects (Excel)')}</span>
-          </button>
-          <button
-            onClick={() => navigate('/academic/subjects/create')}
-            className={`flex items-center ${isArabicLayout ? 'flex-row-reverse space-x-reverse' : 'space-x-2'} bg-primary-gradient text-white px-6 py-3 rounded-xl font-semibold shadow-lg hover:shadow-xl transform hover:-translate-y-0.5 transition-all`}
-          >
-            <Plus className="w-5 h-5" />
-            <span>{t('academic.subjects.create')}</span>
-          </button>
-        </div>
-      </div>
+    <div className="space-y-5">
+      <PageHeader
+        title={t('academic.subjects.title')}
+        subtitle={t('academic.subjects.subtitle')}
+        actions={
+          <>
+            <Button variant="quiet" icon={Download} loading={exportingAll} disabled={loading || filteredSubjects.length === 0} onClick={handleExportAllSubjects}>
+              {t('academic.subjects.exportAllExcel', 'Export all subjects (Excel)')}
+            </Button>
+            <Button icon={Plus} onClick={() => navigate('/academic/subjects/create')}>
+              {t('academic.subjects.create')}
+            </Button>
+          </>
+        }
+      />
 
-      <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6">
-        <div
-          className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3"
-          dir={isArabicLayout ? 'rtl' : 'ltr'}
-        >
-          {isArabicLayout ? (
-            <>
-              <select
-                value={collegeFilter}
-                onChange={(e) => setCollegeFilter(e.target.value)}
-                className="px-4 py-3 border border-gray-300 rounded-xl text-sm bg-white min-w-[10rem] text-right"
-              >
-                <option value="">{t('academic.subjects.allColleges')}</option>
-                <option value="university_wide">{t('academic.subjects.universityWide')}</option>
-                {collegeFilterOptions.map((college) => (
-                  <option key={college.id} value={String(college.id)}>
-                    {getLocalizedName(college, isRTL)}
-                  </option>
-                ))}
-              </select>
-              <select
-                value={majorFilter}
-                onChange={(e) => setMajorFilter(e.target.value)}
-                className="px-4 py-3 border border-gray-300 rounded-xl text-sm bg-white min-w-[10rem] text-right"
-              >
-                <option value="">{t('academic.subjects.allMajors')}</option>
-                {majorFilterOptions.map((major) => (
-                  <option key={major.id} value={String(major.id)}>
-                    {getLocalizedName(major, isRTL)}
-                  </option>
-                ))}
-              </select>
-              <div className="relative flex-1 min-w-0">
-                <Search className="absolute right-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
-                <input
-                  type="text"
-                  placeholder={t('academic.subjects.searchPlaceholder')}
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  className="w-full pr-10 pl-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-primary-500 focus:border-transparent text-right"
-                />
-              </div>
-            </>
-          ) : (
-            <>
-              <div className="relative flex-1 min-w-0">
-                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
-                <input
-                  type="text"
-                  placeholder={t('academic.subjects.searchPlaceholder')}
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-primary-500 focus:border-transparent text-left"
-                />
-              </div>
-              <select
-                value={collegeFilter}
-                onChange={(e) => setCollegeFilter(e.target.value)}
-                className="px-4 py-3 border border-gray-300 rounded-xl text-sm bg-white min-w-[10rem] text-left"
-              >
-                <option value="">{t('academic.subjects.allColleges')}</option>
-                <option value="university_wide">{t('academic.subjects.universityWide')}</option>
-                {collegeFilterOptions.map((college) => (
-                  <option key={college.id} value={String(college.id)}>
-                    {getLocalizedName(college, isRTL)}
-                  </option>
-                ))}
-              </select>
-              <select
-                value={majorFilter}
-                onChange={(e) => setMajorFilter(e.target.value)}
-                className="px-4 py-3 border border-gray-300 rounded-xl text-sm bg-white min-w-[10rem] text-left"
-              >
-                <option value="">{t('academic.subjects.allMajors')}</option>
-                {majorFilterOptions.map((major) => (
-                  <option key={major.id} value={String(major.id)}>
-                    {getLocalizedName(major, isRTL)}
-                  </option>
-                ))}
-              </select>
-            </>
-          )}
+      <Panel>
+        <div className="grid gap-3 md:grid-cols-3">
+          <div className="relative">
+            <Search className="pointer-events-none absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" aria-hidden="true" />
+            <input
+              type="text"
+              placeholder={t('academic.subjects.searchPlaceholder')}
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className={`${fieldClass} ps-9`}
+              aria-label={t('academic.subjects.searchPlaceholder')}
+            />
+          </div>
+          <select value={collegeFilter} onChange={(e) => setCollegeFilter(e.target.value)} className={fieldClass} aria-label={t('academic.subjects.allColleges')}>
+            <option value="">{t('academic.subjects.allColleges')}</option>
+            <option value="university_wide">{t('academic.subjects.universityWide')}</option>
+            {collegeFilterOptions.map((college) => (
+              <option key={college.id} value={String(college.id)}>
+                {getLocalizedName(college, isRTL)}
+              </option>
+            ))}
+          </select>
+          <select value={majorFilter} onChange={(e) => setMajorFilter(e.target.value)} className={fieldClass} aria-label={t('academic.subjects.allMajors')}>
+            <option value="">{t('academic.subjects.allMajors')}</option>
+            {majorFilterOptions.map((major) => (
+              <option key={major.id} value={String(major.id)}>
+                {getLocalizedName(major, isRTL)}
+              </option>
+            ))}
+          </select>
         </div>
-      </div>
+      </Panel>
 
       {toast && (
         <div
@@ -292,23 +229,29 @@ export default function Subjects() {
       )}
 
       {loading ? (
-        <div className="text-center py-12">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-600 mx-auto"></div>
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3">
+          {Array.from({ length: 3 }, (_, i) => (
+            <Skeleton key={i} className="h-48" />
+          ))}
         </div>
+      ) : filteredSubjects.length === 0 ? (
+        <Panel>
+          <EmptyState icon={BookOpen} title={t('academic.subjects.title')} hint={t('academic.subjects.searchPlaceholder')} />
+        </Panel>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
           {filteredSubjects.map((subject) => (
             <div
               key={subject.id}
-              className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6 hover:shadow-md transition-shadow"
+              className="rounded-2xl border border-[#dde3ef] bg-white p-5"
             >
-              <div className={`flex items-center ${isRTL ? 'space-x-reverse space-x-3' : 'space-x-3'} mb-4`}>
-                <div className="w-12 h-12 bg-primary-gradient rounded-lg flex items-center justify-center">
-                  <BookOpen className="w-6 h-6 text-white" />
+              <div className="mb-4 flex items-center gap-3">
+                <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-[#eef2f9] text-[#1a3a6b]">
+                  <BookOpen className="h-6 w-6" />
                 </div>
-                <div>
-                  <h3 className="text-lg font-bold text-gray-900">{getLocalizedName(subject, isRTL)}</h3>
-                  <p className="text-sm text-gray-500">{subject.code}</p>
+                <div className="min-w-0">
+                  <h3 className="truncate text-base font-extrabold text-[#1a3a6b]">{getLocalizedName(subject, isRTL)}</h3>
+                  <p className="text-sm text-slate-500">{subject.code}</p>
                 </div>
               </div>
               <div className="space-y-2 text-sm text-gray-600">
@@ -323,34 +266,22 @@ export default function Subjects() {
                 )}
               </div>
               <div className={`mt-4 flex flex-wrap items-center gap-2 ${isRTL ? 'flex-row-reverse' : ''}`}>
-                <button
-                  onClick={() => navigate(`/academic/subjects/${subject.id}`)}
-                  className={`flex-1 min-w-[7rem] flex items-center justify-center ${isRTL ? 'flex-row-reverse space-x-reverse' : 'space-x-2'} px-3 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors`}
-                >
-                  <Eye className="w-4 h-4" />
-                  <span>{t('academic.subjects.view')}</span>
-                </button>
-                <button
-                  onClick={() => navigate(`/academic/subjects/${subject.id}/edit`)}
-                  className={`flex-1 min-w-[7rem] flex items-center justify-center ${isRTL ? 'flex-row-reverse space-x-reverse' : 'space-x-2'} px-3 py-2 bg-primary-gradient text-white rounded-lg hover:shadow-lg transition-all`}
-                >
-                  <Edit className="w-4 h-4" />
-                  <span>{t('academic.subjects.edit')}</span>
-                </button>
-                <button
-                  type="button"
-                  disabled={exportingSubjectId === subject.id}
+                <Button variant="quiet" size="sm" className="flex-1" icon={Eye} onClick={() => navigate(`/academic/subjects/${subject.id}`)}>
+                  {t('academic.subjects.view')}
+                </Button>
+                <Button size="sm" className="flex-1" icon={Edit} onClick={() => navigate(`/academic/subjects/${subject.id}/edit`)}>
+                  {t('academic.subjects.edit')}
+                </Button>
+                <Button
+                  variant="quiet"
+                  size="sm"
+                  icon={Download}
+                  loading={exportingSubjectId === subject.id}
                   title={t('academic.subjects.exportStudents', 'Export enrolled students')}
                   onClick={() => handleExportSubjectStudents(subject, 'xlsx')}
-                  className={`flex items-center justify-center ${isRTL ? 'flex-row-reverse space-x-reverse' : 'space-x-2'} px-3 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 disabled:opacity-50 transition-colors`}
                 >
-                  {exportingSubjectId === subject.id ? (
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                  ) : (
-                    <Download className="w-4 h-4" />
-                  )}
-                  <span>{t('academic.subjects.exportStudents', 'Export students')}</span>
-                </button>
+                  {t('academic.subjects.exportStudents', 'Export students')}
+                </Button>
               </div>
             </div>
           ))}

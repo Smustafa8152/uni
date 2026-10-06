@@ -2,6 +2,7 @@ import { BrowserRouter, Routes, Route, Navigate, useParams, useSearchParams } fr
 import { AuthProvider } from './contexts/AuthContext'
 import { CollegeProvider } from './contexts/CollegeContext'
 import { LanguageProvider } from './contexts/LanguageContext'
+import { Toaster } from './components/ui/toast'
 import { ProtectedRoute } from './components/ProtectedRoute'
 import './i18n'
 import Layout from './components/Layout'
@@ -157,11 +158,9 @@ import ApplicationStatus from './pages/public/ApplicationStatus'
 import { ApplicantProtectedRoute } from './components/ApplicantProtectedRoute'
 import ApplicantPortalLayout from './pages/applicant/ApplicantPortalLayout'
 import ApplicantDashboard from './pages/applicant/ApplicantDashboard'
-import ApplicantSelectMajor from './pages/applicant/ApplicantSelectMajor'
 import ApplicantProfile from './pages/applicant/ApplicantProfile'
 import ApplicantMessages from './pages/applicant/ApplicantMessages'
 import LoginApplicant from './pages/applicant/LoginApplicant'
-import ApplicantApplicationStatusPage from './pages/applicant/ApplicantApplicationStatusPage'
 import ApplicantOfferLetter from './pages/applicant/ApplicantOfferLetter'
 import ApplicantOfferLetterIndex from './pages/applicant/ApplicantOfferLetterIndex'
 import AdminRequestDetail from './pages/admin/RequestDetail'
@@ -187,6 +186,7 @@ function App() {
       <AuthProvider>
         <CollegeProvider>
           <BrowserRouter>
+          <Toaster />
         <Routes>
           <Route path="/" element={<Landing />} />
           <Route path="/login/admin" element={<LoginAdmin />} />
@@ -207,7 +207,7 @@ function App() {
             }
           >
             <Route index element={<ApplicantDashboard />} />
-            <Route path="apply" element={<ApplicantSelectMajor />} />
+            <Route path="apply" element={<RegisterApplication portal />} />
             <Route path="apply/new" element={<RegisterApplication portal />} />
             <Route path="profile" element={<ApplicantProfile />} />
             <Route path="messages" element={<ApplicantMessages />} />
@@ -215,16 +215,7 @@ function App() {
             <Route path="applications/:id/offer-letter" element={<ApplicantOfferLetter />} />
             <Route path="offer-letter" element={<ApplicantOfferLetterIndex />} />
           </Route>
-          <Route
-            path="/application-status"
-            element={
-              <ApplicantProtectedRoute>
-                <ApplicantPortalLayout />
-              </ApplicantProtectedRoute>
-            }
-          >
-            <Route index element={<ApplicantApplicationStatusPage />} />
-          </Route>
+          <Route path="/application-status" element={<Navigate to="/portal" replace />} />
           <Route path="/lookup-application" element={<TrackApplication />} />
           <Route path="/application-status/:id" element={<ApplicationStatus />} />
           <Route path="/track" element={<Navigate to="/lookup-application" replace />} />

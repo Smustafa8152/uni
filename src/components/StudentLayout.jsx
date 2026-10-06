@@ -3,7 +3,7 @@ import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
 import { useLanguage } from '../contexts/LanguageContext'
 import { FlagAr, FlagEn } from './LanguageFlags'
-import { ChevronDown, Menu, X } from 'lucide-react'
+import { Bell, ChevronDown, Home, LogOut, Menu, Search, Video, X } from 'lucide-react'
 import { getPaymentsEnabled } from '../utils/getPaymentsEnabled'
 
 const UI = {
@@ -81,19 +81,14 @@ export default function StudentLayout({ children }) {
     navigate('/login/student')
   }
 
-  const pageTitle = useMemo(() => {
+  const pageTitleLabel = useMemo(() => {
     const path = location.pathname
-    if (path === '/dashboard') return 'لوحة التحكم'
-    if (path.startsWith('/student/profile')) return 'ملفي الشخصي'
-    if (path.startsWith('/student/payments')) return 'الفواتير والرسوم'
-    if (path.startsWith('/student/enroll')) return 'تسجيل المقررات'
-    if (path.startsWith('/student/holds')) return 'التعليقات والحجب'
-    if (path.startsWith('/student/schedule')) return 'الجدول الدراسي'
-    if (path.startsWith('/student/grades')) return 'الدرجات والنتائج'
-    if (path.startsWith('/student/graduation-path')) return 'مسار التخرج'
-    if (path.startsWith('/student/requests')) return 'مركز الطلبات'
-    if (path.startsWith('/student/messages')) return 'الرسائل والتحديثات'
-    return 'بوابة الطالب'
+    for (const section of NAV) {
+      for (const item of section.items) {
+        if (path === item.href || (item.href !== '/dashboard' && path.startsWith(item.href))) return item.label
+      }
+    }
+    return { ar: 'بوابة الطالب', en: 'Student portal' }
   }, [location.pathname])
 
   const displayName = useMemo(() => user?.email?.split('@')[0] || '—', [user?.email])
@@ -116,16 +111,16 @@ export default function StudentLayout({ children }) {
           isRTL ? 'right-0' : 'left-0'
         } ${sidebarOpen ? 'translate-x-0' : isRTL ? 'translate-x-full' : '-translate-x-full'}`}
         style={{ backgroundColor: UI.p }}
-        aria-label="القائمة الجانبية"
+        aria-label={tx({ ar: 'القائمة الجانبية', en: 'Sidebar' })}
       >
         <div className="flex flex-col min-h-full">
           <div className="flex items-center gap-3 px-4 py-4 border-b border-white/10">
-            <img src="/assets/IBU Logo.png" alt="شعار جامعة IBU" className="w-11 h-11 object-contain rounded-lg bg-white p-1" />
+            <img src="/assets/IBU Logo.png" alt={tx({ ar: 'شعار جامعة IBU', en: 'IBU logo' })} className="w-11 h-11 object-contain rounded-lg bg-white p-1" />
             <div className="leading-tight">
-              <div className="text-white font-extrabold text-sm">جامعة IBU</div>
-              <div className="text-xs font-medium" style={{ color: UI.acc }}>بوابة الطالب</div>
+              <div className="text-white font-extrabold text-sm">{tx({ ar: 'جامعة IBU', en: 'IBU University' })}</div>
+              <div className="text-xs font-medium" style={{ color: UI.acc }}>{tx({ ar: 'بوابة الطالب', en: 'Student portal' })}</div>
             </div>
-            <button onClick={() => setSidebarOpen(false)} className="lg:hidden ml-auto text-white/70 hover:text-white">
+            <button onClick={() => setSidebarOpen(false)} className="lg:hidden ms-auto text-white/70 hover:text-white">
               <X className="w-6 h-6" />
             </button>
           </div>
@@ -133,12 +128,12 @@ export default function StudentLayout({ children }) {
           <nav className="px-2 py-3 flex-1">
             {navSections.map((section) => (
               <div key={tx(section.label)} className="mb-3">
-                <div className="px-3 pt-3 pb-1 text-[10px] font-extrabold tracking-wider uppercase text-white/35">{tx(section.label)}</div>
+                <div className="px-3 pt-3 pb-1 text-[11px] font-bold text-white/45">{tx(section.label)}</div>
                 <ul className="space-y-1">
                   {section.items.map((item) => {
                     const isActive = location.pathname === item.href || (item.href !== '/dashboard' && location.pathname.startsWith(item.href))
                     return (
-                      <li key={`${section.label}-${item.href}-${item.label}`}>
+                      <li key={`${item.href}-${tx(item.label)}`}>
                         <Link
                           to={item.href}
                           onClick={() => setSidebarOpen(false)}
@@ -160,11 +155,12 @@ export default function StudentLayout({ children }) {
 
           <div className="mt-auto px-4 py-4 border-t border-white/10 text-white/45 text-xs">
             <div>
-              <Link to="/" className="text-white/60 hover:text-white text-xs">
-                ⬅ الصفحة الرئيسية
+              <Link to="/" className="inline-flex items-center gap-1.5 text-white/60 hover:text-white text-xs">
+                <Home className="h-3.5 w-3.5" aria-hidden="true" />
+                {tx({ ar: 'الصفحة الرئيسية', en: 'Home page' })}
               </Link>
             </div>
-            <div className="mt-1">الإصدار 1.0.0</div>
+            <div className="mt-1">{tx({ ar: 'الإصدار 1.0.0', en: 'Version 1.0.0' })}</div>
           </div>
         </div>
       </aside>
@@ -173,36 +169,34 @@ export default function StudentLayout({ children }) {
       <div className={`${isRTL ? 'lg:mr-[270px]' : 'lg:ml-[270px]'} min-h-screen flex flex-col`}>
         {/* Topbar */}
         <header
-          className="sticky top-0 z-30 h-16 flex items-center justify-between px-6 shadow-sm border-b"
+          className="sticky top-0 z-30 h-16 flex items-center justify-between gap-3 px-3 sm:px-6 shadow-sm border-b"
           style={{ backgroundColor: UI.sur, borderColor: UI.bdr }}
         >
-          <div className="flex items-center gap-3">
+          <div className="flex min-w-0 items-center gap-3">
             <button onClick={() => setSidebarOpen(true)} className="lg:hidden p-2 rounded-md border" style={{ borderColor: UI.bdr, backgroundColor: UI.bg }}>
               <Menu className="w-5 h-5" style={{ color: UI.p }} />
             </button>
-            <div className="text-[17px] font-extrabold" style={{ color: UI.p }}>{pageTitle}</div>
+            <div className="truncate text-[17px] font-extrabold" style={{ color: UI.p }}>{tx(pageTitleLabel)}</div>
           </div>
 
-          <div className="flex items-center gap-3">
+          <div className="flex shrink-0 items-center gap-2 sm:gap-3">
             {/* Language switcher */}
             <div className="relative z-30">
               <button
                 type="button"
                 onClick={() => setLangMenuOpen((v) => !v)}
-                className="h-9 px-3 rounded-full border flex items-center gap-2 text-sm font-semibold"
+                className="h-9 px-2.5 sm:px-3 rounded-full border flex items-center gap-1.5 sm:gap-2 text-sm font-semibold"
                 style={{ backgroundColor: UI.bg, borderColor: UI.bdr, color: '#1e2a3a' }}
-                aria-label="تغيير اللغة"
-                title="تغيير اللغة"
+                aria-label={tx({ ar: 'تغيير اللغة', en: 'Change language' })}
+                title={tx({ ar: 'تغيير اللغة', en: 'Change language' })}
               >
                 {language === 'ar' ? <FlagAr /> : <FlagEn />}
-                <span>{language === 'ar' ? 'العربية' : 'English'}</span>
+                <span className="hidden sm:inline">{language === 'ar' ? 'العربية' : 'English'}</span>
                 <ChevronDown className="w-4 h-4" style={{ color: UI.muted }} />
               </button>
               {langMenuOpen && (
                 <div
-                  className={`absolute top-full mt-2 min-w-[140px] rounded-xl border shadow-md overflow-hidden ${
-                    isRTL ? 'right-0' : 'left-0'
-                  }`}
+                  className="absolute end-0 top-full mt-2 min-w-[140px] rounded-xl border shadow-md overflow-hidden"
                   style={{ backgroundColor: UI.sur, borderColor: UI.bdr }}
                 >
                   <button
@@ -239,49 +233,53 @@ export default function StudentLayout({ children }) {
               to="/student/elearning/sessions"
               className="h-9 px-3 rounded-full border flex items-center gap-2 text-sm font-semibold"
               style={{ backgroundColor: UI.bg, borderColor: UI.bdr, color: UI.p }}
-              aria-label="بوابة التعلم الإلكتروني"
-              title="بوابة التعلم الإلكتروني"
+              aria-label={tx({ ar: 'بوابة التعلم الإلكتروني', en: 'e-Learning portal' })}
+              title={tx({ ar: 'بوابة التعلم الإلكتروني', en: 'e-Learning portal' })}
             >
-              📹 {isArabic ? 'التعلم الإلكتروني' : 'e‑Learning'}
+              <Video className="h-4 w-4" aria-hidden="true" />
+              <span className="hidden md:inline">{isArabic ? 'التعلم الإلكتروني' : 'e‑Learning'}</span>
             </Link>
 
             <Link
               to="/student/course-catalog"
-              className="h-9 w-9 rounded-full border flex items-center justify-center text-[16px]"
+              className="hidden h-9 w-9 rounded-full border sm:flex items-center justify-center"
               style={{ backgroundColor: UI.bg, borderColor: UI.bdr }}
-              aria-label="بحث"
-              title="بحث"
+              aria-label={tx({ ar: 'دليل المقررات', en: 'Course catalog' })}
+              title={tx({ ar: 'دليل المقررات', en: 'Course catalog' })}
             >
-              🔍
+              <Search className="h-4 w-4" style={{ color: UI.p }} aria-hidden="true" />
             </Link>
             <Link
               to="/student/requests"
-              className="h-9 w-9 rounded-full border flex items-center justify-center text-[16px] relative"
+              className="hidden h-9 w-9 rounded-full border sm:flex items-center justify-center"
               style={{ backgroundColor: UI.bg, borderColor: UI.bdr }}
-              aria-label="الإشعارات"
-              title="الإشعارات"
+              aria-label={tx({ ar: 'مركز الطلبات', en: 'Requests center' })}
+              title={tx({ ar: 'مركز الطلبات', en: 'Requests center' })}
             >
-              🔔<span className="absolute top-1 right-1 h-2 w-2 rounded-full bg-red-600 border-2 border-white" />
+              <Bell className="h-4 w-4" style={{ color: UI.p }} aria-hidden="true" />
             </Link>
             <div className="flex items-center gap-2 text-sm" style={{ color: UI.muted }}>
-              <div className="h-9 w-9 rounded-full flex items-center justify-center font-extrabold text-white" style={{ backgroundColor: UI.p }}>
+              <div className="hidden h-9 w-9 rounded-full sm:flex items-center justify-center font-extrabold text-white" style={{ backgroundColor: UI.p }}>
                 {avatarLetter}
               </div>
-              <span className="font-semibold">{displayName}</span>
+              <span className="hidden font-semibold lg:inline">{displayName}</span>
               <button
                 type="button"
                 onClick={handleSignOut}
-                className="px-3 py-1.5 rounded-md border text-sm font-semibold"
+                className="inline-flex h-9 items-center gap-1.5 rounded-full border px-3 text-sm font-semibold"
                 style={{ backgroundColor: UI.bg, borderColor: UI.bdr, color: '#1e2a3a' }}
+                aria-label={tx({ ar: 'تسجيل الخروج', en: 'Sign out' })}
+                title={tx({ ar: 'تسجيل الخروج', en: 'Sign out' })}
               >
-                خروج
+                <LogOut className="h-4 w-4 rtl:rotate-180" aria-hidden="true" />
+                <span className="hidden sm:inline">{tx({ ar: 'خروج', en: 'Sign out' })}</span>
               </button>
             </div>
           </div>
         </header>
 
         {/* Content */}
-        <main className="flex-1 px-8 py-7" style={{ backgroundColor: UI.bg }}>
+        <main className="flex-1 px-4 py-5 sm:px-8 sm:py-7" style={{ backgroundColor: UI.bg }}>
           {children}
         </main>
       </div>

@@ -88,9 +88,12 @@ export default function StudentGraduationPath() {
           totalWeightedGpa += points * cred
           totalCreditsGraded += cred
         }
-        // Count as completed if status says so OR if a final grade was recorded (grade_points or non-empty grade)
-        const hasFinalGrade = points != null || (e.grade && String(e.grade).trim() !== '' && e.grade !== '—')
-        const isCompleted = e.status === 'completed' || e.status === 'passed' || hasFinalGrade
+        // Earned only with a passing final grade: a recorded F (0 points) or a failed/withdrawn status earns nothing.
+        const letter = String(e.grade || '').trim().toUpperCase()
+        const failedLetter = letter.startsWith('F') || letter === 'W' || letter === 'WF'
+        const hasPassingGrade = points != null ? points > 0 : letter !== '' && letter !== '—' && !failedLetter
+        const notEarnedStatus = e.status === 'failed' || e.status === 'withdrawn' || e.status === 'dropped'
+        const isCompleted = !notEarnedStatus && (hasPassingGrade || ((e.status === 'completed' || e.status === 'passed') && !(points === 0 || failedLetter)))
         if (isCompleted) {
           completed += cred
           completedCodes.add(sub.code)
