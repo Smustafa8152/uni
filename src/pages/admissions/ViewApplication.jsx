@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useCallback } from 'react'
-import { useNavigate, useParams } from 'react-router-dom'
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { useLanguage } from '../../contexts/LanguageContext'
 import { supabase, SUPABASE_STORAGE_BUCKET } from '../../lib/supabase'
@@ -13,7 +13,8 @@ import { getNationalityLabel, normalizeNationalityCode } from '../../utils/natio
 import { getApplicantStatus } from '../../utils/applicationStatusDisplay'
 import { emailForActionStatus } from '../../utils/admissionMessageTemplates'
 import NationalitySelect from '../../components/common/NationalitySelect'
-import { ArrowLeft, CheckCircle, XCircle, Clock, Mail, Phone, MapPin, Calendar, GraduationCap, FileText, User, AlertCircle, BookOpen, Edit, Save, X, ChevronDown, ChevronUp, ArrowRight, Info, Sparkles, Shield, TrendingUp, ArrowDown, KeyRound, Eye, EyeOff, Loader2 } from 'lucide-react'
+import { ArrowLeft, CheckCircle, XCircle, Clock, Mail, Phone, MapPin, Calendar, GraduationCap, FileText, User, AlertCircle, BookOpen, Edit, Save, X, ChevronDown, ChevronUp, ArrowRight, Info, Sparkles, Shield, TrendingUp, ArrowDown, KeyRound, Eye, EyeOff, Loader2, Copy, MessageSquare, Video, History } from 'lucide-react'
+import { Button, toast } from '../../components/ui'
 import { invokeAdminPasswordReset } from '../../utils/invokeAdminPasswordReset'
 import ApplicationMessagesPanel from '../../components/admissions/ApplicationMessagesPanel'
 import InterviewExamInvitePanel from '../../components/admissions/InterviewExamInvitePanel'
@@ -717,6 +718,7 @@ function EditApplicationModal({
 export default function ViewApplication() {
   const navigate = useNavigate()
   const { id: idParam } = useParams()
+  const [searchParams, setSearchParams] = useSearchParams()
   const { i18n } = useTranslation()
   const { isRTL, language } = useLanguage()
   const isArabicLayout =
@@ -738,6 +740,7 @@ export default function ViewApplication() {
       const trimmed = note.trim()
       const known = {
         'Application created': 'admissions.viewApplication.timeline.notes.applicationCreated',
+        'Application submitted.': 'admissions.viewApplication.timeline.notes.applicationSubmitted',
       }
       const key = known[trimmed]
       if (key) return t(key)
@@ -2002,101 +2005,153 @@ export default function ViewApplication() {
   const reasonType = selectedStatus ? requiresReason(selectedStatus) : null
   const reasonsList = reasonType === 'request_info' ? requestReasons : reasonType === 'reject' ? rejectReasons : []
 
+  // ---- header and tabs ----
+  const latinName = [application?.first_name, application?.last_name].filter(Boolean).join(' ').trim()
+  const arabicName = [application?.first_name_ar, application?.middle_name_ar, application?.last_name_ar].filter(Boolean).join(' ').trim()
+  const applicantDisplayName = (isArabicLayout ? arabicName || latinName : latinName || arabicName) || t('admissions.viewApplication.title')
+  const applicationNumberText = application?.application_number || `#${application?.id}`
+  const copyApplicationNumber = () => {
+    const done = () => toast(t('admissions.viewApplication.page.numberCopied'))
+    try {
+      navigator.clipboard.writeText(String(applicationNumberText)).then(done, () => {})
+    } catch (_) {
+      /* clipboard is not available on this page */
+    }
+  }
+  const nameOf = (row) => (row ? getLocalizedName(row, isArabicLayout) || row.name_en || row.name_ar : '') || '—'
+  const heroFacts = [
+    [t('admissions.viewApplication.detail.major'), nameOf(application?.majors)],
+    [t('admissions.viewApplication.detail.college'), nameOf(application?.colleges)],
+    [t('admissions.viewApplication.detail.semester'), nameOf(application?.semesters)],
+    [t('admissions.viewApplication.detail.submitted'), formatViewDate(application?.created_at)],
+  ]
+  const heroButtonClass = '!h-auto min-h-10 !whitespace-normal py-2 leading-tight sm:!whitespace-nowrap'
+  const unverifiedDocuments = applicationDocuments.filter((doc) => !doc.verified_at).length
+  const pageTabs = [
+    { id: 'overview', icon: User, label: t('admissions.viewApplication.page.tabs.overview') },
+    {
+      id: 'documents',
+      icon: Shield,
+      label: t('admissions.viewApplication.page.tabs.documents'),
+      count: unverifiedDocuments || applicationDocuments.length,
+      attention: unverifiedDocuments > 0,
+    },
+    { id: 'messages', icon: MessageSquare, label: t('admissions.viewApplication.page.tabs.messages') },
+    { id: 'interview', icon: Video, label: t('admissions.viewApplication.page.tabs.interview') },
+    { id: 'activity', icon: History, label: t('admissions.viewApplication.page.tabs.activity'), count: activityLog.length },
+  ]
+  const requestedTab = searchParams.get('tab')
+  const activeTab = pageTabs.some((tab) => tab.id === requestedTab) ? requestedTab : 'overview'
+  const selectTab = (tabId) => {
+    const next = new URLSearchParams(searchParams)
+    if (tabId === 'overview') next.delete('tab')
+    else next.set('tab', tabId)
+    setSearchParams(next, { replace: true })
+  }
+
   return (
-    <div className="space-y-6" dir={isArabicLayout ? 'rtl' : 'ltr'}>
-      {/* Header: grid keeps actions at start edge (left in EN, right in AR) and status at end */}
-      <div
-        className="grid w-full min-w-0 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3"
-        dir={isArabicLayout ? 'rtl' : 'ltr'}
-      >
-        <div className="flex flex-wrap items-center gap-2 shrink-0">
-          <button
-            onClick={handleEditClick}
-            disabled={updating || loading}
-            className="flex items-center space-x-2 px-4 py-2 bg-gray-600 text-white rounded-lg font-medium hover:bg-gray-700 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            <Edit className="w-4 h-4" />
-            <span>{t('admissions.viewApplication.edit')}</span>
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              setError('')
-              // Precompute onboarding fee (10% of total) from finance configuration / major catalog
-              ;(async () => {
-                try {
-                  const res = await resolveOnboardingFeeAmount(application)
-                  setTuitionTotalAmount(res.total || 0)
-                  setTuitionAmount(res.onboarding ? String(Number(res.onboarding).toFixed(2)) : '')
-                } catch (_) {
-                  setTuitionTotalAmount(0)
-                  setTuitionAmount('')
-                }
-              })()
-              setShowOfferModal(true)
-            }}
-            disabled={updating || sendingOffer}
-            className="flex items-center space-x-2 px-4 py-2 bg-emerald-600 text-white rounded-lg font-medium hover:bg-emerald-700 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-            title={undefined}
-          >
-            <Mail className="w-4 h-4" />
-            <span>{t('admissions.viewApplication.sendOfferLetter', 'Send offer letter')}</span>
-          </button>
-          <button
-            type="button"
-            onClick={openPasswordReset}
-            disabled={updating || resettingPassword}
-            className="flex items-center space-x-2 px-4 py-2 bg-white text-gray-800 border border-gray-300 rounded-lg font-medium hover:bg-gray-50 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            <KeyRound className="w-4 h-4" />
-            <span>{t('admissions.viewApplication.resetPassword')}</span>
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              setModalStep(1)
-              setSelectedStatus('')
-              setSelectedReason('')
-              setStatusNotes('')
-              setStatusPassword('')
-              setShowAllStatuses(false)
-              setError('')
-              setShowStatusModal(true)
-            }}
-            disabled={updating}
-            className="flex items-center space-x-2 px-4 py-2 bg-primary-600 text-white rounded-lg font-medium hover:bg-primary-700 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            <Edit className="w-4 h-4" />
-            <span>{t('admissions.viewApplication.changeStatus')}</span>
-          </button>
-        </div>
-        <div className="flex min-w-0 items-center justify-center gap-3">
-          <button
-            type="button"
-            onClick={() => navigate('/admissions/applications')}
-            className="p-2 hover:bg-gray-100 rounded-lg transition-colors shrink-0"
-          >
-            {isArabicLayout ? <ArrowRight className="w-5 h-5 text-gray-600" /> : <ArrowLeft className="w-5 h-5 text-gray-600" />}
-          </button>
-          <div className={`min-w-0 flex-1 ${alignStart}`} dir={isArabicLayout ? 'rtl' : 'ltr'}>
-            <h1 className={`text-3xl font-bold text-gray-900 ${alignStart}`}>{t('admissions.viewApplication.title')}</h1>
-            <p className={`text-gray-600 mt-1 ${alignStart}`}>
-              {application?.first_name} {application?.last_name}
-            </p>
+    <div className="space-y-5" dir={isArabicLayout ? 'rtl' : 'ltr'}>
+      {/* Who this is, where the application stands, and what staff can do next */}
+      <div className="rounded-2xl border border-[#dde3ef] bg-white">
+        <div className="flex flex-wrap items-start justify-between gap-x-6 gap-y-4 p-5 sm:p-6">
+          <div className="min-w-0">
+            <button
+              type="button"
+              onClick={() => navigate('/admissions/applications')}
+              className="inline-flex items-center gap-1.5 text-sm font-semibold text-slate-500 hover:text-[#1a3a6b]"
+            >
+              {isArabicLayout ? <ArrowRight className="h-4 w-4" /> : <ArrowLeft className="h-4 w-4" />}
+              {t('admissions.viewApplication.page.back')}
+            </button>
+            <h1 className="mt-2 break-words text-2xl font-extrabold tracking-tight text-[#1a3a6b] sm:text-[28px]">{applicantDisplayName}</h1>
+            <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-slate-500">
+              <button
+                type="button"
+                onClick={copyApplicationNumber}
+                title={t('admissions.viewApplication.page.copyNumber')}
+                className="inline-flex items-center gap-1.5 rounded-lg bg-[#eef2f9] px-2.5 py-1 font-mono text-sm font-bold text-[#1a3a6b] hover:bg-[#dde3ef]"
+              >
+                <span dir="ltr">{applicationNumberText}</span>
+                <Copy className="h-3.5 w-3.5" aria-hidden="true" />
+              </button>
+              {application?.email ? (
+                <span dir="ltr" className="break-all">
+                  {application.email}
+                </span>
+              ) : null}
+            </div>
+            <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1.5">
+              <span
+                className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-sm font-bold ${getStatusColor(
+                  application?.status_code || application?.status
+                )}`}
+              >
+                {getStatusIcon(application?.status_code || application?.status)}
+                {getStatusDisplayName(application?.status_code || application?.status)}
+              </span>
+              <span className="text-xs text-slate-500">{applicantSeesLine(application?.status_code)}</span>
+            </div>
+          </div>
+
+          {/* Phones: two buttons per row, labels may wrap. Wider screens: one row. */}
+          <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto sm:flex-wrap sm:items-center">
+            <Button
+              icon={Edit}
+              className={heroButtonClass}
+              disabled={updating}
+              onClick={() => {
+                setModalStep(1)
+                setSelectedStatus('')
+                setSelectedReason('')
+                setStatusNotes('')
+                setStatusPassword('')
+                setShowAllStatuses(false)
+                setError('')
+                setShowStatusModal(true)
+              }}
+            >
+              {t('admissions.viewApplication.changeStatus')}
+            </Button>
+            <Button
+              variant="quiet"
+              icon={Mail}
+              className={heroButtonClass}
+              disabled={updating || sendingOffer}
+              onClick={() => {
+                setError('')
+                // Precompute onboarding fee (10% of total) from finance configuration / major catalog
+                ;(async () => {
+                  try {
+                    const res = await resolveOnboardingFeeAmount(application)
+                    setTuitionTotalAmount(res.total || 0)
+                    setTuitionAmount(res.onboarding ? String(Number(res.onboarding).toFixed(2)) : '')
+                  } catch (_) {
+                    setTuitionTotalAmount(0)
+                    setTuitionAmount('')
+                  }
+                })()
+                setShowOfferModal(true)
+              }}
+            >
+              {t('admissions.viewApplication.sendOfferLetter', 'Send offer letter')}
+            </Button>
+            <Button variant="quiet" icon={FileText} className={heroButtonClass} disabled={updating || loading} onClick={handleEditClick}>
+              {t('admissions.viewApplication.edit')}
+            </Button>
+            <Button variant="quiet" icon={KeyRound} className={heroButtonClass} disabled={updating || resettingPassword} onClick={openPasswordReset}>
+              {t('admissions.viewApplication.resetPassword')}
+            </Button>
           </div>
         </div>
-        <span
-          className={`inline-flex flex-col items-start gap-1 px-4 py-2 rounded-lg border font-medium shrink-0 max-w-full ${getStatusColor(
-            application?.status_code || application?.status
-          )}`}
-          dir={isArabicLayout ? 'rtl' : 'ltr'}
-        >
-          <span className="inline-flex items-center gap-2 min-w-0">
-            {getStatusIcon(application?.status_code || application?.status)}
-            <span className="truncate">{getStatusDisplayName(application?.status_code || application?.status)}</span>
-          </span>
-          <span className="text-xs font-normal opacity-80">{applicantSeesLine(application?.status_code)}</span>
-        </span>
+
+        <dl className="grid grid-cols-2 gap-px overflow-hidden rounded-b-2xl border-t border-[#dde3ef] bg-[#dde3ef] lg:grid-cols-4">
+          {heroFacts.map(([label, value]) => (
+            <div key={label} className="min-w-0 bg-white px-5 py-3">
+              <dt className="text-xs font-semibold text-slate-500">{label}</dt>
+              <dd className="mt-0.5 break-words text-sm font-bold text-slate-800">{value}</dd>
+            </div>
+          ))}
+        </dl>
       </div>
 
       {error && (
@@ -2793,31 +2848,70 @@ export default function ViewApplication() {
         </div>
       )}
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Main Content */}
-        <div className="lg:col-span-2 space-y-6">
+      {/* One part of the application at a time, instead of one very long page */}
+      <div
+        className="overflow-x-auto rounded-2xl border border-[#dde3ef] bg-white p-1.5"
+        role="tablist"
+        aria-label={t('admissions.viewApplication.title')}
+      >
+        <div className="flex min-w-max gap-1">
+          {pageTabs.map((tab) => {
+            const selected = activeTab === tab.id
+            const TabIcon = tab.icon
+            return (
+              <button
+                key={tab.id}
+                type="button"
+                role="tab"
+                aria-selected={selected}
+                onClick={(e) => {
+                  selectTab(tab.id)
+                  e.currentTarget.scrollIntoView({ inline: 'nearest', block: 'nearest' })
+                }}
+                className={`inline-flex items-center gap-2 rounded-xl px-3.5 py-2 text-sm font-bold transition-colors ${
+                  selected ? 'bg-[#1a3a6b] text-white' : 'text-slate-600 hover:bg-[#eef2f9] hover:text-[#1a3a6b]'
+                }`}
+              >
+                <TabIcon className="h-4 w-4" aria-hidden="true" />
+                {tab.label}
+                {tab.count ? (
+                  <span
+                    className={`rounded-full px-1.5 py-0.5 text-[11px] leading-none tabular-nums ${
+                      tab.attention ? 'bg-[#c8a84b] text-[#12284c]' : selected ? 'bg-white/20 text-white' : 'bg-[#eef2f9] text-[#1a3a6b]'
+                    }`}
+                  >
+                    {tab.count}
+                  </span>
+                ) : null}
+              </button>
+            )
+          })}
+        </div>
+      </div>
+
+      <div role="tabpanel" className={activeTab === 'overview' ? 'space-y-5' : 'hidden'}>
           {/* Personal Information */}
-          <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6">
+          <div className="rounded-2xl border border-[#dde3ef] bg-white p-5 sm:p-6">
             <div className={`flex items-center gap-2 mb-6 ${isArabicLayout ? 'justify-start' : ''}`}>
               {isArabicLayout ? (
                 <>
-                  <h2 className={`text-xl font-bold text-gray-900 ${alignStart}`}>
+                  <h2 className={`text-base font-extrabold text-[#1a3a6b] ${alignStart}`}>
                     {t('admissions.viewApplication.detail.personalInfo')}
                   </h2>
-                  <User className="w-5 h-5 text-gray-600 shrink-0" />
+                  <User className="w-5 h-5 text-[#c8a84b] shrink-0" />
                 </>
               ) : (
                 <>
-                  <User className="w-5 h-5 text-gray-600 shrink-0" />
-                  <h2 className={`text-xl font-bold text-gray-900 ${alignStart}`}>
+                  <User className="w-5 h-5 text-[#c8a84b] shrink-0" />
+                  <h2 className={`text-base font-extrabold text-[#1a3a6b] ${alignStart}`}>
                     {t('admissions.viewApplication.detail.personalInfo')}
                   </h2>
                 </>
               )}
             </div>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div className="grid grid-cols-1 gap-x-6 gap-y-4 sm:grid-cols-2 lg:grid-cols-3">
               <div>
-                <label className={`block text-sm font-medium text-gray-500 mb-1 ${alignStart}`}>
+                <label className={`block text-xs font-semibold text-slate-500 mb-1 ${alignStart}`}>
                   {t('admissions.viewApplication.detail.firstName')}
                 </label>
                 {isEditMode ? (
@@ -2832,7 +2926,7 @@ export default function ViewApplication() {
                 )}
               </div>
               <div>
-                <label className={`block text-sm font-medium text-gray-500 mb-1 ${alignStart}`}>
+                <label className={`block text-xs font-semibold text-slate-500 mb-1 ${alignStart}`}>
                   {t('admissions.viewApplication.detail.middleName')}
                 </label>
                 <p className={`text-gray-900 ${alignStart}`}>
@@ -2840,25 +2934,25 @@ export default function ViewApplication() {
                 </p>
               </div>
               <div>
-                <label className={`block text-sm font-medium text-gray-500 mb-1 ${alignStart}`}>
+                <label className={`block text-xs font-semibold text-slate-500 mb-1 ${alignStart}`}>
                   {t('admissions.viewApplication.detail.lastName')}
                 </label>
                 <p className={`text-gray-900 font-medium ${alignStart}`}>{application?.last_name}</p>
               </div>
               <div>
-                <label className={`block text-sm font-medium text-gray-500 mb-1 ${alignStart}`}>
+                <label className={`block text-xs font-semibold text-slate-500 mb-1 ${alignStart}`}>
                   {t('admissions.viewApplication.detail.dateOfBirth')}
                 </label>
                 <p className={`text-gray-900 ${alignStart}`}>{formatViewDate(application?.date_of_birth)}</p>
               </div>
               <div>
-                <label className={`block text-sm font-medium text-gray-500 mb-1 ${alignStart}`}>
+                <label className={`block text-xs font-semibold text-slate-500 mb-1 ${alignStart}`}>
                   {t('admissions.viewApplication.detail.gender')}
                 </label>
                 <p className={`text-gray-900 ${alignStart}`}>{formatGenderLabel(application?.gender)}</p>
               </div>
               <div>
-                <label className={`block text-sm font-medium text-gray-500 mb-1 ${alignStart}`}>
+                <label className={`block text-xs font-semibold text-slate-500 mb-1 ${alignStart}`}>
                   {t('admissions.viewApplication.detail.nationality')}
                 </label>
                 <p className={`text-gray-900 ${alignStart}`}>
@@ -2868,7 +2962,7 @@ export default function ViewApplication() {
                 </p>
               </div>
               <div>
-                <label className={`block text-sm font-medium text-gray-500 mb-1 ${alignStart}`}>
+                <label className={`block text-xs font-semibold text-slate-500 mb-1 ${alignStart}`}>
                   {t('admissions.viewApplication.detail.religion')}
                 </label>
                 <p className={`text-gray-900 ${alignStart}`}>
@@ -2876,7 +2970,7 @@ export default function ViewApplication() {
                 </p>
               </div>
               <div>
-                <label className={`block text-sm font-medium text-gray-500 mb-1 ${alignStart}`}>
+                <label className={`block text-xs font-semibold text-slate-500 mb-1 ${alignStart}`}>
                   {t('admissions.viewApplication.detail.placeOfBirth')}
                 </label>
                 <p className={`text-gray-900 ${alignStart}`}>
@@ -2885,7 +2979,7 @@ export default function ViewApplication() {
               </div>
               {(application?.first_name_ar || application?.last_name_ar) && (
                 <div className="md:col-span-2">
-                  <label className={`block text-sm font-medium text-gray-500 mb-1 ${alignStart}`}>
+                  <label className={`block text-xs font-semibold text-slate-500 mb-1 ${alignStart}`}>
                     {t('admissions.viewApplication.detail.nameArabic')}
                   </label>
                   <p className="text-gray-900" dir="rtl">
@@ -2897,27 +2991,27 @@ export default function ViewApplication() {
           </div>
 
           {/* Contact Information */}
-          <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6">
+          <div className="rounded-2xl border border-[#dde3ef] bg-white p-5 sm:p-6">
             <div className={`flex items-center gap-2 mb-6 ${isArabicLayout ? 'justify-start' : ''}`}>
               {isArabicLayout ? (
                 <>
-                  <h2 className={`text-xl font-bold text-gray-900 ${alignStart}`}>
+                  <h2 className={`text-base font-extrabold text-[#1a3a6b] ${alignStart}`}>
                     {t('admissions.viewApplication.detail.contactInfo')}
                   </h2>
-                  <Phone className="w-5 h-5 text-gray-600 shrink-0" />
+                  <Phone className="w-5 h-5 text-[#c8a84b] shrink-0" />
                 </>
               ) : (
                 <>
-                  <Phone className="w-5 h-5 text-gray-600 shrink-0" />
-                  <h2 className={`text-xl font-bold text-gray-900 ${alignStart}`}>
+                  <Phone className="w-5 h-5 text-[#c8a84b] shrink-0" />
+                  <h2 className={`text-base font-extrabold text-[#1a3a6b] ${alignStart}`}>
                     {t('admissions.viewApplication.detail.contactInfo')}
                   </h2>
                 </>
               )}
             </div>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div className="grid grid-cols-1 gap-x-6 gap-y-4 sm:grid-cols-2 lg:grid-cols-3">
               <div>
-                <label className={`block text-sm font-medium text-gray-500 mb-1 ${alignStart}`}>
+                <label className={`block text-xs font-semibold text-slate-500 mb-1 ${alignStart}`}>
                   {t('admissions.viewApplication.detail.email')}
                 </label>
                 <div
@@ -2931,7 +3025,7 @@ export default function ViewApplication() {
                 </div>
               </div>
               <div>
-                <label className={`block text-sm font-medium text-gray-500 mb-1 ${alignStart}`}>
+                <label className={`block text-xs font-semibold text-slate-500 mb-1 ${alignStart}`}>
                   {t('admissions.viewApplication.detail.phone')}
                 </label>
                 <div
@@ -2946,7 +3040,7 @@ export default function ViewApplication() {
               </div>
               {application?.street_address && (
                 <div className="md:col-span-2">
-                  <label className={`block text-sm font-medium text-gray-500 mb-1 ${alignStart}`}>
+                  <label className={`block text-xs font-semibold text-slate-500 mb-1 ${alignStart}`}>
                     {t('admissions.viewApplication.detail.address')}
                   </label>
                   <div className={`flex items-start gap-2 ${isArabicLayout ? 'flex-row-reverse' : ''}`}>
@@ -2964,16 +3058,499 @@ export default function ViewApplication() {
             </div>
           </div>
 
+          {/* Emergency Contact */}
+          {application?.emergency_contact_name && (
+            <div className="rounded-2xl border border-[#dde3ef] bg-white p-5 sm:p-6">
+              <div className={`flex items-center gap-2 mb-6 ${isArabicLayout ? 'justify-start' : ''}`}>
+                {isArabicLayout ? (
+                  <>
+                    <h2 className={`text-base font-extrabold text-[#1a3a6b] ${alignStart}`}>
+                      {t('admissions.viewApplication.detail.emergencyContact')}
+                    </h2>
+                    <AlertCircle className="w-5 h-5 text-[#c8a84b] shrink-0" />
+                  </>
+                ) : (
+                  <>
+                    <AlertCircle className="w-5 h-5 text-[#c8a84b] shrink-0" />
+                    <h2 className={`text-base font-extrabold text-[#1a3a6b] ${alignStart}`}>
+                      {t('admissions.viewApplication.detail.emergencyContact')}
+                    </h2>
+                  </>
+                )}
+              </div>
+              <div className="grid grid-cols-1 gap-x-6 gap-y-4 sm:grid-cols-2 lg:grid-cols-3">
+                <div>
+                  <label className={`block text-xs font-semibold text-slate-500 mb-1 ${alignStart}`}>
+                    {t('admissions.viewApplication.detail.contactName')}
+                  </label>
+                  <p className={`text-gray-900 ${alignStart}`}>{application.emergency_contact_name}</p>
+                </div>
+                <div>
+                  <label className={`block text-xs font-semibold text-slate-500 mb-1 ${alignStart}`}>
+                    {t('admissions.viewApplication.detail.relationship')}
+                  </label>
+                  <p className={`text-gray-900 ${alignStart}`}>
+                    {application.emergency_contact_relationship || t('admissions.viewApplication.detail.notAvailable')}
+                  </p>
+                </div>
+                <div>
+                  <label className={`block text-xs font-semibold text-slate-500 mb-1 ${alignStart}`}>
+                    {t('admissions.viewApplication.detail.phone')}
+                  </label>
+                  <p className={`text-gray-900 ${alignStart}`} dir="ltr">
+                    {application.emergency_contact_phone || t('admissions.viewApplication.detail.notAvailable')}
+                  </p>
+                </div>
+                <div>
+                  <label className={`block text-xs font-semibold text-slate-500 mb-1 ${alignStart}`}>
+                    {t('admissions.viewApplication.detail.email')}
+                  </label>
+                  <p className={`text-gray-900 break-all ${alignStart}`}>
+                    {application.emergency_contact_email || t('admissions.viewApplication.detail.notAvailable')}
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Academic Information */}
+          <div className="rounded-2xl border border-[#dde3ef] bg-white p-5 sm:p-6">
+            <div className={`flex items-center gap-2 mb-6 ${isArabicLayout ? 'justify-start' : ''}`}>
+              {isArabicLayout ? (
+                <>
+                  <h2 className={`text-base font-extrabold text-[#1a3a6b] ${alignStart}`}>
+                    {t('admissions.viewApplication.detail.academicInfo')}
+                  </h2>
+                  <GraduationCap className="w-5 h-5 text-[#c8a84b] shrink-0" />
+                </>
+              ) : (
+                <>
+                  <GraduationCap className="w-5 h-5 text-[#c8a84b] shrink-0" />
+                  <h2 className={`text-base font-extrabold text-[#1a3a6b] ${alignStart}`}>
+                    {t('admissions.viewApplication.detail.academicInfo')}
+                  </h2>
+                </>
+              )}
+            </div>
+            <div className="grid grid-cols-1 gap-x-6 gap-y-4 sm:grid-cols-2 lg:grid-cols-3">
+              <div>
+                <label className={`block text-xs font-semibold text-slate-500 mb-1 ${alignStart}`}>
+                  {t('admissions.viewApplication.detail.major')}
+                </label>
+                <p className={`text-gray-900 ${alignStart}`}>
+                  {application?.majors
+                    ? getLocalizedName(application.majors, isArabicLayout) || application.majors.name_en
+                    : '—'}
+                </p>
+              </div>
+              <div>
+                <label className={`block text-xs font-semibold text-slate-500 mb-1 ${alignStart}`}>
+                  {t('admissions.viewApplication.detail.semester')}
+                </label>
+                <p className={`text-gray-900 ${alignStart}`}>
+                  {application?.semesters
+                    ? getLocalizedName(application.semesters, isArabicLayout) || application.semesters.name_en
+                    : '—'}
+                </p>
+              </div>
+              <div>
+                <label className={`block text-xs font-semibold text-slate-500 mb-1 ${alignStart}`}>
+                  {t('admissions.viewApplication.detail.highSchool')}
+                </label>
+                <p className={`text-gray-900 ${alignStart}`}>
+                  {application?.high_school_name || t('admissions.viewApplication.detail.notAvailable')}
+                </p>
+              </div>
+              <div>
+                <label className={`block text-xs font-semibold text-slate-500 mb-1 ${alignStart}`}>
+                  {t('admissions.viewApplication.detail.graduationYear')}
+                </label>
+                <p className={`text-gray-900 ${alignStart}`}>
+                  {application?.graduation_year || t('admissions.viewApplication.detail.notAvailable')}
+                </p>
+              </div>
+              <div>
+                <label className={`block text-xs font-semibold text-slate-500 mb-1 ${alignStart}`}>
+                  {t('admissions.viewApplication.detail.gpa')}
+                </label>
+                <p className={`text-gray-900 ${alignStart}`}>
+                  {application?.gpa || t('admissions.viewApplication.detail.notAvailable')}
+                </p>
+              </div>
+              <div>
+                <label className={`block text-xs font-semibold text-slate-500 mb-1 ${alignStart}`}>
+                  {t('admissions.viewApplication.detail.certificateType')}
+                </label>
+                <p className={`text-gray-900 ${alignStart}`}>
+                  {application?.certificate_type || t('admissions.viewApplication.detail.notAvailable')}
+                </p>
+              </div>
+            </div>
+          </div>
+
+          {/* Application form details (simplified public form) */}
+          {(() => {
+            const rows = [
+              [t('applyForm.fields.secondChoice'), secondChoiceMajor ? getLocalizedName(secondChoiceMajor, isArabicLayout) || secondChoiceMajor.name_en : null],
+              [t('applyForm.fields.workload'), application?.study_type ? t(`applyForm.workload.${application.study_type}`, application.study_type) : null],
+              [t('applyForm.fields.matricNo'), application?.is_former_student ? application?.matric_no || '—' : null],
+              [
+                t('applyForm.fields.highestEducationLevel'),
+                application?.highest_education_level
+                  ? t(`applyForm.educationLevels.${application.highest_education_level}`, application.highest_education_level)
+                  : null,
+              ],
+              [t('applyForm.fields.specialization'), application?.specialization],
+              [
+                t('applyForm.fields.languageOfStudy'),
+                application?.language_of_study ? t(`applyForm.languages.${application.language_of_study}`, application.language_of_study) : null,
+              ],
+              [
+                t('applyForm.fields.languageCertificateName'),
+                application?.language_certificate_name
+                  ? `${t(`applyForm.languageCertificates.${application.language_certificate_name}`, application.language_certificate_name)}${
+                      application?.language_certificate_result ? ` — ${application.language_certificate_result}` : ''
+                    }`
+                  : null,
+              ],
+              [t('applyForm.fields.title'), application?.title ? t(`applyForm.titles.${application.title}`, application.title) : null],
+              [t('applyForm.fields.race'), application?.race],
+              [t('applyForm.fields.idType'), application?.id_type ? t(`applyForm.idTypes.${application.id_type}`, application.id_type) : null],
+              [t('applyForm.fields.idNumber'), application?.id_number],
+              [t('applyForm.fields.idIssueCountry'), application?.id_issue_country ? getNationalityLabel(application.id_issue_country, isArabicLayout) : null],
+              [t('applyForm.fields.idIssueDate'), application?.id_issue_date ? formatViewDate(application.id_issue_date) : null],
+              [t('applyForm.fields.idExpiryDate'), application?.id_expiry_date ? formatViewDate(application.id_expiry_date) : null],
+              [t('applyForm.fields.homePhone'), application?.home_phone],
+              [
+                t('applyForm.fields.referralSource'),
+                application?.referral_source ? t(`applyForm.referralSources.${application.referral_source}`, application.referral_source) : null,
+              ],
+            ].filter(([, value]) => value)
+
+            if (rows.length === 0) return null
+
+            return (
+              <div className="rounded-2xl border border-[#dde3ef] bg-white p-5 sm:p-6">
+                <div className={`flex items-center gap-2 mb-6 ${isArabicLayout ? 'justify-start flex-row-reverse' : ''}`}>
+                  <FileText className="w-5 h-5 text-[#c8a84b] shrink-0" />
+                  <h2 className={`text-base font-extrabold text-[#1a3a6b] ${alignStart}`}>
+                    {t('admissions.viewApplication.detail.applicationDetails', 'Application form details')}
+                  </h2>
+                </div>
+                <div className="grid grid-cols-1 gap-x-6 gap-y-4 sm:grid-cols-2 lg:grid-cols-3">
+                  {rows.map(([label, value]) => (
+                    <div key={label}>
+                      <label className={`block text-xs font-semibold text-slate-500 mb-1 ${alignStart}`}>{label}</label>
+                      <p className={`text-gray-900 ${alignStart}`}>{value}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )
+          })()}
+
+          {/* Test Scores */}
+          {(application?.toefl_score || application?.ielts_score || application?.sat_score || application?.gmat_score || application?.gre_score) && (
+            <div className="rounded-2xl border border-[#dde3ef] bg-white p-5 sm:p-6">
+              <div className={`flex items-center gap-2 mb-6 ${isArabicLayout ? 'justify-start' : ''}`}>
+                {isArabicLayout ? (
+                  <>
+                    <h2 className={`text-base font-extrabold text-[#1a3a6b] ${alignStart}`}>
+                      {t('admissions.viewApplication.detail.testScores')}
+                    </h2>
+                    <FileText className="w-5 h-5 text-[#c8a84b] shrink-0" />
+                  </>
+                ) : (
+                  <>
+                    <FileText className="w-5 h-5 text-[#c8a84b] shrink-0" />
+                    <h2 className={`text-base font-extrabold text-[#1a3a6b] ${alignStart}`}>
+                      {t('admissions.viewApplication.detail.testScores')}
+                    </h2>
+                  </>
+                )}
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                {application.toefl_score && (
+                  <div>
+                    <label className={`block text-xs font-semibold text-slate-500 mb-1 ${alignStart}`}>
+                      {t('admissions.viewApplication.detail.toefl')}
+                    </label>
+                    <p className={`text-gray-900 ${alignStart}`}>{application.toefl_score}/120</p>
+                  </div>
+                )}
+                {application.ielts_score && (
+                  <div>
+                    <label className={`block text-xs font-semibold text-slate-500 mb-1 ${alignStart}`}>
+                      {t('admissions.viewApplication.detail.ielts')}
+                    </label>
+                    <p className={`text-gray-900 ${alignStart}`}>{application.ielts_score}/9.0</p>
+                  </div>
+                )}
+                {application.sat_score && (
+                  <div>
+                    <label className={`block text-xs font-semibold text-slate-500 mb-1 ${alignStart}`}>
+                      {t('admissions.viewApplication.detail.sat')}
+                    </label>
+                    <p className={`text-gray-900 ${alignStart}`}>{application.sat_score}/1600</p>
+                  </div>
+                )}
+                {application.gmat_score && (
+                  <div>
+                    <label className={`block text-xs font-semibold text-slate-500 mb-1 ${alignStart}`}>
+                      {t('admissions.viewApplication.detail.gmat')}
+                    </label>
+                    <p className={`text-gray-900 ${alignStart}`}>{application.gmat_score}/800</p>
+                  </div>
+                )}
+                {application.gre_score && (
+                  <div>
+                    <label className={`block text-xs font-semibold text-slate-500 mb-1 ${alignStart}`}>
+                      {t('admissions.viewApplication.detail.gre')}
+                    </label>
+                    <p className={`text-gray-900 ${alignStart}`}>{application.gre_score}/340</p>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Transfer Information */}
+          {application?.is_transfer_student && (
+            <div className="rounded-2xl border border-[#dde3ef] bg-white p-5 sm:p-6">
+              <div className={`flex items-center gap-2 mb-6 ${isArabicLayout ? 'justify-start' : ''}`}>
+                {isArabicLayout ? (
+                  <>
+                    <h2 className={`text-base font-extrabold text-[#1a3a6b] ${alignStart}`}>
+                      {t('admissions.viewApplication.detail.transferInfo')}
+                    </h2>
+                    <BookOpen className="w-5 h-5 text-[#c8a84b] shrink-0" />
+                  </>
+                ) : (
+                  <>
+                    <BookOpen className="w-5 h-5 text-[#c8a84b] shrink-0" />
+                    <h2 className={`text-base font-extrabold text-[#1a3a6b] ${alignStart}`}>
+                      {t('admissions.viewApplication.detail.transferInfo')}
+                    </h2>
+                  </>
+                )}
+              </div>
+              <div className="grid grid-cols-1 gap-x-6 gap-y-4 sm:grid-cols-2 lg:grid-cols-3">
+                <div>
+                  <label className={`block text-xs font-semibold text-slate-500 mb-1 ${alignStart}`}>
+                    {t('admissions.viewApplication.detail.previousUniversity')}
+                  </label>
+                  <p className={`text-gray-900 ${alignStart}`}>
+                    {application.previous_university || t('admissions.viewApplication.detail.notAvailable')}
+                  </p>
+                </div>
+                <div>
+                  <label className={`block text-xs font-semibold text-slate-500 mb-1 ${alignStart}`}>
+                    {t('admissions.viewApplication.detail.previousDegree')}
+                  </label>
+                  <p className={`text-gray-900 ${alignStart}`}>
+                    {application.previous_degree || t('admissions.viewApplication.detail.notAvailable')}
+                  </p>
+                </div>
+                <div>
+                  <label className={`block text-xs font-semibold text-slate-500 mb-1 ${alignStart}`}>
+                    {t('admissions.viewApplication.detail.transferCredits')}
+                  </label>
+                  <p className={`text-gray-900 ${alignStart}`}>
+                    {application.transfer_credits || t('admissions.viewApplication.detail.notAvailable')}
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Additional Information */}
+          {(application?.personal_statement ||
+            application?.scholarship_request ||
+            application?.scholarship_type ||
+            application?.scholarship_details) && (
+            <div className="rounded-2xl border border-[#dde3ef] bg-white p-5 sm:p-6">
+              <div className={`flex items-center gap-2 mb-6 ${isArabicLayout ? 'justify-start' : ''}`}>
+                {isArabicLayout ? (
+                  <>
+                    <h2 className={`text-base font-extrabold text-[#1a3a6b] ${alignStart}`}>
+                      {t('admissions.viewApplication.detail.additionalInfo')}
+                    </h2>
+                    <FileText className="w-5 h-5 text-[#c8a84b] shrink-0" />
+                  </>
+                ) : (
+                  <>
+                    <FileText className="w-5 h-5 text-[#c8a84b] shrink-0" />
+                    <h2 className={`text-base font-extrabold text-[#1a3a6b] ${alignStart}`}>
+                      {t('admissions.viewApplication.detail.additionalInfo')}
+                    </h2>
+                  </>
+                )}
+              </div>
+              {application.personal_statement && (
+                <div className="mb-6">
+                  <label className={`block text-sm font-medium text-gray-500 mb-2 ${alignStart}`}>
+                    {t('admissions.viewApplication.detail.personalStatement')}
+                  </label>
+                  <p className={`text-gray-900 whitespace-pre-wrap ${alignStart}`}>{application.personal_statement}</p>
+                </div>
+              )}
+              {application.scholarship_request && (
+                <div className="space-y-4">
+                  <div>
+                    <h3 className={`text-sm font-bold text-gray-800 mb-2 ${alignStart}`}>
+                      {t('admissions.viewApplication.detail.scholarshipSection')}
+                    </h3>
+                    <label className={`block text-xs font-semibold text-slate-500 mb-1 ${alignStart}`}>
+                      {t('admissions.viewApplication.detail.scholarshipRequest')}
+                    </label>
+                    <p className={`text-gray-900 ${alignStart}`}>
+                      {t('admissions.viewApplication.detail.scholarshipYes')}{' '}
+                      {application.scholarship_percentage != null &&
+                        application.scholarship_percentage !== '' &&
+                        `(${application.scholarship_percentage}%)`}
+                    </p>
+                  </div>
+                  {application.scholarship_type && (
+                    <div>
+                      <label className={`block text-xs font-semibold text-slate-500 mb-1 ${alignStart}`}>
+                        {t('admissions.viewApplication.detail.scholarshipType')}
+                      </label>
+                      <p className={`text-gray-900 ${alignStart}`}>{application.scholarship_type}</p>
+                    </div>
+                  )}
+                  {application.scholarship_details && (
+                    <div>
+                      <label className={`block text-xs font-semibold text-slate-500 mb-1 ${alignStart}`}>
+                        {t('admissions.viewApplication.detail.scholarshipDetails')}
+                      </label>
+                      <p className={`text-gray-900 whitespace-pre-wrap ${alignStart}`}>{application.scholarship_details}</p>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+          {/* Review Notes */}
+          {application?.review_notes && (
+            <div className="rounded-2xl border border-[#dde3ef] bg-white p-5 sm:p-6">
+              <h3 className={`text-base font-extrabold text-[#1a3a6b] mb-4 ${alignStart}`}>
+                {t('admissions.viewApplication.detail.reviewNotes')}
+              </h3>
+              <p className={`text-sm text-gray-700 whitespace-pre-wrap ${alignStart}`}>{application.review_notes}</p>
+            </div>
+          )}
+          {/* Application Summary */}
+          <div className="rounded-2xl border border-[#dde3ef] bg-white p-5 sm:p-6">
+            <h3 className={`text-base font-extrabold text-[#1a3a6b] mb-4 ${alignStart}`}>
+              {t('admissions.viewApplication.detail.applicationSummary')}
+            </h3>
+            <div className="grid grid-cols-2 gap-x-6 gap-y-4 md:grid-cols-3 lg:grid-cols-4">
+              <div>
+                <label className={`block text-xs font-semibold text-slate-500 mb-1 ${alignStart}`}>
+                  {t('admissions.viewApplication.detail.applicationId')}
+                </label>
+                <p className={`text-sm font-medium text-gray-900 ${alignStart}`}>
+                  <span dir="ltr" className="inline-block">
+                    #{application?.id}
+                  </span>
+                </p>
+              </div>
+              <div>
+                <label className={`block text-xs font-semibold text-slate-500 mb-1 ${alignStart}`}>
+                  {t('admissions.viewApplication.detail.statusCode')}
+                </label>
+                <p className={`text-sm font-medium text-gray-900 ${alignStart}`}>
+                  <span dir="ltr" className="inline-block">
+                    {application?.status_code || application?.status || t('admissions.viewApplication.detail.notAvailable')}
+                  </span>
+                </p>
+              </div>
+              {application?.status_reason_code && (
+                <div>
+                  <label className={`block text-xs font-semibold text-slate-500 mb-1 ${alignStart}`}>
+                    {t('admissions.viewApplication.detail.reasonCode')}
+                  </label>
+                  <p className={`text-sm text-gray-900 ${alignStart}`}>
+                    <span dir="ltr" className="inline-block">
+                      {application.status_reason_code}
+                    </span>
+                  </p>
+                </div>
+              )}
+              {application?.financial_milestone_code && (
+                <div>
+                  <label className={`block text-xs font-semibold text-slate-500 mb-1 ${alignStart}`}>
+                    {t('admissions.viewApplication.detail.financialMilestone')}
+                  </label>
+                  <p className={`text-sm text-gray-900 ${alignStart}`}>
+                    <span dir="ltr" className="inline-block">
+                      {application.financial_milestone_code}
+                    </span>
+                  </p>
+                </div>
+              )}
+              <div>
+                <label className={`block text-xs font-semibold text-slate-500 mb-1 ${alignStart}`}>
+                  {t('admissions.viewApplication.detail.submitted')}
+                </label>
+                <p className={`text-sm text-gray-900 ${alignStart}`}>{formatViewDate(application?.created_at)}</p>
+              </div>
+              <div>
+                <label className={`block text-xs font-semibold text-slate-500 mb-1 ${alignStart}`}>
+                  {t('admissions.viewApplication.detail.college')}
+                </label>
+                <p className={`text-sm text-gray-900 ${alignStart}`}>
+                  {application?.colleges
+                    ? getLocalizedName(application.colleges, isArabicLayout) || application.colleges.name_en
+                    : '—'}
+                </p>
+              </div>
+              {application?.status_changed_at && (
+                <div>
+                  <label className={`block text-xs font-semibold text-slate-500 mb-1 ${alignStart}`}>
+                    {t('admissions.viewApplication.detail.lastStatusChange')}
+                  </label>
+                  <p className={`text-sm text-gray-900 ${alignStart}`}>
+                    {formatViewDate(application.status_changed_at)}
+                  </p>
+                </div>
+              )}
+              {application?.reviewed_at && (
+                <>
+                  <div>
+                    <label className={`block text-xs font-semibold text-slate-500 mb-1 ${alignStart}`}>
+                      {t('admissions.viewApplication.detail.reviewed')}
+                    </label>
+                    <p className={`text-sm text-gray-900 ${alignStart}`}>{formatViewDate(application.reviewed_at)}</p>
+                  </div>
+                  <div>
+                    <label className={`block text-xs font-semibold text-slate-500 mb-1 ${alignStart}`}>
+                      {t('admissions.viewApplication.detail.reviewedBy')}
+                    </label>
+                    <p className={`text-sm text-gray-900 break-all ${alignStart}`}>
+                      <span dir="ltr" className="inline-block">
+                        {application.reviewed_by_user?.email || t('admissions.viewApplication.detail.notAvailable')}
+                      </span>
+                    </p>
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
+
+      </div>
+
+      <div role="tabpanel" className={activeTab === 'documents' ? 'space-y-5' : 'hidden'}>
           {/* Documents (uploads + verification) */}
-          <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6">
-            <div className={`flex items-center justify-between gap-3 mb-6 ${isArabicLayout ? 'flex-row-reverse' : ''}`}>
-              <div className={`flex items-center gap-2 ${isArabicLayout ? 'flex-row-reverse' : ''}`}>
-                <Shield className="w-5 h-5 text-gray-600 shrink-0" />
-                <h2 className={`text-xl font-bold text-gray-900 ${alignStart}`}>
+          <div className="rounded-2xl border border-[#dde3ef] bg-white p-5 sm:p-6">
+            <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
+              <div className="flex items-center gap-2">
+                <Shield className="w-5 h-5 text-[#c8a84b] shrink-0" />
+                <h2 className={`text-base font-extrabold text-[#1a3a6b] ${alignStart}`}>
                   {t('admissions.viewApplication.detail.documents', 'Documents')}
                 </h2>
               </div>
-              <div className={`flex items-center gap-2 ${isArabicLayout ? 'flex-row-reverse' : ''}`}>
+              <div className="flex flex-wrap items-center gap-2">
                 {paymentsEnabled && (
                 <button
                   type="button"
@@ -3015,9 +3592,9 @@ export default function ViewApplication() {
                       const documentName = String(doc.document_label || '').trim()
                       const title = documentName || typeLabel
                       return (
-                        <li key={doc.id} className={`py-4 flex items-start justify-between gap-4 ${isArabicLayout ? 'flex-row-reverse' : ''}`}>
+                        <li key={doc.id} className="flex flex-col gap-3 py-4 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
                           <div className="min-w-0">
-                            <div className={`flex items-center gap-2 ${isArabicLayout ? 'flex-row-reverse' : ''}`}>
+                            <div className="flex flex-wrap items-center gap-2">
                               <span className="font-semibold text-gray-900 text-sm">
                                 {title}
                               </span>
@@ -3040,7 +3617,7 @@ export default function ViewApplication() {
                               {doc.uploaded_at ? new Date(doc.uploaded_at).toLocaleString(isArabicLayout ? 'ar' : undefined) : ''}
                             </div>
                           </div>
-                          <div className={`flex items-center gap-2 shrink-0 ${isArabicLayout ? 'flex-row-reverse' : ''}`}>
+                          <div className="flex shrink-0 items-center gap-2">
                             {url && (
                               <a
                                 href={url}
@@ -3167,6 +3744,9 @@ export default function ViewApplication() {
             </div>
           )}
 
+      </div>
+
+      <div role="tabpanel" className={activeTab === 'messages' ? 'space-y-5' : 'hidden'}>
           <ApplicationMessagesPanel
             application={application}
             mode="staff"
@@ -3176,6 +3756,9 @@ export default function ViewApplication() {
             iconRow={isArabicLayout ? 'flex-row-reverse' : 'flex-row'}
           />
 
+      </div>
+
+      <div role="tabpanel" className={activeTab === 'interview' ? 'space-y-5' : 'hidden'}>
           <InterviewExamInvitePanel
             application={application}
             applicationId={applicationId}
@@ -3187,499 +3770,15 @@ export default function ViewApplication() {
             iconRow={isArabicLayout ? 'flex-row-reverse' : 'flex-row'}
           />
 
-          {/* Emergency Contact */}
-          {application?.emergency_contact_name && (
-            <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6">
-              <div className={`flex items-center gap-2 mb-6 ${isArabicLayout ? 'justify-start' : ''}`}>
-                {isArabicLayout ? (
-                  <>
-                    <h2 className={`text-xl font-bold text-gray-900 ${alignStart}`}>
-                      {t('admissions.viewApplication.detail.emergencyContact')}
-                    </h2>
-                    <AlertCircle className="w-5 h-5 text-gray-600 shrink-0" />
-                  </>
-                ) : (
-                  <>
-                    <AlertCircle className="w-5 h-5 text-gray-600 shrink-0" />
-                    <h2 className={`text-xl font-bold text-gray-900 ${alignStart}`}>
-                      {t('admissions.viewApplication.detail.emergencyContact')}
-                    </h2>
-                  </>
-                )}
-              </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div>
-                  <label className={`block text-sm font-medium text-gray-500 mb-1 ${alignStart}`}>
-                    {t('admissions.viewApplication.detail.contactName')}
-                  </label>
-                  <p className={`text-gray-900 ${alignStart}`}>{application.emergency_contact_name}</p>
-                </div>
-                <div>
-                  <label className={`block text-sm font-medium text-gray-500 mb-1 ${alignStart}`}>
-                    {t('admissions.viewApplication.detail.relationship')}
-                  </label>
-                  <p className={`text-gray-900 ${alignStart}`}>
-                    {application.emergency_contact_relationship || t('admissions.viewApplication.detail.notAvailable')}
-                  </p>
-                </div>
-                <div>
-                  <label className={`block text-sm font-medium text-gray-500 mb-1 ${alignStart}`}>
-                    {t('admissions.viewApplication.detail.phone')}
-                  </label>
-                  <p className={`text-gray-900 ${alignStart}`} dir="ltr">
-                    {application.emergency_contact_phone || t('admissions.viewApplication.detail.notAvailable')}
-                  </p>
-                </div>
-                <div>
-                  <label className={`block text-sm font-medium text-gray-500 mb-1 ${alignStart}`}>
-                    {t('admissions.viewApplication.detail.email')}
-                  </label>
-                  <p className={`text-gray-900 break-all ${alignStart}`}>
-                    {application.emergency_contact_email || t('admissions.viewApplication.detail.notAvailable')}
-                  </p>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* Academic Information */}
-          <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6">
-            <div className={`flex items-center gap-2 mb-6 ${isArabicLayout ? 'justify-start' : ''}`}>
-              {isArabicLayout ? (
-                <>
-                  <h2 className={`text-xl font-bold text-gray-900 ${alignStart}`}>
-                    {t('admissions.viewApplication.detail.academicInfo')}
-                  </h2>
-                  <GraduationCap className="w-5 h-5 text-gray-600 shrink-0" />
-                </>
-              ) : (
-                <>
-                  <GraduationCap className="w-5 h-5 text-gray-600 shrink-0" />
-                  <h2 className={`text-xl font-bold text-gray-900 ${alignStart}`}>
-                    {t('admissions.viewApplication.detail.academicInfo')}
-                  </h2>
-                </>
-              )}
-            </div>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <div>
-                <label className={`block text-sm font-medium text-gray-500 mb-1 ${alignStart}`}>
-                  {t('admissions.viewApplication.detail.major')}
-                </label>
-                <p className={`text-gray-900 ${alignStart}`}>
-                  {application?.majors
-                    ? getLocalizedName(application.majors, isArabicLayout) || application.majors.name_en
-                    : '—'}
-                </p>
-              </div>
-              <div>
-                <label className={`block text-sm font-medium text-gray-500 mb-1 ${alignStart}`}>
-                  {t('admissions.viewApplication.detail.semester')}
-                </label>
-                <p className={`text-gray-900 ${alignStart}`}>
-                  {application?.semesters
-                    ? getLocalizedName(application.semesters, isArabicLayout) || application.semesters.name_en
-                    : '—'}
-                </p>
-              </div>
-              <div>
-                <label className={`block text-sm font-medium text-gray-500 mb-1 ${alignStart}`}>
-                  {t('admissions.viewApplication.detail.highSchool')}
-                </label>
-                <p className={`text-gray-900 ${alignStart}`}>
-                  {application?.high_school_name || t('admissions.viewApplication.detail.notAvailable')}
-                </p>
-              </div>
-              <div>
-                <label className={`block text-sm font-medium text-gray-500 mb-1 ${alignStart}`}>
-                  {t('admissions.viewApplication.detail.graduationYear')}
-                </label>
-                <p className={`text-gray-900 ${alignStart}`}>
-                  {application?.graduation_year || t('admissions.viewApplication.detail.notAvailable')}
-                </p>
-              </div>
-              <div>
-                <label className={`block text-sm font-medium text-gray-500 mb-1 ${alignStart}`}>
-                  {t('admissions.viewApplication.detail.gpa')}
-                </label>
-                <p className={`text-gray-900 ${alignStart}`}>
-                  {application?.gpa || t('admissions.viewApplication.detail.notAvailable')}
-                </p>
-              </div>
-              <div>
-                <label className={`block text-sm font-medium text-gray-500 mb-1 ${alignStart}`}>
-                  {t('admissions.viewApplication.detail.certificateType')}
-                </label>
-                <p className={`text-gray-900 ${alignStart}`}>
-                  {application?.certificate_type || t('admissions.viewApplication.detail.notAvailable')}
-                </p>
-              </div>
-            </div>
-          </div>
-
-          {/* Application form details (simplified public form) */}
-          {(() => {
-            const rows = [
-              [t('applyForm.fields.secondChoice'), secondChoiceMajor ? getLocalizedName(secondChoiceMajor, isArabicLayout) || secondChoiceMajor.name_en : null],
-              [t('applyForm.fields.workload'), application?.study_type ? t(`applyForm.workload.${application.study_type}`, application.study_type) : null],
-              [t('applyForm.fields.matricNo'), application?.is_former_student ? application?.matric_no || '—' : null],
-              [
-                t('applyForm.fields.highestEducationLevel'),
-                application?.highest_education_level
-                  ? t(`applyForm.educationLevels.${application.highest_education_level}`, application.highest_education_level)
-                  : null,
-              ],
-              [t('applyForm.fields.specialization'), application?.specialization],
-              [
-                t('applyForm.fields.languageOfStudy'),
-                application?.language_of_study ? t(`applyForm.languages.${application.language_of_study}`, application.language_of_study) : null,
-              ],
-              [
-                t('applyForm.fields.languageCertificateName'),
-                application?.language_certificate_name
-                  ? `${t(`applyForm.languageCertificates.${application.language_certificate_name}`, application.language_certificate_name)}${
-                      application?.language_certificate_result ? ` — ${application.language_certificate_result}` : ''
-                    }`
-                  : null,
-              ],
-              [t('applyForm.fields.title'), application?.title ? t(`applyForm.titles.${application.title}`, application.title) : null],
-              [t('applyForm.fields.race'), application?.race],
-              [t('applyForm.fields.idType'), application?.id_type ? t(`applyForm.idTypes.${application.id_type}`, application.id_type) : null],
-              [t('applyForm.fields.idNumber'), application?.id_number],
-              [t('applyForm.fields.idIssueCountry'), application?.id_issue_country ? getNationalityLabel(application.id_issue_country, isArabicLayout) : null],
-              [t('applyForm.fields.idIssueDate'), application?.id_issue_date ? formatViewDate(application.id_issue_date) : null],
-              [t('applyForm.fields.idExpiryDate'), application?.id_expiry_date ? formatViewDate(application.id_expiry_date) : null],
-              [t('applyForm.fields.homePhone'), application?.home_phone],
-              [
-                t('applyForm.fields.referralSource'),
-                application?.referral_source ? t(`applyForm.referralSources.${application.referral_source}`, application.referral_source) : null,
-              ],
-            ].filter(([, value]) => value)
-
-            if (rows.length === 0) return null
-
-            return (
-              <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6">
-                <div className={`flex items-center gap-2 mb-6 ${isArabicLayout ? 'justify-start flex-row-reverse' : ''}`}>
-                  <FileText className="w-5 h-5 text-gray-600 shrink-0" />
-                  <h2 className={`text-xl font-bold text-gray-900 ${alignStart}`}>
-                    {t('admissions.viewApplication.detail.applicationDetails', 'Application form details')}
-                  </h2>
-                </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  {rows.map(([label, value]) => (
-                    <div key={label}>
-                      <label className={`block text-sm font-medium text-gray-500 mb-1 ${alignStart}`}>{label}</label>
-                      <p className={`text-gray-900 ${alignStart}`}>{value}</p>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )
-          })()}
-
-          {/* Test Scores */}
-          {(application?.toefl_score || application?.ielts_score || application?.sat_score || application?.gmat_score || application?.gre_score) && (
-            <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6">
-              <div className={`flex items-center gap-2 mb-6 ${isArabicLayout ? 'justify-start' : ''}`}>
-                {isArabicLayout ? (
-                  <>
-                    <h2 className={`text-xl font-bold text-gray-900 ${alignStart}`}>
-                      {t('admissions.viewApplication.detail.testScores')}
-                    </h2>
-                    <FileText className="w-5 h-5 text-gray-600 shrink-0" />
-                  </>
-                ) : (
-                  <>
-                    <FileText className="w-5 h-5 text-gray-600 shrink-0" />
-                    <h2 className={`text-xl font-bold text-gray-900 ${alignStart}`}>
-                      {t('admissions.viewApplication.detail.testScores')}
-                    </h2>
-                  </>
-                )}
-              </div>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                {application.toefl_score && (
-                  <div>
-                    <label className={`block text-sm font-medium text-gray-500 mb-1 ${alignStart}`}>
-                      {t('admissions.viewApplication.detail.toefl')}
-                    </label>
-                    <p className={`text-gray-900 ${alignStart}`}>{application.toefl_score}/120</p>
-                  </div>
-                )}
-                {application.ielts_score && (
-                  <div>
-                    <label className={`block text-sm font-medium text-gray-500 mb-1 ${alignStart}`}>
-                      {t('admissions.viewApplication.detail.ielts')}
-                    </label>
-                    <p className={`text-gray-900 ${alignStart}`}>{application.ielts_score}/9.0</p>
-                  </div>
-                )}
-                {application.sat_score && (
-                  <div>
-                    <label className={`block text-sm font-medium text-gray-500 mb-1 ${alignStart}`}>
-                      {t('admissions.viewApplication.detail.sat')}
-                    </label>
-                    <p className={`text-gray-900 ${alignStart}`}>{application.sat_score}/1600</p>
-                  </div>
-                )}
-                {application.gmat_score && (
-                  <div>
-                    <label className={`block text-sm font-medium text-gray-500 mb-1 ${alignStart}`}>
-                      {t('admissions.viewApplication.detail.gmat')}
-                    </label>
-                    <p className={`text-gray-900 ${alignStart}`}>{application.gmat_score}/800</p>
-                  </div>
-                )}
-                {application.gre_score && (
-                  <div>
-                    <label className={`block text-sm font-medium text-gray-500 mb-1 ${alignStart}`}>
-                      {t('admissions.viewApplication.detail.gre')}
-                    </label>
-                    <p className={`text-gray-900 ${alignStart}`}>{application.gre_score}/340</p>
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
-
-          {/* Transfer Information */}
-          {application?.is_transfer_student && (
-            <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6">
-              <div className={`flex items-center gap-2 mb-6 ${isArabicLayout ? 'justify-start' : ''}`}>
-                {isArabicLayout ? (
-                  <>
-                    <h2 className={`text-xl font-bold text-gray-900 ${alignStart}`}>
-                      {t('admissions.viewApplication.detail.transferInfo')}
-                    </h2>
-                    <BookOpen className="w-5 h-5 text-gray-600 shrink-0" />
-                  </>
-                ) : (
-                  <>
-                    <BookOpen className="w-5 h-5 text-gray-600 shrink-0" />
-                    <h2 className={`text-xl font-bold text-gray-900 ${alignStart}`}>
-                      {t('admissions.viewApplication.detail.transferInfo')}
-                    </h2>
-                  </>
-                )}
-              </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div>
-                  <label className={`block text-sm font-medium text-gray-500 mb-1 ${alignStart}`}>
-                    {t('admissions.viewApplication.detail.previousUniversity')}
-                  </label>
-                  <p className={`text-gray-900 ${alignStart}`}>
-                    {application.previous_university || t('admissions.viewApplication.detail.notAvailable')}
-                  </p>
-                </div>
-                <div>
-                  <label className={`block text-sm font-medium text-gray-500 mb-1 ${alignStart}`}>
-                    {t('admissions.viewApplication.detail.previousDegree')}
-                  </label>
-                  <p className={`text-gray-900 ${alignStart}`}>
-                    {application.previous_degree || t('admissions.viewApplication.detail.notAvailable')}
-                  </p>
-                </div>
-                <div>
-                  <label className={`block text-sm font-medium text-gray-500 mb-1 ${alignStart}`}>
-                    {t('admissions.viewApplication.detail.transferCredits')}
-                  </label>
-                  <p className={`text-gray-900 ${alignStart}`}>
-                    {application.transfer_credits || t('admissions.viewApplication.detail.notAvailable')}
-                  </p>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* Additional Information */}
-          {(application?.personal_statement ||
-            application?.scholarship_request ||
-            application?.scholarship_type ||
-            application?.scholarship_details) && (
-            <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6">
-              <div className={`flex items-center gap-2 mb-6 ${isArabicLayout ? 'justify-start' : ''}`}>
-                {isArabicLayout ? (
-                  <>
-                    <h2 className={`text-xl font-bold text-gray-900 ${alignStart}`}>
-                      {t('admissions.viewApplication.detail.additionalInfo')}
-                    </h2>
-                    <FileText className="w-5 h-5 text-gray-600 shrink-0" />
-                  </>
-                ) : (
-                  <>
-                    <FileText className="w-5 h-5 text-gray-600 shrink-0" />
-                    <h2 className={`text-xl font-bold text-gray-900 ${alignStart}`}>
-                      {t('admissions.viewApplication.detail.additionalInfo')}
-                    </h2>
-                  </>
-                )}
-              </div>
-              {application.personal_statement && (
-                <div className="mb-6">
-                  <label className={`block text-sm font-medium text-gray-500 mb-2 ${alignStart}`}>
-                    {t('admissions.viewApplication.detail.personalStatement')}
-                  </label>
-                  <p className={`text-gray-900 whitespace-pre-wrap ${alignStart}`}>{application.personal_statement}</p>
-                </div>
-              )}
-              {application.scholarship_request && (
-                <div className="space-y-4">
-                  <div>
-                    <h3 className={`text-sm font-bold text-gray-800 mb-2 ${alignStart}`}>
-                      {t('admissions.viewApplication.detail.scholarshipSection')}
-                    </h3>
-                    <label className={`block text-sm font-medium text-gray-500 mb-1 ${alignStart}`}>
-                      {t('admissions.viewApplication.detail.scholarshipRequest')}
-                    </label>
-                    <p className={`text-gray-900 ${alignStart}`}>
-                      {t('admissions.viewApplication.detail.scholarshipYes')}{' '}
-                      {application.scholarship_percentage != null &&
-                        application.scholarship_percentage !== '' &&
-                        `(${application.scholarship_percentage}%)`}
-                    </p>
-                  </div>
-                  {application.scholarship_type && (
-                    <div>
-                      <label className={`block text-sm font-medium text-gray-500 mb-1 ${alignStart}`}>
-                        {t('admissions.viewApplication.detail.scholarshipType')}
-                      </label>
-                      <p className={`text-gray-900 ${alignStart}`}>{application.scholarship_type}</p>
-                    </div>
-                  )}
-                  {application.scholarship_details && (
-                    <div>
-                      <label className={`block text-sm font-medium text-gray-500 mb-1 ${alignStart}`}>
-                        {t('admissions.viewApplication.detail.scholarshipDetails')}
-                      </label>
-                      <p className={`text-gray-900 whitespace-pre-wrap ${alignStart}`}>{application.scholarship_details}</p>
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-          )}
-        </div>
-
-        {/* Sidebar */}
-        <div className="space-y-6">
-          {/* Application Summary */}
-          <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6">
-            <h3 className={`text-lg font-bold text-gray-900 mb-4 ${alignStart}`}>
-              {t('admissions.viewApplication.detail.applicationSummary')}
-            </h3>
-            <div className="space-y-3">
-              <div>
-                <label className={`block text-xs font-medium text-gray-500 mb-1 ${alignStart}`}>
-                  {t('admissions.viewApplication.detail.applicationId')}
-                </label>
-                <p className={`text-sm font-medium text-gray-900 ${alignStart}`}>
-                  <span dir="ltr" className="inline-block">
-                    #{application?.id}
-                  </span>
-                </p>
-              </div>
-              <div>
-                <label className={`block text-xs font-medium text-gray-500 mb-1 ${alignStart}`}>
-                  {t('admissions.viewApplication.detail.statusCode')}
-                </label>
-                <p className={`text-sm font-medium text-gray-900 ${alignStart}`}>
-                  <span dir="ltr" className="inline-block">
-                    {application?.status_code || application?.status || t('admissions.viewApplication.detail.notAvailable')}
-                  </span>
-                </p>
-              </div>
-              {application?.status_reason_code && (
-                <div>
-                  <label className={`block text-xs font-medium text-gray-500 mb-1 ${alignStart}`}>
-                    {t('admissions.viewApplication.detail.reasonCode')}
-                  </label>
-                  <p className={`text-sm text-gray-900 ${alignStart}`}>
-                    <span dir="ltr" className="inline-block">
-                      {application.status_reason_code}
-                    </span>
-                  </p>
-                </div>
-              )}
-              {application?.financial_milestone_code && (
-                <div>
-                  <label className={`block text-xs font-medium text-gray-500 mb-1 ${alignStart}`}>
-                    {t('admissions.viewApplication.detail.financialMilestone')}
-                  </label>
-                  <p className={`text-sm text-gray-900 ${alignStart}`}>
-                    <span dir="ltr" className="inline-block">
-                      {application.financial_milestone_code}
-                    </span>
-                  </p>
-                </div>
-              )}
-              <div>
-                <label className={`block text-xs font-medium text-gray-500 mb-1 ${alignStart}`}>
-                  {t('admissions.viewApplication.detail.submitted')}
-                </label>
-                <p className={`text-sm text-gray-900 ${alignStart}`}>{formatViewDate(application?.created_at)}</p>
-              </div>
-              <div>
-                <label className={`block text-xs font-medium text-gray-500 mb-1 ${alignStart}`}>
-                  {t('admissions.viewApplication.detail.college')}
-                </label>
-                <p className={`text-sm text-gray-900 ${alignStart}`}>
-                  {application?.colleges
-                    ? getLocalizedName(application.colleges, isArabicLayout) || application.colleges.name_en
-                    : '—'}
-                </p>
-              </div>
-              {application?.status_changed_at && (
-                <div>
-                  <label className={`block text-xs font-medium text-gray-500 mb-1 ${alignStart}`}>
-                    {t('admissions.viewApplication.detail.lastStatusChange')}
-                  </label>
-                  <p className={`text-sm text-gray-900 ${alignStart}`}>
-                    {formatViewDate(application.status_changed_at)}
-                  </p>
-                </div>
-              )}
-              {application?.reviewed_at && (
-                <>
-                  <div>
-                    <label className={`block text-xs font-medium text-gray-500 mb-1 ${alignStart}`}>
-                      {t('admissions.viewApplication.detail.reviewed')}
-                    </label>
-                    <p className={`text-sm text-gray-900 ${alignStart}`}>{formatViewDate(application.reviewed_at)}</p>
-                  </div>
-                  <div>
-                    <label className={`block text-xs font-medium text-gray-500 mb-1 ${alignStart}`}>
-                      {t('admissions.viewApplication.detail.reviewedBy')}
-                    </label>
-                    <p className={`text-sm text-gray-900 break-all ${alignStart}`}>
-                      <span dir="ltr" className="inline-block">
-                        {application.reviewed_by_user?.email || t('admissions.viewApplication.detail.notAvailable')}
-                      </span>
-                    </p>
-                  </div>
-                </>
-              )}
-            </div>
-          </div>
-
-          {/* Review Notes */}
-          {application?.review_notes && (
-            <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6">
-              <h3 className={`text-lg font-bold text-gray-900 mb-4 ${alignStart}`}>
-                {t('admissions.viewApplication.detail.reviewNotes')}
-              </h3>
-              <p className={`text-sm text-gray-700 whitespace-pre-wrap ${alignStart}`}>{application.review_notes}</p>
-            </div>
-          )}
-        </div>
       </div>
 
+      <div role="tabpanel" className={activeTab === 'activity' ? 'space-y-5' : 'hidden'}>
       {/* Activity Timeline */}
-      <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6">
+      <div className="rounded-2xl border border-[#dde3ef] bg-white p-5 sm:p-6">
         <div className="flex items-center justify-between mb-6 gap-4 w-full">
           <div className="flex items-center gap-3 min-w-0 flex-1" dir={isArabicLayout ? 'rtl' : 'ltr'}>
             <div className="min-w-0 flex-1">
-              <h2 className={`text-2xl font-bold text-gray-900 ${alignStart}`}>
+              <h2 className={`text-base font-extrabold text-[#1a3a6b] ${alignStart}`}>
                 {t('admissions.viewApplication.timeline.title')}
               </h2>
               <p className={`text-sm text-gray-600 mt-1 ${alignStart}`}>
@@ -3744,7 +3843,7 @@ export default function ViewApplication() {
                       <div className="flex items-start gap-3 w-full" dir={isArabicLayout ? 'rtl' : 'ltr'}>
                         {isArabicLayout ? (
                           <>
-                            <div className={`text-xs text-gray-500 whitespace-nowrap shrink-0 ${alignStart}`} dir="ltr">
+                            <div className={`text-xs text-gray-500 whitespace-nowrap shrink-0 ${alignStart}`}>
                               <div className="font-medium">
                                 {new Date(entry.created_at).toLocaleDateString('ar')}
                               </div>
@@ -3766,7 +3865,7 @@ export default function ViewApplication() {
                                 {entry.trigger_code && !ti && (
                                   <>
                                     <span className="font-semibold text-gray-900">{triggerLabel}</span>
-                                    <Clock className="w-5 h-5 text-gray-600 shrink-0" />
+                                    <Clock className="w-5 h-5 text-[#c8a84b] shrink-0" />
                                   </>
                                 )}
                                 {!entry.trigger_code && (
@@ -3774,7 +3873,7 @@ export default function ViewApplication() {
                                     <span className="font-semibold text-gray-900">
                                       {t('admissions.viewApplication.timeline.statusChange')}
                                     </span>
-                                    <Clock className="w-5 h-5 text-gray-600 shrink-0" />
+                                    <Clock className="w-5 h-5 text-[#c8a84b] shrink-0" />
                                   </>
                                 )}
                                 {entry.trigger_code && (
@@ -3829,13 +3928,13 @@ export default function ViewApplication() {
                                 )}
                                 {entry.trigger_code && !ti && (
                                   <>
-                                    <Clock className="w-5 h-5 text-gray-600 shrink-0" />
+                                    <Clock className="w-5 h-5 text-[#c8a84b] shrink-0" />
                                     <span className="font-semibold text-gray-900">{triggerLabel}</span>
                                   </>
                                 )}
                                 {!entry.trigger_code && (
                                   <>
-                                    <Clock className="w-5 h-5 text-gray-600 shrink-0" />
+                                    <Clock className="w-5 h-5 text-[#c8a84b] shrink-0" />
                                     <span className="font-semibold text-gray-900">
                                       {t('admissions.viewApplication.timeline.statusChange')}
                                     </span>
@@ -3957,7 +4056,8 @@ export default function ViewApplication() {
           </div>
         )}
       </div>
+      </div>
+
     </div>
   )
 }
-

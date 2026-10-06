@@ -7,8 +7,10 @@ import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
 import {
   Plus, BookMarked, Search, Eye, Edit, Users, GraduationCap,
-  TrendingUp, FileText, CheckCircle, Download, Loader2
+  FileText, Download
 } from 'lucide-react'
+import { Badge, Button, EmptyState, PageHeader, Panel, Skeleton } from '../../components/ui'
+import { Stat, fieldClass } from '../../components/academic/catalogUi'
 import { exportMajorsList } from '../../utils/exportMajors'
 import { isMajorOfferedOnRegistrationForm, legacyMajorRecordStatus } from '../../utils/majorAdmissionStatus'
 
@@ -230,129 +232,52 @@ export default function Majors() {
   }
 
   return (
-    <div className="space-y-6">
-      <div className={`flex items-center ${isRTL ? 'flex-row-reverse justify-between' : 'justify-between'}`}>
-        <div>
-          <h1 className="text-3xl font-bold text-gray-900">{t('academic.majors.title')}</h1>
-          <p className="text-gray-600 mt-1">{t('academic.majors.subtitle')}</p>
-        </div>
-        <div className={`flex flex-wrap items-center gap-2 ${isRTL ? 'flex-row-reverse' : ''}`}>
-          <button
-            type="button"
-            disabled={exporting || loading || filteredMajors.length === 0}
-            onClick={handleExportExcel}
-            className={`flex items-center ${isRTL ? 'flex-row-reverse space-x-reverse' : 'space-x-2'} px-5 py-3 rounded-xl font-semibold border border-gray-300 bg-white text-gray-800 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-all`}
-          >
-            {exporting ? <Loader2 className="w-5 h-5 animate-spin" /> : <Download className="w-5 h-5" />}
-            <span>{t('academic.majors.exportExcel', 'Export Excel')}</span>
-          </button>
-          <button
-            onClick={() => navigate('/academic/majors/create')}
-            className={`flex items-center ${isRTL ? 'flex-row-reverse space-x-reverse' : 'space-x-2'} bg-primary-gradient text-white px-6 py-3 rounded-xl font-semibold shadow-lg hover:shadow-xl transform hover:-translate-y-0.5 transition-all`}
-          >
-            <Plus className="w-5 h-5" />
-            <span>{t('academic.majors.create')}</span>
-          </button>
-        </div>
-      </div>
+    <div className="space-y-5">
+      <PageHeader
+        title={t('academic.majors.title')}
+        subtitle={t('academic.majors.subtitle')}
+        actions={
+          <>
+            <Button variant="quiet" icon={Download} loading={exporting} disabled={loading || filteredMajors.length === 0} onClick={handleExportExcel}>
+              {t('academic.majors.exportExcel', 'Export Excel')}
+            </Button>
+            <Button icon={Plus} onClick={() => navigate('/academic/majors/create')}>
+              {t('academic.majors.create')}
+            </Button>
+          </>
+        }
+      />
 
-      {/* Tier 1 KPIs */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-5">
-        <div className="bg-white rounded-xl p-5 shadow-sm border border-gray-200 border-l-4 border-l-blue-500">
-          <div className="flex justify-between items-start">
-            <div>
-              <div className="text-xs text-gray-500 uppercase tracking-wider mb-1">{t('academic.majors.kpiActiveMajors', 'Active Majors')}</div>
-              <div className="text-2xl font-bold text-gray-900">{kpis.activeMajors}</div>
-              <div className="text-xs text-green-600 mt-1">↑ {kpis.totalMajors - kpis.activeMajors} from total</div>
-            </div>
-            <div className="w-11 h-11 bg-gradient-to-br from-blue-500 to-blue-700 rounded-lg flex items-center justify-center">
-              <BookMarked className="w-6 h-6 text-white" />
-            </div>
-          </div>
-        </div>
-        <div className="bg-white rounded-xl p-5 shadow-sm border border-gray-200 border-l-4 border-l-green-500">
-          <div className="flex justify-between items-start">
-            <div>
-              <div className="text-xs text-gray-500 uppercase tracking-wider mb-1">{t('academic.majors.kpiTotalEnrolled', 'Total Enrolled')}</div>
-              <div className="text-2xl font-bold text-gray-900">{kpis.totalEnrolled}</div>
-              <div className="text-xs text-green-600 mt-1">↑ 15% vs last year</div>
-            </div>
-            <div className="w-11 h-11 bg-gradient-to-br from-green-500 to-green-700 rounded-lg flex items-center justify-center">
-              <Users className="w-6 h-6 text-white" />
-            </div>
-          </div>
-        </div>
-        <div className="bg-white rounded-xl p-5 shadow-sm border border-gray-200 border-l-4 border-l-violet-500">
-          <div className="flex justify-between items-start">
-            <div>
-              <div className="text-xs text-gray-500 uppercase tracking-wider mb-1">{t('academic.majors.kpiAdmissionFunnel', 'Admission Funnel')}</div>
-              <div className="text-2xl font-bold text-gray-900">{kpis.admissionFunnel}%</div>
-              <div className="text-xs text-gray-500 mt-1">{t('academic.majors.kpiYieldRate', 'Yield Rate')}</div>
-            </div>
-            <div className="w-11 h-11 bg-gradient-to-br from-violet-500 to-violet-700 rounded-lg flex items-center justify-center">
-              <TrendingUp className="w-6 h-6 text-white" />
-            </div>
-          </div>
-        </div>
-        <div className="bg-white rounded-xl p-5 shadow-sm border border-gray-200 border-l-4 border-l-amber-500">
-          <div className="flex justify-between items-start">
-            <div>
-              <div className="text-xs text-gray-500 uppercase tracking-wider mb-1">{t('academic.majors.kpiGraduationReady', 'Graduation Ready')}</div>
-              <div className="text-2xl font-bold text-gray-900">{kpis.graduationReady}</div>
-              <div className="text-xs text-gray-500 mt-1">{t('academic.majors.kpiCandidatesThisYear', 'Candidates this year')}</div>
-            </div>
-            <div className="w-11 h-11 bg-gradient-to-br from-amber-500 to-amber-700 rounded-lg flex items-center justify-center">
-              <GraduationCap className="w-6 h-6 text-white" />
-            </div>
-          </div>
-        </div>
-        <div className="bg-white rounded-xl p-5 shadow-sm border border-gray-200 border-l-4 border-l-green-500">
-          <div className="flex justify-between items-start">
-            <div>
-              <div className="text-xs text-gray-500 uppercase tracking-wider mb-1">{t('academic.majors.kpiPortfolioHealth', 'Portfolio Health')}</div>
-              <div className="flex gap-2 mt-2 flex-wrap">
-                <span className="px-2.5 py-1 rounded-full text-xs font-semibold bg-green-100 text-green-800">{kpis.healthy} {t('academic.majors.healthHealthy', 'Healthy')}</span>
-                <span className="px-2.5 py-1 rounded-full text-xs font-semibold bg-amber-100 text-amber-800">{kpis.attention} {t('academic.majors.healthAttention', 'Attention')}</span>
-                <span className="px-2.5 py-1 rounded-full text-xs font-semibold bg-red-100 text-red-800">{kpis.critical} {t('academic.majors.healthCritical', 'Critical')}</span>
-              </div>
-            </div>
-            <div className="w-11 h-11 bg-gradient-to-br from-green-500 to-green-700 rounded-lg flex items-center justify-center">
-              <CheckCircle className="w-6 h-6 text-white" />
-            </div>
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
+        <Stat label={t('academic.majors.kpiActiveMajors', 'Active Majors')} value={kpis.activeMajors} tone="ok" />
+        <Stat label={t('academic.majors.kpiTotalEnrolled', 'Total Enrolled')} value={kpis.totalEnrolled} />
+        <Stat label={t('academic.majors.kpiAdmissionFunnel', 'Admission Funnel')} value={`${kpis.admissionFunnel}%`} hint={t('academic.majors.kpiYieldRate', 'Yield Rate')} />
+        <Stat label={t('academic.majors.kpiGraduationReady', 'Graduation Ready')} value={kpis.graduationReady} hint={t('academic.majors.kpiCandidatesThisYear', 'Candidates this year')} tone="gold" />
+        <div className="rounded-2xl border border-[#dde3ef] bg-white px-4 py-3.5">
+          <div className="text-xs font-semibold text-slate-500">{t('academic.majors.kpiPortfolioHealth', 'Portfolio Health')}</div>
+          <div className="mt-2 flex flex-wrap gap-1.5">
+            <Badge tone="ok">{kpis.healthy} {t('academic.majors.healthHealthy', 'Healthy')}</Badge>
+            <Badge tone="warn">{kpis.attention} {t('academic.majors.healthAttention', 'Attention')}</Badge>
+            <Badge tone="err">{kpis.critical} {t('academic.majors.healthCritical', 'Critical')}</Badge>
           </div>
         </div>
       </div>
 
-      {/* Search and Filter Bar */}
-      <div className="bg-white rounded-xl p-5 shadow-sm border border-gray-200">
-        <div className={`flex gap-4 items-center flex-wrap ${isRTL ? 'flex-row-reverse' : ''}`}>
-          <div className="flex-1 min-w-[200px] relative">
-            <Search className={`absolute ${isRTL ? 'right-3' : 'left-3'} top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400`} />
-            <input
-              type="text"
-              placeholder={t('academic.majors.searchPlaceholder')}
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className={`w-full ${isRTL ? 'pr-10 pl-4' : 'pl-10 pr-4'} py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent`}
-            />
+      <Panel>
+        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+          <div className="relative">
+            <Search className="pointer-events-none absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" aria-hidden="true" />
+            <input type="text" placeholder={t('academic.majors.searchPlaceholder')} value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className={`${fieldClass} ps-9`} aria-label={t('academic.majors.searchPlaceholder')} />
           </div>
           {userRole === 'admin' && (
-            <select
-              value={collegeFilter}
-              onChange={(e) => setCollegeFilter(e.target.value)}
-              className="py-3 px-4 border border-gray-300 rounded-lg min-w-[160px] focus:ring-2 focus:ring-primary-500"
-            >
+            <select value={collegeFilter} onChange={(e) => setCollegeFilter(e.target.value)} className={fieldClass} aria-label={t('academic.majors.filterAllColleges', 'All Colleges')}>
               <option value="">{t('academic.majors.filterAllColleges', 'All Colleges')}</option>
               {colleges.map(c => (
                 <option key={c.id} value={c.id}>{getLocalizedName(c, isRTL)}</option>
               ))}
             </select>
           )}
-          <select
-            value={statusFilter}
-            onChange={(e) => setStatusFilter(e.target.value)}
-            className="py-3 px-4 border border-gray-300 rounded-lg min-w-[160px] focus:ring-2 focus:ring-primary-500"
-          >
+          <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} className={fieldClass} aria-label={t('academic.majors.filterAllStatuses', 'All Statuses')}>
             <option value="">{t('academic.majors.filterAllStatuses', 'All Statuses')}</option>
             <option value="open_for_admission">{t('academic.majors.statusOpen', 'Open for Admission')}</option>
             <option value="active">{t('academic.majors.statusActive', 'Active')}</option>
@@ -360,11 +285,7 @@ export default function Majors() {
             <option value="suspended">{t('academic.majors.statusSuspended', 'Suspended')}</option>
             <option value="draft">{t('academic.majors.statusDraft', 'Draft')}</option>
           </select>
-          <select
-            value={degreeLevelFilter}
-            onChange={(e) => setDegreeLevelFilter(e.target.value)}
-            className="py-3 px-4 border border-gray-300 rounded-lg min-w-[160px] focus:ring-2 focus:ring-primary-500"
-          >
+          <select value={degreeLevelFilter} onChange={(e) => setDegreeLevelFilter(e.target.value)} className={fieldClass} aria-label={t('academic.majors.filterAllDegreeLevels', 'All Degree Levels')}>
             <option value="">{t('academic.majors.filterAllDegreeLevels', 'All Degree Levels')}</option>
             <option value="bachelor">{t('academic.majors.bachelor')}</option>
             <option value="master">{t('academic.majors.master')}</option>
@@ -372,15 +293,17 @@ export default function Majors() {
             <option value="phd">{t('academic.majors.phd')}</option>
           </select>
         </div>
-      </div>
+      </Panel>
 
       {statusError && (
         <div className="bg-red-50 border border-red-200 rounded-xl p-4 text-red-700 text-sm">{statusError}</div>
       )}
 
       {loading ? (
-        <div className="flex justify-center py-12">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-600"></div>
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
+          {Array.from({ length: 3 }, (_, i) => (
+            <Skeleton key={i} className="h-56" />
+          ))}
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">
@@ -390,16 +313,16 @@ export default function Majors() {
             return (
               <div
                 key={major.id}
-                className="bg-white rounded-xl p-6 shadow-sm border border-gray-200 hover:shadow-lg hover:-translate-y-0.5 transition-all overflow-hidden"
+                className="overflow-hidden rounded-2xl border border-[#dde3ef] bg-white p-5"
               >
                 <div className={`flex gap-4 mb-4 ${isRTL ? 'flex-row-reverse' : ''}`}>
-                  <div className="w-12 h-12 bg-gradient-to-br from-sky-100 to-sky-200 rounded-lg flex items-center justify-center flex-shrink-0">
-                    <BookMarked className="w-6 h-6 text-sky-600" />
+                  <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-[#eef2f9] text-[#1a3a6b]">
+                    <BookMarked className="h-6 w-6" />
                   </div>
                   <div className="flex-1 min-w-0 overflow-hidden">
                     <div className={`flex justify-between items-start gap-2 ${isRTL ? 'flex-row-reverse' : ''}`}>
                       <div className="min-w-0 flex-1 overflow-hidden">
-                        <h3 className="font-semibold text-gray-900 truncate">{getLocalizedName(major, isRTL)}</h3>
+                        <h3 className="truncate font-extrabold text-[#1a3a6b]">{getLocalizedName(major, isRTL)}</h3>
                         <div className="text-sm text-gray-500 truncate">{major.code}</div>
                       </div>
                       <span className="flex-shrink-0">{getStatusBadge(major)}</span>
@@ -461,28 +384,16 @@ export default function Majors() {
                 >
                   {isMajorOfferedOnRegistrationForm(major) ? t('academic.majors.deactivate') : t('academic.majors.activate')}
                 </button>
-                <div className={`flex gap-2 ${isRTL ? 'flex-row-reverse' : ''}`}>
-                  <button
-                    onClick={() => navigate(`/academic/majors/${major.id}`)}
-                    className={`flex-1 flex items-center justify-center gap-1.5 py-2.5 border border-gray-200 rounded-lg text-gray-600 hover:bg-gray-50 text-sm font-medium ${isRTL ? 'flex-row-reverse' : ''}`}
-                  >
-                    <Eye className="w-4 h-4" />
+                <div className="flex gap-2">
+                  <Button variant="quiet" size="sm" className="flex-1" icon={Eye} onClick={() => navigate(`/academic/majors/${major.id}`)}>
                     {t('academic.majors.view')}
-                  </button>
-                  <button
-                    onClick={() => navigate(`/academic/majors/${major.id}/edit`)}
-                    className={`flex-1 flex items-center justify-center gap-1.5 py-2.5 bg-primary-gradient text-white rounded-lg hover:shadow-lg text-sm font-medium ${isRTL ? 'flex-row-reverse' : ''}`}
-                  >
-                    <Edit className="w-4 h-4" />
+                  </Button>
+                  <Button size="sm" className="flex-1" icon={Edit} onClick={() => navigate(`/academic/majors/${major.id}/edit`)}>
                     {t('academic.majors.edit')}
-                  </button>
-                  <button
-                    onClick={() => navigate(`/academic/majors/${major.id}/degree-plan`)}
-                    className={`flex-1 flex items-center justify-center gap-1.5 py-2.5 bg-primary-gradient text-white rounded-lg hover:shadow-lg text-sm font-medium ${isRTL ? 'flex-row-reverse' : ''}`}
-                  >
-                    <FileText className="w-4 h-4" />
+                  </Button>
+                  <Button variant="gold" size="sm" className="flex-1" icon={FileText} onClick={() => navigate(`/academic/majors/${major.id}/degree-plan`)}>
                     {t('academic.majors.degreePlan', 'Degree Plan')}
-                  </button>
+                  </Button>
                 </div>
               </div>
             )
@@ -491,10 +402,9 @@ export default function Majors() {
       )}
 
       {!loading && filteredMajors.length === 0 && (
-        <div className="bg-white rounded-xl p-12 text-center shadow-sm border border-gray-200">
-          <BookMarked className="w-12 h-12 text-gray-300 mx-auto mb-4" />
-          <p className="text-gray-600">{t('academic.majors.noMajorsFound', 'No majors found')}</p>
-        </div>
+        <Panel>
+          <EmptyState icon={BookMarked} title={t('academic.majors.noMajorsFound', 'No majors found')} hint={t('academic.majors.searchPlaceholder')} />
+        </Panel>
       )}
     </div>
   )

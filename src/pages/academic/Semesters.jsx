@@ -5,7 +5,9 @@ import { useLanguage } from '../../contexts/LanguageContext'
 import { getLocalizedName } from '../../utils/localizedName'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
-import { Plus, Calendar, Search, Eye, Edit, CalendarDays, TrendingUp, Users, Clock, CheckCircle, XCircle, AlertTriangle } from 'lucide-react'
+import { Plus, Search, Eye, Edit, CalendarDays, AlertTriangle } from 'lucide-react'
+import { Button, EmptyState, PageHeader, Panel, Skeleton } from '../../components/ui'
+import { Stat, fieldClass } from '../../components/academic/catalogUi'
 import { describeRegistrationState, isDraftSemester, isFinishedSemester, isRunningSemester, registrationState } from '../../utils/registrationRules'
 
 export default function Semesters() {
@@ -218,123 +220,66 @@ export default function Semesters() {
   }
 
   return (
-    <div className="space-y-8">
-      {/* Header */}
-      <div className={`flex items-start ${isRTL ? 'flex-row-reverse justify-between' : 'justify-between'}`}>
-        <div>
-          <h1 className="text-3xl font-bold text-gray-900 mb-2">{t('academic.semesters.title')}</h1>
-          <p className="text-sm text-gray-500">{t('academic.semesters.subtitle')}</p>
-        </div>
-        <button
-          onClick={() => navigate('/academic/semesters/create')}
-          className={`flex items-center ${isRTL ? 'flex-row-reverse space-x-reverse' : 'space-x-2'} bg-primary-gradient text-white px-6 py-3 rounded-lg text-sm font-semibold shadow-md hover:shadow-lg transition-all`}
-        >
-          <Plus className="w-4 h-4" />
-          <span>{t('academic.semesters.create')}</span>
-        </button>
+    <div className="space-y-5">
+      <PageHeader
+        title={t('academic.semesters.title')}
+        subtitle={t('academic.semesters.subtitle')}
+        actions={
+          <Button icon={Plus} onClick={() => navigate('/academic/semesters/create')}>
+            {t('academic.semesters.create')}
+          </Button>
+        }
+      />
+
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
+        <Stat
+          label={t('academic.semesters.currentSemester')}
+          value={kpis.currentSemester ? (getLocalizedName(kpis.currentSemester, isRTL) || kpis.currentSemester.code) : t('academic.semesters.noCurrent')}
+          hint={kpis.currentSemester ? t('academic.semesters.inProgress') : null}
+        />
+        <Stat label={t('academic.semesters.activeSemesters')} value={kpis.activeSemesters} tone="ok" />
+        <Stat
+          label={t('academic.semesters.registrationStatus')}
+          value={kpis.registrationStatus === 'open' ? t('academic.semesters.open') : t('academic.semesters.closed')}
+          hint={kpis.openSemester ? `${getLocalizedName(kpis.openSemester, isRTL)}: ${describeRegistrationState(registrationState(kpis.openSemester), t, formatDate)}` : null}
+          tone={kpis.registrationStatus === 'open' ? 'ok' : 'navy'}
+        />
+        <Stat label={t('academic.semesters.daysRemaining')} value={kpis.daysRemaining} hint={t('academic.semesters.untilSemesterEnd')} tone="gold" />
+        <Stat
+          label={t('academic.semesters.semesterHealth')}
+          value={allIssues.length === 0 ? t('academic.semesters.healthy') : t('academic.semesters.needsAttention', { count: allIssues.length })}
+          hint={allIssues.length === 0 ? t('academic.semesters.allSystemsNormal') : `${getLocalizedName(allIssues[0].semester, isRTL)}: ${allIssues[0].text}`}
+          tone={allIssues.length === 0 ? 'ok' : 'warn'}
+        />
       </div>
 
-      {/* Tier 1 KPIs */}
-      <div className="grid grid-cols-1 md:grid-cols-5 gap-5 mb-8">
-        {/* Current Semester */}
-        <div className="bg-primary-gradient rounded-2xl p-6 text-white shadow-lg">
-          <div className="mb-4">
-            <div className="text-xs opacity-80 mb-1">{t('academic.semesters.currentSemester')}</div>
-            <div className="text-lg font-bold mb-2">
-              {kpis.currentSemester ? (getLocalizedName(kpis.currentSemester, isRTL) || kpis.currentSemester.code) : t('academic.semesters.noCurrent')}
-            </div>
-            {kpis.currentSemester && (
-              <span className="inline-block bg-white/20 px-3 py-1 rounded-full text-xs font-semibold">
-                {t('academic.semesters.inProgress').toUpperCase()}
-              </span>
-            )}
-          </div>
-        </div>
-
-        {/* Active Semesters */}
-        <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-200">
-          <div className="mb-4">
-            <div className="w-10 h-10 bg-gradient-to-br from-green-500 to-green-400 rounded-xl flex items-center justify-center">
-              <CheckCircle className="w-5 h-5 text-white" />
-            </div>
-          </div>
-          <div className="text-xs text-gray-500 mb-1">{t('academic.semesters.activeSemesters')}</div>
-          <div className="text-3xl font-bold text-gray-900">{kpis.activeSemesters}</div>
-        </div>
-
-        {/* Registration Status */}
-        <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-200">
-          <div className="mb-4">
-            <div className="w-10 h-10 bg-gradient-to-br from-yellow-500 to-yellow-400 rounded-xl flex items-center justify-center">
-              <Users className="w-5 h-5 text-white" />
-            </div>
-          </div>
-          <div className="text-xs text-gray-500 mb-1">{t('academic.semesters.registrationStatus')}</div>
-          <div className={`text-lg font-bold ${kpis.registrationStatus === 'open' ? 'text-yellow-600' : 'text-gray-600'}`}>
-            {kpis.registrationStatus === 'open' ? t('academic.semesters.open').toUpperCase() : t('academic.semesters.closed').toUpperCase()}
-          </div>
-          {kpis.openSemester && (
-            <div className="text-xs text-gray-500 mt-1">
-              {getLocalizedName(kpis.openSemester, isRTL)}: {describeRegistrationState(registrationState(kpis.openSemester), t, formatDate)}
-            </div>
-          )}
-        </div>
-
-        {/* Days Remaining */}
-        <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-200">
-          <div className="mb-4">
-            <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-blue-400 rounded-xl flex items-center justify-center">
-              <Clock className="w-5 h-5 text-white" />
-            </div>
-          </div>
-          <div className="text-xs text-gray-500 mb-1">{t('academic.semesters.daysRemaining')}</div>
-          <div className="text-3xl font-bold text-green-600">{kpis.daysRemaining}</div>
-          <div className="text-xs text-gray-500 mt-1">{t('academic.semesters.untilSemesterEnd')}</div>
-        </div>
-
-        {/* Semester Health */}
-        <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-200">
-          <div className="mb-4">
-            <div className="w-10 h-10 bg-gradient-to-br from-green-500 to-green-400 rounded-xl flex items-center justify-center">
-              <TrendingUp className="w-5 h-5 text-white" />
-            </div>
-          </div>
-          <div className="text-xs text-gray-500 mb-1">{t('academic.semesters.semesterHealth')}</div>
-          {allIssues.length === 0 ? (
-            <>
-              <div className="text-lg font-bold text-green-600">{t('academic.semesters.healthy').toUpperCase()}</div>
-              <div className="text-xs text-gray-500 mt-1">{t('academic.semesters.allSystemsNormal')}</div>
-            </>
-          ) : (
-            <>
-              <div className="text-lg font-bold text-amber-600">{t('academic.semesters.needsAttention', { count: allIssues.length })}</div>
-              <div className="text-xs text-gray-500 mt-1">{getLocalizedName(allIssues[0].semester, isRTL)}: {allIssues[0].text}</div>
-            </>
-          )}
-        </div>
-      </div>
-
-      {/* Search Bar */}
-      <div className="bg-white rounded-xl shadow-sm border border-gray-200 px-6 py-4 mb-6">
-        <div className={`flex items-center ${isRTL ? 'space-x-reverse' : 'space-x-3'}`}>
-          <Search className="w-5 h-5 text-gray-400" />
+      <Panel>
+        <div className="relative">
+          <Search className="pointer-events-none absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" aria-hidden="true" />
           <input
             type="text"
             placeholder={t('academic.semesters.searchPlaceholder')}
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="flex-1 border-none outline-none text-sm text-gray-900 bg-transparent"
+            className={`${fieldClass} ps-9`}
+            aria-label={t('academic.semesters.searchPlaceholder')}
           />
         </div>
-      </div>
+      </Panel>
 
       {/* Semester Cards Grid */}
       {loading ? (
-        <div className="text-center py-12">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-600 mx-auto"></div>
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3">
+          {Array.from({ length: 3 }, (_, i) => (
+            <Skeleton key={i} className="h-56" />
+          ))}
         </div>
+      ) : filteredSemesters.length === 0 ? (
+        <Panel>
+          <EmptyState icon={CalendarDays} title={t('academic.semesters.title')} hint={t('academic.semesters.searchPlaceholder')} />
+        </Panel>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
           {filteredSemesters.map((semester) => {
             const stats = semesterStats[semester.id] || { enrollmentCount: 0, courseCount: 0, classCount: 0 }
             const isInProgress = isRunningSemester(semester)
@@ -344,17 +289,17 @@ export default function Semesters() {
             return (
               <div
                 key={semester.id}
-                className={`bg-white rounded-2xl overflow-hidden shadow-sm border-2 ${
-                  isInProgress ? 'border-green-500' : 'border-gray-200'
-                } hover:shadow-md transition-shadow`}
+                className={`overflow-hidden rounded-2xl border bg-white ${
+                  isInProgress ? 'border-[#1a3a6b]' : 'border-[#dde3ef]'
+                }`}
               >
                 <div className="p-6">
                   <div className={`flex items-start ${isRTL ? 'flex-row-reverse space-x-reverse' : 'space-x-4'} mb-5`}>
-                    <div className="w-14 h-14 bg-primary-gradient rounded-xl flex items-center justify-center flex-shrink-0">
-                      <CalendarDays className="w-7 h-7 text-white" />
+                    <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-[#eef2f9] text-[#1a3a6b]">
+                      <CalendarDays className="h-6 w-6" />
                     </div>
                     <div className="flex-1 min-w-0">
-                      <h3 className="text-base font-semibold text-gray-900 truncate mb-1">{getLocalizedName(semester, isRTL)}</h3>
+                      <h3 className="mb-1 truncate text-base font-extrabold text-[#1a3a6b]">{getLocalizedName(semester, isRTL)}</h3>
                       <p className="text-sm text-gray-500">{semester.code}</p>
                     </div>
                   </div>
@@ -402,20 +347,12 @@ export default function Semesters() {
                   </div>
 
                   <div className={`flex ${isRTL ? 'space-x-reverse' : 'space-x-3'} gap-3`}>
-                    <button
-                      onClick={() => navigate(`/academic/semesters/${semester.id}`)}
-                      className="flex-1 flex items-center justify-center gap-1.5 px-3 py-3 border border-gray-200 rounded-lg text-gray-500 text-xs font-medium hover:bg-gray-50 transition-colors"
-                    >
-                      <Eye className="w-4 h-4" />
+                    <Button variant="quiet" size="sm" className="flex-1" icon={Eye} onClick={() => navigate(`/academic/semesters/${semester.id}`)}>
                       {t('academic.semesters.view')}
-                    </button>
-                    <button
-                      onClick={() => navigate(`/academic/semesters/${semester.id}/edit`)}
-                      className="flex-1 flex items-center justify-center gap-1.5 px-3 py-3 bg-primary-gradient rounded-lg text-white text-xs font-semibold hover:shadow-lg transition-all"
-                    >
-                      <Edit className="w-4 h-4" />
+                    </Button>
+                    <Button size="sm" className="flex-1" icon={Edit} onClick={() => navigate(`/academic/semesters/${semester.id}/edit`)}>
                       {t('academic.semesters.edit')}
-                    </button>
+                    </Button>
                   </div>
                 </div>
 

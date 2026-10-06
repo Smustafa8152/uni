@@ -6,9 +6,10 @@ import { getLocalizedName } from '../../utils/localizedName'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
 import {
-  Plus, Building2, Search, Eye, Edit, BookOpen, Users, GraduationCap,
-  AlertCircle, CheckCircle, BarChart3, UserPlus
+  Plus, Building2, Search, Eye, Edit, BarChart3, UserPlus
 } from 'lucide-react'
+import { Button, EmptyState, PageHeader, Panel, Skeleton } from '../../components/ui'
+import { Stat, fieldClass } from '../../components/academic/catalogUi'
 
 export default function Departments() {
   const { t, i18n } = useTranslation()
@@ -205,94 +206,44 @@ export default function Departments() {
   }
 
   return (
-    <div className="space-y-8">
-      <div
-        dir={isArabicLayout ? 'rtl' : 'ltr'}
-        className="flex items-center justify-between"
-      >
-        <div className={isArabicLayout ? 'text-right' : 'text-left'}>
-          <h1 className="text-3xl font-bold text-gray-900">{t('academic.departments.title')}</h1>
-          <p className="text-gray-600 mt-1">{t('academic.departments.subtitle')}</p>
-        </div>
-        <button
-          onClick={() => navigate('/academic/departments/create')}
-          className={`flex items-center ${isArabicLayout ? 'flex-row-reverse space-x-reverse' : 'space-x-2'} bg-primary-gradient text-white px-6 py-3 rounded-xl font-semibold shadow-lg hover:shadow-xl transition-all`}
-        >
-          <Plus className="w-5 h-5" />
-          <span>{t('academic.departments.create')}</span>
-        </button>
+    <div className="space-y-5">
+      <PageHeader
+        title={t('academic.departments.title')}
+        subtitle={t('academic.departments.subtitle')}
+        actions={
+          <Button icon={Plus} onClick={() => navigate('/academic/departments/create')}>
+            {t('academic.departments.create')}
+          </Button>
+        }
+      />
+
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
+        <Stat label={t('academic.departments.activeDepartments')} value={kpis.activeDepartments} hint={t('academic.departments.currentlyOffering')} tone="ok" />
+        <Stat label={t('academic.departments.withActiveCourses')} value={`${kpis.withActiveCourses} / ${departments.length || 0}`} hint={t('academic.departments.contributing')} />
+        <Stat label={t('academic.departments.totalEnrollments')} value={kpis.totalEnrollments.toLocaleString()} hint={t('academic.departments.vsLastSemester')} />
+        <Stat label={t('academic.departments.pendingGrades')} value={kpis.pendingGrades} hint={t('academic.departments.needAttention')} tone="warn" />
+        <Stat
+          label={t('academic.departments.departmentHealth')}
+          value={kpis.departmentHealth === 'healthy' ? t('academic.departments.healthy') : '—'}
+          hint={t('academic.departments.allSystemsOperational')}
+          tone="ok"
+        />
       </div>
 
-      {/* Tier 1 KPIs */}
-      <div className="grid grid-cols-1 md:grid-cols-5 gap-5">
-        <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6">
-          <div dir={isArabicLayout ? 'rtl' : 'ltr'} className="flex items-center gap-3 mb-4">
-            <div className="w-11 h-11 bg-gradient-to-br from-green-500 to-green-600 rounded-xl flex items-center justify-center">
-              <Building2 className="w-5 h-5 text-white" />
-            </div>
-            <span className="text-sm text-gray-500 font-medium">{t('academic.departments.activeDepartments')}</span>
+      <Panel>
+        <div className="grid gap-3 md:grid-cols-[1fr_16rem]">
+          <div className="relative">
+            <Search className="pointer-events-none absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" aria-hidden="true" />
+            <input
+              type="text"
+              placeholder={t('academic.departments.searchPlaceholder')}
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className={`${fieldClass} ps-9`}
+              aria-label={t('academic.departments.searchPlaceholder')}
+            />
           </div>
-          <div className="text-2xl font-bold text-gray-900">{kpis.activeDepartments}</div>
-          <div className="text-xs text-green-600 mt-1">{t('academic.departments.currentlyOffering')}</div>
-        </div>
-        <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6">
-          <div dir={isArabicLayout ? 'rtl' : 'ltr'} className="flex items-center gap-3 mb-4">
-            <div className="w-11 h-11 bg-gradient-to-br from-blue-500 to-blue-600 rounded-xl flex items-center justify-center">
-              <BookOpen className="w-5 h-5 text-white" />
-            </div>
-            <span className="text-sm text-gray-500 font-medium">{t('academic.departments.withActiveCourses')}</span>
-          </div>
-          <div className="text-2xl font-bold text-gray-900">{kpis.withActiveCourses} <span className="text-base font-medium text-gray-500">/ {departments.length || 0}</span></div>
-          <div className="text-xs text-blue-600 mt-1">{t('academic.departments.contributing')}</div>
-        </div>
-        <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6">
-          <div dir={isArabicLayout ? 'rtl' : 'ltr'} className="flex items-center gap-3 mb-4">
-            <div className="w-11 h-11 bg-gradient-to-br from-purple-500 to-purple-600 rounded-xl flex items-center justify-center">
-              <Users className="w-5 h-5 text-white" />
-            </div>
-            <span className="text-sm text-gray-500 font-medium">{t('academic.departments.totalEnrollments')}</span>
-          </div>
-          <div className="text-2xl font-bold text-gray-900">{kpis.totalEnrollments.toLocaleString()}</div>
-          <div className="text-xs text-green-600 mt-1">↑ 12% {t('academic.departments.vsLastSemester')}</div>
-        </div>
-        <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6">
-          <div dir={isArabicLayout ? 'rtl' : 'ltr'} className="flex items-center gap-3 mb-4">
-            <div className="w-11 h-11 bg-gradient-to-br from-amber-500 to-amber-600 rounded-xl flex items-center justify-center">
-              <AlertCircle className="w-5 h-5 text-white" />
-            </div>
-            <span className="text-sm text-gray-500 font-medium">{t('academic.departments.pendingGrades')}</span>
-          </div>
-          <div className="text-2xl font-bold text-amber-600">{kpis.pendingGrades}</div>
-          <div className="text-xs text-amber-600 mt-1">{t('academic.departments.needAttention')}</div>
-        </div>
-        <div className="bg-gradient-to-br from-green-50 to-emerald-50 rounded-2xl shadow-sm border border-green-200 p-6">
-          <div dir={isArabicLayout ? 'rtl' : 'ltr'} className="flex items-center gap-3 mb-4">
-            <div className="w-11 h-11 bg-gradient-to-br from-green-500 to-green-600 rounded-xl flex items-center justify-center">
-              <CheckCircle className="w-5 h-5 text-white" />
-            </div>
-            <span className="text-sm text-green-800 font-medium">{t('academic.departments.departmentHealth')}</span>
-          </div>
-          <div className="text-xl font-bold text-green-800">{kpis.departmentHealth === 'healthy' ? t('academic.departments.healthy') : 'N/A'}</div>
-          <div className="text-xs text-green-600 mt-1">{t('academic.departments.allSystemsOperational')}</div>
-        </div>
-      </div>
-
-      {/* Search */}
-      <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-5">
-        <div className={`flex items-center ${isRTL ? 'flex-row-reverse space-x-reverse' : 'space-x-3'}`}>
-          <Search className="w-5 h-5 text-gray-400" />
-          <input
-            type="text"
-            placeholder={t('academic.departments.searchPlaceholder')}
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="flex-1 border-0 outline-none text-sm text-gray-900"
-          />
-          <select
-            value={collegeFilter}
-            onChange={(e) => setCollegeFilter(e.target.value)}
-            className={`px-4 py-2 border border-gray-200 rounded-lg text-xs text-gray-600 bg-gray-50 cursor-pointer ${isArabicLayout ? 'text-right' : 'text-left'}`}
-          >
+          <select value={collegeFilter} onChange={(e) => setCollegeFilter(e.target.value)} className={fieldClass} aria-label={t('academic.departments.allColleges', 'All Colleges')}>
             <option value="">{t('academic.departments.allColleges', 'All Colleges')}</option>
             <option value="university_wide">{t('academic.departments.universityWide', 'University-wide')}</option>
             {collegeFilterOptions.map((college) => (
@@ -302,32 +253,39 @@ export default function Departments() {
             ))}
           </select>
         </div>
-      </div>
+      </Panel>
+
 
       {statusError && (
         <div className="bg-red-50 border border-red-200 rounded-xl p-4 text-red-700 text-sm">{statusError}</div>
       )}
 
       {loading ? (
-        <div className="flex justify-center py-12">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-600" />
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3">
+          {Array.from({ length: 3 }, (_, i) => (
+            <Skeleton key={i} className="h-56" />
+          ))}
         </div>
+      ) : filteredDepartments.length === 0 ? (
+        <Panel>
+          <EmptyState icon={Building2} title={t('academic.departments.title')} hint={t('academic.departments.searchPlaceholder')} />
+        </Panel>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
           {filteredDepartments.map((dept) => {
             const stats = deptStats[dept.id] || { courseCount: 0, instructorCount: 0, studentCount: 0 }
             return (
               <div
                 key={dept.id}
                 dir={isArabicLayout ? 'rtl' : 'ltr'}
-                className={`bg-white rounded-2xl shadow-sm border border-gray-200 p-6 hover:shadow-md transition-shadow ${isArabicLayout ? 'text-right' : 'text-left'}`}
+                className={`rounded-2xl border border-[#dde3ef] bg-white p-5 ${isArabicLayout ? 'text-right' : 'text-left'}`}
               >
                 <div className="flex items-start gap-4 mb-5">
-                  <div className="w-14 h-14 bg-primary-gradient rounded-xl flex items-center justify-center flex-shrink-0">
-                    <Building2 className="w-7 h-7 text-white" />
+                  <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-[#eef2f9] text-[#1a3a6b]">
+                    <Building2 className="h-6 w-6" />
                   </div>
                   <div className="flex-1 min-w-0">
-                    <h3 className="text-base font-semibold text-gray-900 mb-1">{getLocalizedName(dept, isRTL)}</h3>
+                    <h3 className="mb-1 text-base font-extrabold text-[#1a3a6b]">{getLocalizedName(dept, isRTL)}</h3>
                     <div className="text-sm text-gray-500">{dept.code}</div>
                   </div>
                 </div>
@@ -354,13 +312,13 @@ export default function Departments() {
                         <span className="text-sm font-medium text-gray-900 min-w-0 text-right">
                           {getLocalizedName(dept.instructors, isRTL) || t('academic.departments.notAssigned')}
                         </span>
-                        <div className="w-7 h-7 bg-primary-gradient rounded-full flex items-center justify-center text-white text-xs font-semibold flex-shrink-0">
+                        <div className="w-7 h-7 rounded-full bg-[#1a3a6b] flex items-center justify-center text-white text-xs font-semibold flex-shrink-0">
                           {getLocalizedName(dept.instructors, isRTL) ? getLocalizedName(dept.instructors, isRTL).split(' ').map(n => n[0]).join('').slice(0, 2) : '?'}
                         </div>
                       </>
                     ) : (
                       <>
-                        <div className="w-7 h-7 bg-primary-gradient rounded-full flex items-center justify-center text-white text-xs font-semibold flex-shrink-0">
+                        <div className="w-7 h-7 rounded-full bg-[#1a3a6b] flex items-center justify-center text-white text-xs font-semibold flex-shrink-0">
                           {getLocalizedName(dept.instructors, isRTL) ? getLocalizedName(dept.instructors, isRTL).split(' ').map(n => n[0]).join('').slice(0, 2) : '?'}
                         </div>
                         <span className="text-sm font-medium text-gray-900 min-w-0 text-left">
@@ -384,23 +342,13 @@ export default function Departments() {
                     <div className="text-xs text-gray-500">{t('academic.departments.students')}</div>
                   </div>
                 </div>
-                <div className="grid grid-cols-2 gap-3 mb-3">
-                  <button
-                    type="button"
-                    onClick={() => navigate(`/academic/departments/${dept.id}`)}
-                    className={`flex items-center justify-center gap-1.5 py-3 border border-gray-200 rounded-lg text-gray-600 hover:bg-gray-50 text-sm font-medium ${isArabicLayout ? 'flex-row-reverse' : ''}`}
-                  >
-                    <Eye className="w-4 h-4 flex-shrink-0" />
+                <div className="mb-3 grid grid-cols-2 gap-2">
+                  <Button variant="quiet" size="sm" icon={Eye} onClick={() => navigate(`/academic/departments/${dept.id}`)}>
                     {t('academic.departments.view')}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => navigate(`/academic/departments/${dept.id}/edit`)}
-                    className={`flex items-center justify-center gap-1.5 py-3 bg-primary-gradient text-white rounded-lg hover:shadow-lg text-sm font-medium ${isArabicLayout ? 'flex-row-reverse' : ''}`}
-                  >
-                    <Edit className="w-4 h-4 flex-shrink-0" />
+                  </Button>
+                  <Button size="sm" icon={Edit} onClick={() => navigate(`/academic/departments/${dept.id}/edit`)}>
                     {t('academic.departments.edit')}
-                  </button>
+                  </Button>
                 </div>
                 <button
                   type="button"

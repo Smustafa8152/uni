@@ -5,7 +5,9 @@ import { useLanguage } from '../../contexts/LanguageContext'
 import { getLocalizedName } from '../../utils/localizedName'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
-import { Plus, CalendarDays, Search, Eye, Edit, MoreVertical, TrendingUp, Users, Clock, CheckCircle, Calendar, Bell, Lock, Copy, XCircle, Archive } from 'lucide-react'
+import { Plus, CalendarDays, Search, Eye, Edit, MoreVertical, TrendingUp, Users, Clock, CheckCircle, Lock, Copy, XCircle } from 'lucide-react'
+import { Badge, Button, EmptyState, PageHeader, Panel, Skeleton } from '../../components/ui'
+import { Stat, fieldClass } from '../../components/academic/catalogUi'
 
 export default function AcademicYears() {
   const { t, i18n } = useTranslation()
@@ -423,156 +425,57 @@ export default function AcademicYears() {
   }, [])
 
   return (
-    <div className="space-y-8">
-      {/* Header */}
-      <div className="flex items-start justify-between gap-4">
-        <div className={isArabicLayout ? 'text-right' : 'text-left'}>
-          <h1 className="text-3xl font-bold text-gray-900 mb-2">{t('academic.academicYears.title')}</h1>
-          <p className="text-sm text-gray-500">{t('academic.academicYears.subtitle')}</p>
-        </div>
-        <button
-          onClick={() => navigate('/academic/years/create')}
-          className={`flex items-center ${isArabicLayout ? 'flex-row-reverse space-x-reverse' : 'space-x-2'} bg-primary-gradient text-white px-6 py-3 rounded-lg text-sm font-semibold shadow-md hover:shadow-lg transition-all`}
-        >
-          <Plus className="w-4 h-4" />
-          <span>{t('academic.academicYears.create')}</span>
-        </button>
+    <div className="space-y-5">
+      <PageHeader
+        title={t('academic.academicYears.title')}
+        subtitle={t('academic.academicYears.subtitle')}
+        actions={
+          <Button icon={Plus} onClick={() => navigate('/academic/years/create')}>
+            {t('academic.academicYears.create')}
+          </Button>
+        }
+      />
+
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
+        <Stat
+          label={t('academic.academicYears.currentAcademicYear')}
+          value={kpis.currentYear ? (getLocalizedName(kpis.currentYear, isRTL) || kpis.currentYear.code) : '—'}
+          hint={kpis.currentYear ? t('academic.academicYears.inProgress') : null}
+        />
+        <Stat label={t('academic.academicYears.activeYears')} value={kpis.activeYears} hint={t('academic.academicYears.scheduledInProgress')} tone="ok" />
+        <Stat
+          label={t('academic.academicYears.registrationStatus')}
+          value={kpis.registrationStatus === 'open' ? t('academic.academicYears.open') : t('academic.academicYears.closed')}
+          hint={kpis.registrationStatus === 'open' && kpis.currentYear ? t('academic.academicYears.registrationBySemester') : null}
+          tone={kpis.registrationStatus === 'open' ? 'ok' : 'navy'}
+        />
+        <Stat label={t('academic.academicYears.daysRemaining')} value={kpis.daysRemaining} hint={t('academic.academicYears.untilYearEnd')} tone="gold" />
+        <Stat
+          label={t('academic.academicYears.yearHealth')}
+          value={kpis.yearHealth === 'healthy' ? t('academic.academicYears.healthy') : t('academic.academicYears.warning')}
+          hint={t('academic.academicYears.noPendingIssues')}
+          tone={kpis.yearHealth === 'healthy' ? 'ok' : 'warn'}
+        />
       </div>
 
-      {/* Current Academic Year Banner */}
-      <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-5">
-        <div className="flex items-center justify-between gap-4">
-          <div className={isArabicLayout ? 'text-right' : 'text-left'}>
-            <div className="text-xs text-gray-500 mb-1">{t('academic.academicYears.currentAcademicYear')}</div>
-            <div className="text-xl font-bold text-gray-900">
-              {kpis.currentYear ? (getLocalizedName(kpis.currentYear, isArabicLayout) || kpis.currentYear.code) : (t('common.notAvailable') || 'N/A')}
-            </div>
-            {kpis.currentYear?.code && (
-              <div className="text-sm text-gray-500 mt-1">{kpis.currentYear.code}</div>
-            )}
+      <Panel>
+        <div className="grid gap-3 md:grid-cols-[1fr_16rem]">
+          <div className="relative">
+            <Search className="pointer-events-none absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" aria-hidden="true" />
+            <input
+              type="text"
+              placeholder={t('academic.academicYears.searchPlaceholder')}
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className={`${fieldClass} ps-9`}
+              aria-label={t('academic.academicYears.searchPlaceholder')}
+            />
           </div>
-          {kpis.currentYear && (
-            <span className="px-3 py-1 bg-primary-gradient text-white rounded-full text-xs font-semibold whitespace-nowrap">
-              {t('academic.academicYears.current').toUpperCase()}
-            </span>
-          )}
-        </div>
-      </div>
-
-      {/* Tier 1 KPIs */}
-      <div className="grid grid-cols-1 md:grid-cols-5 gap-5 mb-8">
-        {/* Current Academic Year */}
-        <div className="bg-primary-gradient rounded-2xl p-6 text-white shadow-lg">
-          <div className={`flex items-start ${isRTL ? 'flex-row-reverse justify-between' : 'justify-between'} mb-4`}>
-            <div className="w-12 h-12 bg-white/20 rounded-xl flex items-center justify-center">
-              <CalendarDays className="w-6 h-6" />
-            </div>
-            {kpis.currentYear && (
-              <span className="bg-white/20 px-3 py-1 rounded-full text-xs font-semibold">
-                {t('academic.academicYears.inProgress').toUpperCase()}
-              </span>
-            )}
-          </div>
-          <div className="text-xs opacity-80 mb-1">{t('academic.academicYears.currentAcademicYear')}</div>
-          <div className="text-2xl font-bold">
-            {kpis.currentYear ? (getLocalizedName(kpis.currentYear, isRTL) || kpis.currentYear.code) : 'N/A'}
-          </div>
-        </div>
-
-        {/* Active Academic Years */}
-        <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-200">
-          <div className="mb-4">
-            <div className="w-12 h-12 bg-gradient-to-br from-green-500 to-green-400 rounded-xl flex items-center justify-center">
-              <TrendingUp className="w-6 h-6 text-white" />
-            </div>
-          </div>
-          <div className="text-xs text-gray-500 mb-1">{t('academic.academicYears.activeYears')}</div>
-          <div className="text-3xl font-bold text-gray-900">{kpis.activeYears}</div>
-          <div className="text-xs text-green-600 mt-1">{t('academic.academicYears.scheduledInProgress')}</div>
-        </div>
-
-        {/* Registration Status */}
-        <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-200">
-          <div className={`flex items-start ${isRTL ? 'flex-row-reverse justify-between' : 'justify-between'} mb-4`}>
-            <div className="w-12 h-12 bg-gradient-to-br from-blue-500 to-blue-400 rounded-xl flex items-center justify-center">
-              <Users className="w-6 h-6 text-white" />
-            </div>
-            <span className={`px-3 py-1 rounded-full text-xs font-semibold ${
-              kpis.registrationStatus === 'open' 
-                ? 'bg-green-100 text-green-700' 
-                : 'bg-gray-100 text-gray-600'
-            }`}>
-              {kpis.registrationStatus === 'open' 
-                ? t('academic.academicYears.open').toUpperCase() 
-                : t('academic.academicYears.closed').toUpperCase()}
-            </span>
-          </div>
-          <div className="text-xs text-gray-500 mb-1">{t('academic.academicYears.registrationStatus')}</div>
-          <div className="text-lg font-bold text-gray-900">
-            {kpis.registrationStatus === 'open' 
-              ? t('academic.academicYears.open') 
-              : t('academic.academicYears.closed')}
-          </div>
-          {kpis.registrationStatus === 'open' && kpis.currentYear && (
-            <div className="text-xs text-gray-500 mt-1">{t('academic.academicYears.registrationBySemester')}</div>
-          )}
-        </div>
-
-        {/* Days Remaining */}
-        <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-200">
-          <div className="mb-4">
-            <div className="w-12 h-12 bg-gradient-to-br from-yellow-500 to-yellow-400 rounded-xl flex items-center justify-center">
-              <Clock className="w-6 h-6 text-white" />
-            </div>
-          </div>
-          <div className="text-xs text-gray-500 mb-1">{t('academic.academicYears.daysRemaining')}</div>
-          <div className="text-3xl font-bold text-yellow-600">{kpis.daysRemaining}</div>
-          <div className="text-xs text-gray-500 mt-1">{t('academic.academicYears.untilYearEnd')}</div>
-        </div>
-
-        {/* Academic Year Health */}
-        <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-200">
-          <div className={`flex items-start ${isRTL ? 'flex-row-reverse justify-between' : 'justify-between'} mb-4`}>
-            <div className="w-12 h-12 bg-gradient-to-br from-green-500 to-green-400 rounded-xl flex items-center justify-center">
-              <CheckCircle className="w-6 h-6 text-white" />
-            </div>
-            <span className={`px-3 py-1 rounded-full text-xs font-semibold ${
-              kpis.yearHealth === 'healthy' 
-                ? 'bg-green-100 text-green-700' 
-                : 'bg-yellow-100 text-yellow-800'
-            }`}>
-              {kpis.yearHealth === 'healthy' 
-                ? t('academic.academicYears.healthy').toUpperCase() 
-                : t('academic.academicYears.warning').toUpperCase()}
-            </span>
-          </div>
-          <div className="text-xs text-gray-500 mb-1">{t('academic.academicYears.yearHealth')}</div>
-          <div className={`text-lg font-bold ${
-            kpis.yearHealth === 'healthy' ? 'text-green-600' : 'text-yellow-600'
-          }`}>
-            {kpis.yearHealth === 'healthy' 
-              ? t('academic.academicYears.healthy') 
-              : t('academic.academicYears.warning')}
-          </div>
-          <div className="text-xs text-gray-500 mt-1">{t('academic.academicYears.noPendingIssues')}</div>
-        </div>
-      </div>
-
-      {/* Search Bar */}
-      <div className="bg-white rounded-xl shadow-sm border border-gray-200 px-6 py-4 mb-6">
-        <div className={`flex items-center ${isRTL ? 'space-x-reverse' : 'space-x-3'}`}>
-          <Search className="w-5 h-5 text-gray-400" />
-          <input
-            type="text"
-            placeholder={t('academic.academicYears.searchPlaceholder')}
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="flex-1 border-none outline-none text-sm text-gray-900 bg-transparent"
-          />
           <select
             value={statusFilter}
             onChange={(e) => setStatusFilter(e.target.value)}
-            className={`px-4 py-2 border border-gray-200 rounded-lg text-xs text-gray-500 bg-gray-50 cursor-pointer ${isRTL ? 'text-right' : 'text-left'}`}
+            className={fieldClass}
+            aria-label={t('academic.academicYears.allStatuses')}
           >
             <option value="">{t('academic.academicYears.allStatuses')}</option>
             <option value="draft">{t('academic.academicYears.statusDraft')}</option>
@@ -590,15 +493,21 @@ export default function AcademicYears() {
             <option value="read_only">{t('academic.academicYears.readOnly')}</option>
           </select>
         </div>
-      </div>
+      </Panel>
 
       {/* Academic Years Grid */}
       {loading ? (
-        <div className="text-center py-12">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-600 mx-auto"></div>
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3">
+          {Array.from({ length: 3 }, (_, i) => (
+            <Skeleton key={i} className="h-56" />
+          ))}
         </div>
+      ) : filteredYears.length === 0 ? (
+        <Panel>
+          <EmptyState icon={CalendarDays} title={t('academic.academicYears.title')} hint={t('academic.academicYears.searchPlaceholder')} />
+        </Panel>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
           {filteredYears.map((year) => {
             // Get semester and enrollment counts from state
             const stats = yearStats[year.id] || { semesterCount: 0, enrollmentCount: 0 }
@@ -610,29 +519,23 @@ export default function AcademicYears() {
             return (
               <div
                 key={year.id}
-                className={`bg-white rounded-2xl overflow-hidden shadow-sm border-2 ${
-                  year.is_current ? 'border-primary-500' : 'border-gray-200'
-                } ${isClosed ? 'opacity-85' : ''} hover:shadow-md transition-shadow`}
+                className={`overflow-hidden rounded-2xl border bg-white ${
+                  year.is_current ? 'border-[#1a3a6b]' : 'border-[#dde3ef]'
+                } ${isClosed ? 'opacity-80' : ''}`}
               >
                 <div className="p-6">
                   <div className={`flex items-start ${isRTL ? 'flex-row-reverse space-x-reverse' : 'space-x-4'} mb-5`}>
-                    <div className={`w-14 h-14 ${
-                      normalizedStatus === 'in_progress' ? 'bg-primary-gradient' :
-                      normalizedStatus === 'scheduled' ? 'bg-gradient-to-br from-blue-500 to-blue-400' :
-                      'bg-gradient-to-br from-gray-400 to-gray-300'
-                    } rounded-xl flex items-center justify-center flex-shrink-0`}>
-                      <CalendarDays className="w-7 h-7 text-white" />
+                    <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-[#eef2f9] text-[#1a3a6b]">
+                      <CalendarDays className="h-6 w-6" />
                     </div>
                     <div className="flex-1 min-w-0">
                       <div className={`flex items-center ${isRTL ? 'flex-row-reverse space-x-reverse' : 'space-x-2'} mb-1`}>
-                        <h3 className="text-lg font-bold text-gray-900 truncate">{getLocalizedName(year, isRTL)}</h3>
+                        <h3 className="truncate text-base font-extrabold text-[#1a3a6b]">{getLocalizedName(year, isRTL)}</h3>
                       </div>
                       <p className="text-sm text-gray-500">{year.code} - {getCollegeName(year)}</p>
                     </div>
                     {year.is_current && (
-                      <span className="bg-primary-gradient text-white px-3 py-1 rounded-full text-xs font-semibold whitespace-nowrap">
-                        {t('academic.academicYears.current').toUpperCase()}
-                      </span>
+                      <Badge tone="gold">{t('academic.academicYears.current')}</Badge>
                     )}
                     {!year.is_current && getStatusBadge(normalizedStatus)}
                   </div>

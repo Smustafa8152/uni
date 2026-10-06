@@ -2,6 +2,8 @@ import { useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { supabase } from '../../lib/supabase'
 import { useLanguage } from '../../contexts/LanguageContext'
+import { PageHeader, Panel } from '../../components/ui'
+import { fieldClass } from '../../components/academic/catalogUi'
 
 const UI = {
   bdr: '#dde3ef',
@@ -192,20 +194,14 @@ export default function AdminELibrary() {
 
   return (
     <div className={`space-y-6 ${isRTL ? 'text-right' : 'text-left'}`} dir={isArabic ? 'rtl' : 'ltr'}>
-      <div className="flex items-start justify-between gap-4 flex-wrap">
-        <div>
-          <h1 className="text-2xl font-extrabold" style={{ color: UI.p }}>
-            {t('admin.elibrary.title', 'e‑Library content')}
-          </h1>
-          <p className="text-sm" style={{ color: UI.muted }}>
-            {t('admin.elibrary.subtitle', 'Add and manage library resources per major.')}
-          </p>
-        </div>
-      </div>
+      <PageHeader
+        title={t('admin.elibrary.title', 'e‑Library content')}
+        subtitle={t('admin.elibrary.subtitle', 'Add and manage library resources per major.')}
+      />
 
       {error && <div className="rounded-xl border border-red-200 bg-red-50 text-red-800 px-4 py-3 text-sm">{error}</div>}
 
-      <div className="bg-white rounded-xl border shadow-sm p-5" style={{ borderColor: UI.bdr }}>
+      <Panel>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-end">
           <div className="md:col-span-2">
             <label className="block text-sm font-extrabold mb-2" style={{ color: UI.p }}>
@@ -214,8 +210,7 @@ export default function AdminELibrary() {
             <select
               value={selectedMajorId}
               onChange={(e) => setSelectedMajorId(e.target.value)}
-              className="w-full px-4 py-2.5 rounded-lg border"
-              style={{ borderColor: UI.bdr }}
+              className={fieldClass}
               disabled={loading}
             >
               <option value="">{t('admin.elibrary.chooseMajor', 'Choose a major…')}</option>
@@ -230,8 +225,7 @@ export default function AdminELibrary() {
             type="button"
             onClick={openCreate}
             disabled={!selectedMajorId}
-            className="px-4 py-2.5 rounded-lg font-extrabold text-white disabled:opacity-60"
-            style={{ backgroundColor: UI.p }}
+            className="inline-flex h-10 items-center justify-center rounded-xl bg-[#1a3a6b] px-4 text-sm font-bold text-white disabled:opacity-50"
           >
             {t('admin.elibrary.addItem', 'Add item')}
           </button>
@@ -241,7 +235,7 @@ export default function AdminELibrary() {
             {t('admin.elibrary.selectedMajor', 'Selected major')}: <span className="font-bold">{selectedMajorName}</span>
           </div>
         )}
-      </div>
+      </Panel>
 
       {selectedMajorId && (
         <div className="bg-white rounded-xl border shadow-sm overflow-hidden" style={{ borderColor: UI.bdr }}>

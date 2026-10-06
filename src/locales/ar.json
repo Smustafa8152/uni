@@ -2940,7 +2940,8 @@
         "triggeredBy": "بواسطة: {{email}}",
         "unknownUser": "غير معروف",
         "notes": {
-          "applicationCreated": "تم إنشاء الطلب"
+          "applicationCreated": "تم إنشاء الطلب",
+          "applicationSubmitted": "تم تقديم الطلب."
         }
       },
       "editModal": {
@@ -3023,6 +3024,18 @@
         "loadFailed": "تعذّر تحميل الطلب",
         "selectStatus": "يرجى اختيار الحالة",
         "notFound": "الطلب غير موجود"
+      },
+      "page": {
+        "back": "جميع الطلبات",
+        "copyNumber": "نسخ رقم الطلب",
+        "numberCopied": "تم نسخ رقم الطلب",
+        "tabs": {
+          "overview": "بيانات المتقدم",
+          "documents": "المستندات",
+          "messages": "الرسائل",
+          "interview": "المقابلة والاختبار",
+          "activity": "سجل النشاط"
+        }
       }
     },
     "statusCodes": {

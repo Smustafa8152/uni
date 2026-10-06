@@ -2152,7 +2152,8 @@
         "triggeredBy": "Triggered by: {{email}}",
         "unknownUser": "Unknown",
         "notes": {
-          "applicationCreated": "Application created"
+          "applicationCreated": "Application created",
+          "applicationSubmitted": "Application submitted."
         }
       },
       "editModal": {
@@ -2235,6 +2236,18 @@
         "loadFailed": "Failed to load application",
         "selectStatus": "Please select a status",
         "notFound": "Application not found"
+      },
+      "page": {
+        "back": "All applications",
+        "copyNumber": "Copy the application number",
+        "numberCopied": "Application number copied",
+        "tabs": {
+          "overview": "Applicant",
+          "documents": "Documents",
+          "messages": "Messages",
+          "interview": "Interview and exam",
+          "activity": "Activity"
+        }
       }
     },
     "statusReasons": {
