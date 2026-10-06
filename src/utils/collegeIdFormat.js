@@ -143,7 +143,13 @@ export async function generateStudentId(supabase, collegeId) {
         sequence,
       })
       if (!existingSet.has(generatedId)) {
-        return generatedId
+        const { data: taken } = await supabase
+          .from('students')
+          .select('id')
+          .eq('student_id', generatedId)
+          .maybeSingle()
+        if (!taken) return generatedId
+        existingSet.add(generatedId)
       }
       sequence++
       attempts++

@@ -31,10 +31,11 @@ const ALL_DOCUMENT_SPECS = [...CORE_DOCUMENT_SPECS, ...SCHOLARSHIP_DOCUMENT_SPEC
 const EDUCATION_LEVELS = ['high_school', 'diploma', 'bachelor', 'master', 'phd']
 
 /** Qualifications the applicant can already hold.
- *  A master's application requires a completed bachelor's, so high school and diploma are not offered.
+ *  A master's application starts at a bachelor's. A PhD application starts at a master's.
  */
 function previousEducationFor(degreeLevel) {
   if (degreeLevel === 'master') return ['bachelor', 'master', 'phd']
+  if (degreeLevel === 'phd') return ['master', 'phd']
   const idx = EDUCATION_LEVELS.indexOf(degreeLevel)
   if (idx <= 0) return []
   return EDUCATION_LEVELS.slice(0, idx)
@@ -874,6 +875,9 @@ export default function RegisterApplication({ portal = false }) {
       } else if (!isCompleteMobile(formData.phone)) {
         add('phone', t('applyForm.errors.mobileInvalid', 'Please enter your complete mobile number.'))
       }
+      if (!formData.country.trim()) {
+        add('country', t('applyForm.errors.countryRequired', 'Please enter your country.'))
+      }
     }
 
     if (step === 6) {
@@ -1548,7 +1552,9 @@ export default function RegisterApplication({ portal = false }) {
                       hint={
                         formData.degree_level === 'master'
                           ? t('applyForm.hints.educationForMaster', "A bachelor's degree or higher.")
-                          : t('applyForm.hints.educationForLevel', 'Qualifications below the academic level you selected.')
+                          : formData.degree_level === 'phd'
+                            ? t('applyForm.hints.educationForPhd', "A master's degree or higher.")
+                            : t('applyForm.hints.educationForLevel', 'Qualifications below the academic level you selected.')
                       }
                     >
                       <select name="highest_education_level" value={formData.highest_education_level} onChange={handleChange} className={inputClass}>
@@ -1746,7 +1752,7 @@ export default function RegisterApplication({ portal = false }) {
                   <Field label={t('applyForm.fields.homePhone', 'Home phone number')}>
                     <input type="tel" name="home_phone" value={formData.home_phone} onChange={handleChange} dir="ltr" className={inputClass} />
                   </Field>
-                  <Field label={t('applyForm.fields.country', 'Country')}>
+                  <Field label={t('applyForm.fields.country', 'Country')} required invalid={invalidFields.includes('country')}>
                     <input type="text" name="country" value={formData.country} onChange={handleChange} className={inputClass} />
                   </Field>
                   <Field label={t('applyForm.fields.state', 'State / province')}>

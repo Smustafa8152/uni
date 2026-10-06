@@ -7504,6 +7504,7 @@
       "selectLevelFirst": "Select an academic level first.",
       "educationForLevel": "Qualifications below the academic level you selected.",
       "educationForMaster": "A bachelor's degree or higher.",
+      "educationForPhd": "A master's degree or higher.",
       "selectFacultyFirst": "Select a faculty first."
     },
     "workload": {
@@ -7593,6 +7594,7 @@
       "emailRequired": "Please enter your email address.",
       "emailInvalid": "Please enter a valid email address, for example name@example.com.",
       "mobileRequired": "Please enter your mobile number.",
+      "countryRequired": "Please enter your country.",
       "mobileInvalid": "Please enter your complete mobile number."
     },
     "degreeLevelClosed": "{{level}} (not open for applications)"

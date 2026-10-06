@@ -120,6 +120,25 @@ async function sendSmtpMessage(cfg: SmtpShape, to: string, subject: string, text
 }
 
 
+function applyIdTokens(format: string, prefix: string, year: number, collegeCode: string, sequenceToken: string) {
+  const yearNum = String(year)
+  const year2 = yearNum.length >= 2 ? yearNum.slice(-2) : yearNum
+  return format
+    .replaceAll('{prefix}', prefix)
+    .replaceAll('{year}', yearNum)
+    .replaceAll('{year2}', year2)
+    .replaceAll('{college_code}', collegeCode)
+    .replaceAll('{collegeCode}', collegeCode)
+    .replace(/\{sequence:D\d+\}/g, sequenceToken)
+}
+
+function formatStudentId(format: string, prefix: string, year: number, collegeCode: string, sequence: number) {
+  const widthMatch = format.match(/\{sequence:D(\d+)\}/)
+  const width = widthMatch ? parseInt(widthMatch[1], 10) : 4
+  const seqStr = String(Math.max(0, sequence)).padStart(width, '0')
+  return applyIdTokens(format, prefix, year, collegeCode, seqStr)
+}
+
 async function generateStudentId(supabaseAdmin: any, collegeId: number) {
   const { data: college } = await supabaseAdmin
     .from('colleges')
@@ -127,22 +146,11 @@ async function generateStudentId(supabaseAdmin: any, collegeId: number) {
     .eq('id', collegeId)
     .single()
 
-  const prefix = college?.student_id_prefix ?? 'STU'
+  const prefix = college?.student_id_prefix ?? ''
   const collegeCode = college?.code ?? ''
   const year = new Date().getFullYear()
   const format = college?.student_id_format || '{prefix}{year}{sequence:D4}'
-
-  // Support both token spellings used in the app:
-  // - {college_code} (snake_case) is what the admin UI hints
-  // - {collegeCode} (legacy camelCase in this function)
-  const applyTokens = (tpl: string) =>
-    tpl
-      .replaceAll('{prefix}', String(prefix))
-      .replaceAll('{year}', String(year))
-      .replaceAll('{college_code}', String(collegeCode))
-      .replaceAll('{collegeCode}', String(collegeCode))
-
-  const staticPrefix = applyTokens(format).replace(/\{sequence:[^}]+\}/g, '')
+  const staticPrefix = applyIdTokens(format, prefix, year, collegeCode, '')
 
   let query = supabaseAdmin.from('students').select('student_id').eq('college_id', collegeId)
   if (staticPrefix) query = query.like('student_id', `${staticPrefix}%`)
@@ -151,13 +159,26 @@ async function generateStudentId(supabaseAdmin: any, collegeId: number) {
   const ids = (existing || []).map((r: any) => String(r.student_id || '')).filter(Boolean)
   let max = 0
   for (const id of ids) {
-    const m = id.match(/(\d{4,6})$/)
+    if (staticPrefix && !id.startsWith(staticPrefix)) continue
+    const rest = staticPrefix ? id.slice(staticPrefix.length) : id
+    const m = rest.match(/^(\d+)$/)
     if (m) max = Math.max(max, parseInt(m[1], 10))
   }
   const start = Number(college?.student_id_starting_number) || 1
-  const seq = Math.max(max + 1, start)
-  const seqStr = String(seq).padStart(4, '0')
-  return applyTokens(format).replace(/\{sequence:[^}]+\}/g, seqStr)
+  let sequence = Math.max(max + 1, start)
+
+  // student_id is unique across every college, so skip numbers already taken elsewhere.
+  for (let attempt = 0; attempt < 50; attempt++) {
+    const candidate = formatStudentId(format, prefix, year, collegeCode, sequence)
+    const { data: taken } = await supabaseAdmin
+      .from('students')
+      .select('id')
+      .eq('student_id', candidate)
+      .maybeSingle()
+    if (!taken) return candidate
+    sequence++
+  }
+  throw new Error('Unable to generate a unique student ID')
 }
 
 serve(async (req) => {
@@ -329,45 +350,57 @@ serve(async (req) => {
 
     let createdStudent: any = existingStudent
     if (!existingStudent) {
-      const studentId = await generateStudentId(supabaseAdmin, Number(app.college_id))
       const enrollmentDate = new Date().toISOString().split('T')[0]
-
-      const { data: inserted, error: insErr } = await supabaseAdmin
-        .from('students')
-        .insert({
-          user_id: userId,
-          student_id: studentId,
-          name_en: safeNameEn,
-          name_ar: safeNameAr,
-          first_name: app.first_name || null,
-          middle_name: app.middle_name || null,
-          last_name: app.last_name || null,
-          first_name_ar: app.first_name_ar || null,
-          middle_name_ar: app.middle_name_ar || null,
-          last_name_ar: app.last_name_ar || null,
-          email: app.email,
-          phone: app.phone || null,
-          mobile_phone: app.phone || null,
-          date_of_birth: app.date_of_birth || null,
-          gender: app.gender || null,
-          nationality: app.nationality || null,
-          national_id: app.national_id || null,
-          city: app.city || null,
-          postal_code: app.postal_code || null,
-          emergency_contact_name: app.emergency_contact_name || null,
-          emergency_contact_relation: app.emergency_contact_relation || null,
-          emergency_phone: app.emergency_contact_phone || app.emergency_phone || null,
-          major_id: Number(app.major_id),
-          college_id: Number(app.college_id),
-          enrollment_date: enrollmentDate,
-          status: 'active',
-          study_type: app.study_type === 'part_time' ? 'part_time' : 'full_time',
-          study_approach: app.study_type === 'online' ? 'online' : 'on_campus',
-        })
-        .select('id, student_id')
-        .single()
-      if (insErr) throw insErr
-      createdStudent = inserted
+      const rawGender = String(app.gender || '').trim().toLowerCase()
+      const safeGender = rawGender === 'male' || rawGender === 'female' ? rawGender : null
+      let lastInsErr: any = null
+      for (let attempt = 0; attempt < 8; attempt++) {
+        const studentId = await generateStudentId(supabaseAdmin, Number(app.college_id))
+        const { data: inserted, error: insErr } = await supabaseAdmin
+          .from('students')
+          .insert({
+            user_id: userId,
+            student_id: studentId,
+            name_en: safeNameEn,
+            name_ar: safeNameAr,
+            first_name: app.first_name || null,
+            middle_name: app.middle_name || null,
+            last_name: app.last_name || null,
+            first_name_ar: app.first_name_ar || null,
+            middle_name_ar: app.middle_name_ar || null,
+            last_name_ar: app.last_name_ar || null,
+            email: app.email,
+            phone: app.phone || null,
+            mobile_phone: app.phone || null,
+            date_of_birth: app.date_of_birth || null,
+            gender: safeGender,
+            nationality: app.nationality || null,
+            national_id: app.national_id || null,
+            city: app.city || null,
+            postal_code: app.postal_code || null,
+            emergency_contact_name: app.emergency_contact_name || null,
+            emergency_contact_relation: app.emergency_contact_relation || null,
+            emergency_phone: app.emergency_contact_phone || app.emergency_phone || null,
+            major_id: Number(app.major_id),
+            college_id: Number(app.college_id),
+            enrollment_date: enrollmentDate,
+            status: 'active',
+            study_type: app.study_type === 'part_time' ? 'part_time' : 'full_time',
+            study_approach: app.study_type === 'online' ? 'online' : 'on_campus',
+          })
+          .select('id, student_id')
+          .single()
+        if (!insErr) {
+          createdStudent = inserted
+          lastInsErr = null
+          break
+        }
+        const duplicateId =
+          insErr.code === '23505' && String(insErr.message || '').includes('students_student_id_unique')
+        if (!duplicateId) throw insErr
+        lastInsErr = insErr
+      }
+      if (!createdStudent) throw lastInsErr || new Error('Unable to generate a unique student ID')
     }
     // Keep student record in sync with the latest application data (best-effort update)
     try {
