@@ -5,9 +5,16 @@ import { useLanguage } from '../../contexts/LanguageContext'
 import { getLocalizedName } from '../../utils/localizedName'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
-import { Plus, CalendarDays, Search, Eye, Edit, MoreVertical, TrendingUp, Users, Clock, CheckCircle, Lock, Copy, XCircle } from 'lucide-react'
-import { Badge, Button, EmptyState, PageHeader, Panel, Skeleton } from '../../components/ui'
-import { Stat, fieldClass } from '../../components/academic/catalogUi'
+import { Plus, CalendarDays, Search, Eye, Edit, MoreVertical, TrendingUp, Clock, CheckCircle, Lock, Copy, XCircle } from 'lucide-react'
+import { Badge, Button, EmptyState, PageHeader, Skeleton } from '../../components/ui'
+import { Facts, Mark, Register, RegisterRow, fieldClass } from '../../components/academic/catalogUi'
+
+function formatYearDate(value, isArabic) {
+  if (!value) return '—'
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return '—'
+  return date.toLocaleDateString(isArabic ? 'ar-u-nu-latn' : 'en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
+}
 
 export default function AcademicYears() {
   const { t, i18n } = useTranslation()
@@ -436,259 +443,162 @@ export default function AcademicYears() {
         }
       />
 
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
-        <Stat
-          label={t('academic.academicYears.currentAcademicYear')}
-          value={kpis.currentYear ? (getLocalizedName(kpis.currentYear, isRTL) || kpis.currentYear.code) : '—'}
-          hint={kpis.currentYear ? t('academic.academicYears.inProgress') : null}
-        />
-        <Stat label={t('academic.academicYears.activeYears')} value={kpis.activeYears} hint={t('academic.academicYears.scheduledInProgress')} tone="ok" />
-        <Stat
-          label={t('academic.academicYears.registrationStatus')}
-          value={kpis.registrationStatus === 'open' ? t('academic.academicYears.open') : t('academic.academicYears.closed')}
-          hint={kpis.registrationStatus === 'open' && kpis.currentYear ? t('academic.academicYears.registrationBySemester') : null}
-          tone={kpis.registrationStatus === 'open' ? 'ok' : 'navy'}
-        />
-        <Stat label={t('academic.academicYears.daysRemaining')} value={kpis.daysRemaining} hint={t('academic.academicYears.untilYearEnd')} tone="gold" />
-        <Stat
-          label={t('academic.academicYears.yearHealth')}
-          value={kpis.yearHealth === 'healthy' ? t('academic.academicYears.healthy') : t('academic.academicYears.warning')}
-          hint={t('academic.academicYears.noPendingIssues')}
-          tone={kpis.yearHealth === 'healthy' ? 'ok' : 'warn'}
-        />
-      </div>
+      <Facts
+        items={[
+          { label: t('academic.academicYears.currentAcademicYear'), value: kpis.currentYear ? (getLocalizedName(kpis.currentYear, isRTL) || kpis.currentYear.code) : '—' },
+          { label: t('academic.academicYears.activeYears'), value: kpis.activeYears },
+          { label: t('academic.academicYears.registrationStatus'), value: kpis.registrationStatus === 'open' ? t('academic.academicYears.open') : t('academic.academicYears.closed') },
+          { label: t('academic.academicYears.daysRemaining'), value: kpis.daysRemaining },
+          { label: t('academic.academicYears.yearHealth'), value: kpis.yearHealth === 'healthy' ? t('academic.academicYears.healthy') : t('academic.academicYears.warning') },
+        ]}
+      />
 
-      <Panel>
-        <div className="grid gap-3 md:grid-cols-[1fr_16rem]">
-          <div className="relative">
-            <Search className="pointer-events-none absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" aria-hidden="true" />
-            <input
-              type="text"
-              placeholder={t('academic.academicYears.searchPlaceholder')}
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className={`${fieldClass} ps-9`}
-              aria-label={t('academic.academicYears.searchPlaceholder')}
-            />
+      <Register
+        toolbar={
+          <div className="grid gap-3 md:grid-cols-[1fr_16rem]">
+            <div className="relative">
+              <Search className="pointer-events-none absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" aria-hidden="true" />
+              <input
+                type="text"
+                placeholder={t('academic.academicYears.searchPlaceholder')}
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className={`${fieldClass} ps-9`}
+                aria-label={t('academic.academicYears.searchPlaceholder')}
+              />
+            </div>
+            <select
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value)}
+              className={fieldClass}
+              aria-label={t('academic.academicYears.allStatuses')}
+            >
+              <option value="">{t('academic.academicYears.allStatuses')}</option>
+              <option value="draft">{t('academic.academicYears.statusDraft')}</option>
+              <option value="scheduled">{t('academic.academicYears.statusScheduled')}</option>
+              <option value="in_progress">{t('academic.academicYears.statusInProgress')}</option>
+              <option value="closing">{t('academic.academicYears.statusClosing')}</option>
+              <option value="closed">{t('academic.academicYears.statusClosed')}</option>
+              <option value="archived">{t('academic.academicYears.statusArchived')}</option>
+              <option value="pending_setup">{t('academic.academicYears.pendingSetup')}</option>
+              <option value="registration_open">{t('academic.academicYears.registrationOpen')}</option>
+              <option value="grade_entry_allowed">{t('academic.academicYears.gradeEntryAllowed')}</option>
+              <option value="attendance_editing_allowed">{t('academic.academicYears.attendanceEditing')}</option>
+              <option value="financial_posting_allowed">{t('academic.academicYears.financialPosting')}</option>
+              <option value="current">{t('academic.academicYears.current')}</option>
+              <option value="read_only">{t('academic.academicYears.readOnly')}</option>
+            </select>
           </div>
-          <select
-            value={statusFilter}
-            onChange={(e) => setStatusFilter(e.target.value)}
-            className={fieldClass}
-            aria-label={t('academic.academicYears.allStatuses')}
-          >
-            <option value="">{t('academic.academicYears.allStatuses')}</option>
-            <option value="draft">{t('academic.academicYears.statusDraft')}</option>
-            <option value="scheduled">{t('academic.academicYears.statusScheduled')}</option>
-            <option value="in_progress">{t('academic.academicYears.statusInProgress')}</option>
-            <option value="closing">{t('academic.academicYears.statusClosing')}</option>
-            <option value="closed">{t('academic.academicYears.statusClosed')}</option>
-            <option value="archived">{t('academic.academicYears.statusArchived')}</option>
-            <option value="pending_setup">{t('academic.academicYears.pendingSetup')}</option>
-            <option value="registration_open">{t('academic.academicYears.registrationOpen')}</option>
-            <option value="grade_entry_allowed">{t('academic.academicYears.gradeEntryAllowed')}</option>
-            <option value="attendance_editing_allowed">{t('academic.academicYears.attendanceEditing')}</option>
-            <option value="financial_posting_allowed">{t('academic.academicYears.financialPosting')}</option>
-            <option value="current">{t('academic.academicYears.current')}</option>
-            <option value="read_only">{t('academic.academicYears.readOnly')}</option>
-          </select>
-        </div>
-      </Panel>
-
-      {/* Academic Years Grid */}
-      {loading ? (
-        <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3">
-          {Array.from({ length: 3 }, (_, i) => (
-            <Skeleton key={i} className="h-56" />
-          ))}
-        </div>
-      ) : filteredYears.length === 0 ? (
-        <Panel>
+        }
+      >
+        {loading ? (
+          <div className="space-y-px p-4">
+            {Array.from({ length: 4 }, (_, i) => (
+              <Skeleton key={i} className="h-16" />
+            ))}
+          </div>
+        ) : filteredYears.length === 0 ? (
           <EmptyState icon={CalendarDays} title={t('academic.academicYears.title')} hint={t('academic.academicYears.searchPlaceholder')} />
-        </Panel>
-      ) : (
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
-          {filteredYears.map((year) => {
-            // Get semester and enrollment counts from state
+        ) : (
+          filteredYears.map((year) => {
             const stats = yearStats[year.id] || { semesterCount: 0, enrollmentCount: 0 }
-            const semesterCount = stats.semesterCount
-            const enrollmentCount = stats.enrollmentCount
             const normalizedStatus = normalizeStatus(year.status)
             const isClosed = normalizedStatus === 'closed' || normalizedStatus === 'archived'
 
             return (
-              <div
+              <RegisterRow
                 key={year.id}
-                className={`overflow-hidden rounded-2xl border bg-white ${
-                  year.is_current ? 'border-[#1a3a6b]' : 'border-[#dde3ef]'
-                } ${isClosed ? 'opacity-80' : ''}`}
-              >
-                <div className="p-6">
-                  <div className={`flex items-start ${isRTL ? 'flex-row-reverse space-x-reverse' : 'space-x-4'} mb-5`}>
-                    <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-[#eef2f9] text-[#1a3a6b]">
-                      <CalendarDays className="h-6 w-6" />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className={`flex items-center ${isRTL ? 'flex-row-reverse space-x-reverse' : 'space-x-2'} mb-1`}>
-                        <h3 className="truncate text-base font-extrabold text-[#1a3a6b]">{getLocalizedName(year, isRTL)}</h3>
-                      </div>
-                      <p className="text-sm text-gray-500">{year.code} - {getCollegeName(year)}</p>
-                    </div>
-                    {year.is_current && (
-                      <Badge tone="gold">{t('academic.academicYears.current')}</Badge>
-                    )}
-                    {!year.is_current && getStatusBadge(normalizedStatus)}
-                  </div>
-
-                  {/* Dates Grid */}
-                  <div className="grid grid-cols-2 gap-4 mb-5">
-                    <div>
-                      <div className="text-xs text-gray-500 mb-1">{t('academic.academicYears.startDate')}</div>
-                      <div className="text-sm font-semibold text-gray-900">
-                        {new Date(year.start_date).toLocaleDateString('en-US', { month: 'numeric', day: 'numeric', year: 'numeric' })}
-                      </div>
-                    </div>
-                    <div>
-                      <div className="text-xs text-gray-500 mb-1">{t('academic.academicYears.endDate')}</div>
-                      <div className="text-sm font-semibold text-gray-900">
-                        {new Date(year.end_date).toLocaleDateString('en-US', { month: 'numeric', day: 'numeric', year: 'numeric' })}
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Mini Indicators */}
-                  <div className={`flex ${isRTL ? 'space-x-reverse' : 'space-x-4'} py-3 border-t border-b border-gray-200 mb-5`}>
-                    <div className={`flex items-center ${isRTL ? 'flex-row-reverse space-x-reverse' : 'space-x-1.5'}`}>
-                      <CalendarDays className="w-4 h-4 text-gray-500" />
-                      <span className="text-xs text-gray-500">
-                        <strong className="text-gray-900">{semesterCount}</strong> {t('academic.academicYears.semesters')}
-                      </span>
-                    </div>
-                    <div className={`flex items-center ${isRTL ? 'flex-row-reverse space-x-reverse' : 'space-x-1.5'}`}>
-                      <Users className="w-4 h-4 text-gray-500" />
-                      <span className="text-xs text-gray-500">
-                        <strong className="text-gray-900">{enrollmentCount.toLocaleString()}</strong> {t('academic.academicYears.enrollments')}
-                      </span>
-                    </div>
-                  </div>
-
-                  {/* System Control Flags */}
-                  <div className={`flex flex-wrap ${isRTL ? 'space-x-reverse' : 'space-x-2'} gap-2 mb-5`}>
-                    {year.registration_open && (
-                      <span className={`inline-flex items-center ${isRTL ? 'flex-row-reverse space-x-reverse' : 'space-x-1'} bg-green-100 text-green-700 px-2.5 py-1 rounded-md text-xs font-medium`}>
-                        <CheckCircle className="w-3 h-3" />
-                        {t('academic.academicYears.registrationOpen')}
-                      </span>
-                    )}
-                    {year.grade_entry_allowed && (
-                      <span className={`inline-flex items-center ${isRTL ? 'flex-row-reverse space-x-reverse' : 'space-x-1'} bg-green-100 text-green-700 px-2.5 py-1 rounded-md text-xs font-medium`}>
-                        <CheckCircle className="w-3 h-3" />
-                        {t('academic.academicYears.gradesAllowed')}
-                      </span>
-                    )}
-                    {year.attendance_editing_allowed && (
-                      <span className={`inline-flex items-center ${isRTL ? 'flex-row-reverse space-x-reverse' : 'space-x-1'} bg-green-100 text-green-700 px-2.5 py-1 rounded-md text-xs font-medium`}>
-                        <CheckCircle className="w-3 h-3" />
-                        {t('academic.academicYears.attendanceEdit')}
-                      </span>
-                    )}
+                accent={year.is_current}
+                mark={<Mark icon={CalendarDays} />}
+                title={getLocalizedName(year, isRTL)}
+                code={year.code}
+                tags={year.is_current ? <Badge tone="gold">{t('academic.academicYears.current')}</Badge> : getStatusBadge(normalizedStatus)}
+                detail={
+                  <span className="flex flex-wrap gap-x-4 gap-y-1">
+                    <span>{getCollegeName(year)}</span>
+                    <span>{t('academic.academicYears.startDate')} {formatYearDate(year.start_date, isRTL)}</span>
+                    <span>{t('academic.academicYears.endDate')} {formatYearDate(year.end_date, isRTL)}</span>
+                    <span>{stats.semesterCount} {t('academic.academicYears.semesters')}</span>
+                    <span>{stats.enrollmentCount.toLocaleString(isRTL ? 'ar-u-nu-latn' : 'en')} {t('academic.academicYears.enrollments')}</span>
+                  </span>
+                }
+                note={
+                  <div className="mt-2 flex flex-wrap gap-1.5">
+                    {year.registration_open && <Badge tone="ok" icon={CheckCircle}>{t('academic.academicYears.registrationOpen')}</Badge>}
+                    {year.grade_entry_allowed && <Badge tone="ok" icon={CheckCircle}>{t('academic.academicYears.gradesAllowed')}</Badge>}
+                    {year.attendance_editing_allowed && <Badge tone="ok" icon={CheckCircle}>{t('academic.academicYears.attendanceEdit')}</Badge>}
                     {allMasterSwitchesOff(year) && (
-                      <span
-                        title={t('academic.academicYears.operationsDisabledHint')}
-                        className={`inline-flex items-center ${isRTL ? 'flex-row-reverse space-x-reverse' : 'space-x-1'} bg-amber-50 text-amber-900 border border-amber-200 px-2.5 py-1 rounded-md text-xs font-medium max-w-full cursor-help`}
-                      >
-                        <Clock className="w-3 h-3 shrink-0" />
-                        <span className="leading-snug">{t('academic.academicYears.pendingSetup')}</span>
-                      </span>
+                      <Badge tone="warn" icon={Clock} title={t('academic.academicYears.operationsDisabledHint')}>
+                        {t('academic.academicYears.pendingSetup')}
+                      </Badge>
                     )}
-                    {(normalizedStatus === 'closed' || normalizedStatus === 'archived') && (
-                      <span className={`inline-flex items-center ${isRTL ? 'flex-row-reverse space-x-reverse' : 'space-x-1'} bg-gray-100 text-gray-500 px-2.5 py-1 rounded-md text-xs font-medium`}>
-                        <Lock className="w-3 h-3" />
-                        {t('academic.academicYears.readOnly')}
-                      </span>
-                    )}
+                    {isClosed && <Badge icon={Lock}>{t('academic.academicYears.readOnly')}</Badge>}
                   </div>
-                </div>
-
-                {/* Action Buttons */}
-                <div className="grid grid-cols-3 border-t border-gray-200">
-                  <button
-                    onClick={() => navigate(`/academic/years/${year.id}`)}
-                    className={`flex items-center justify-center ${isRTL ? 'flex-row-reverse space-x-reverse' : 'space-x-1.5'} py-3.5 text-gray-500 text-xs font-medium border-r border-gray-200 hover:bg-gray-50 transition-colors`}
-                  >
-                    <Eye className="w-4 h-4" />
-                    {t('common.view')}
-                  </button>
-                  {!isClosed ? (
-                    <button
-                      onClick={() => navigate(`/academic/years/${year.id}/edit`)}
-                      className={`flex items-center justify-center ${isRTL ? 'flex-row-reverse space-x-reverse' : 'space-x-1.5'} py-3.5 text-primary-600 text-xs font-semibold bg-blue-50 border-r border-gray-200 hover:bg-blue-100 transition-colors`}
-                    >
-                      <Edit className="w-4 h-4" />
-                      {t('common.edit')}
-                    </button>
-                  ) : (
-                    <span className={`flex items-center justify-center ${isRTL ? 'flex-row-reverse space-x-reverse' : 'space-x-1.5'} py-3.5 text-gray-300 text-xs font-medium border-r border-gray-200 cursor-not-allowed`}>
-                      <Lock className="w-4 h-4" />
-                      {t('academic.academicYears.locked')}
-                    </span>
-                  )}
-                  <div className="relative dropdown-container">
-                    <button
-                      onClick={() => toggleDropdown(year.id)}
-                      className={`flex items-center justify-center ${isRTL ? 'flex-row-reverse space-x-reverse' : 'space-x-1.5'} py-3.5 text-gray-500 text-xs font-medium w-full hover:bg-gray-50 transition-colors`}
-                    >
-                      <MoreVertical className="w-4 h-4" />
-                      {t('common.actions')}
-                    </button>
-                    {openDropdown === year.id && (
-                      <div className={`absolute ${isRTL ? 'left-0' : 'right-0'} bottom-full mb-1 bg-white rounded-xl shadow-xl min-w-[200px] z-10 overflow-hidden border border-gray-200`}>
-                        {normalizedStatus === 'scheduled' && !year.is_current && (
-                          <button
-                            onClick={() => handleSetAsCurrent(year.id, year.is_university_wide, year.college_id)}
-                            className={`w-full text-left px-4 py-3 text-xs text-gray-900 hover:bg-gray-50 border-b border-gray-100 flex items-center ${isRTL ? 'flex-row-reverse space-x-reverse' : 'space-x-2'}`}
-                          >
-                            <CheckCircle className="w-4 h-4 text-primary-600" />
-                            <span>{t('academic.academicYears.setAsCurrent')}</span>
-                          </button>
-                        )}
-                        {statusTransitions[normalizedStatus] && (
-                          <button
-                            onClick={() => handleAdvanceStatus(year)}
-                            className={`w-full text-left px-4 py-3 text-xs text-gray-900 hover:bg-gray-50 border-b border-gray-100 flex items-center ${isRTL ? 'flex-row-reverse space-x-reverse' : 'space-x-2'}`}
-                          >
-                            <TrendingUp className="w-4 h-4 text-amber-600" />
-                            <span>{`${t('academic.academicYears.moveTo', 'Move to')}: ${getStatusLabel(statusTransitions[normalizedStatus])}`}</span>
-                          </button>
-                        )}
-                        <button
-                          onClick={() => handleCloneYear(year)}
-                          className={`w-full text-left px-4 py-3 text-xs text-gray-900 hover:bg-gray-50 border-b border-gray-100 flex items-center ${isRTL ? 'flex-row-reverse space-x-reverse' : 'space-x-2'}`}
-                        >
-                          <Copy className="w-4 h-4 text-green-600" />
-                          <span>{t('academic.academicYears.cloneYear')}</span>
-                        </button>
-                        {normalizedStatus === 'draft' && (
-                          <button
-                            onClick={() => {
-                              // TODO: Implement delete
-                              setOpenDropdown(null)
-                            }}
-                            className={`w-full text-left px-4 py-3 text-xs text-red-600 hover:bg-red-50 flex items-center ${isRTL ? 'flex-row-reverse space-x-reverse' : 'space-x-2'}`}
-                          >
-                            <XCircle className="w-4 h-4" />
-                            <span>{t('common.delete')}</span>
-                          </button>
-                        )}
-                      </div>
+                }
+                actions={
+                  <>
+                    <Button variant="quiet" size="sm" icon={Eye} onClick={() => navigate(`/academic/years/${year.id}`)}>
+                      {t('common.view')}
+                    </Button>
+                    {isClosed ? (
+                      <Button variant="quiet" size="sm" icon={Lock} disabled>
+                        {t('academic.academicYears.locked')}
+                      </Button>
+                    ) : (
+                      <Button size="sm" icon={Edit} onClick={() => navigate(`/academic/years/${year.id}/edit`)}>
+                        {t('common.edit')}
+                      </Button>
                     )}
-                  </div>
-                </div>
-              </div>
+                    <div className="relative dropdown-container">
+                      <Button variant="quiet" size="sm" icon={MoreVertical} onClick={() => toggleDropdown(year.id)}>
+                        {t('common.actions')}
+                      </Button>
+                      {openDropdown === year.id && (
+                        <div className="absolute bottom-full end-0 z-10 mb-1 min-w-[200px] overflow-hidden rounded-xl border border-[#dde3ef] bg-white shadow-xl">
+                          {normalizedStatus === 'scheduled' && !year.is_current && (
+                            <button
+                              onClick={() => handleSetAsCurrent(year.id, year.is_university_wide, year.college_id)}
+                              className="flex w-full items-center gap-2 border-b border-[#eef2f9] px-4 py-3 text-start text-xs text-slate-800 hover:bg-slate-50"
+                            >
+                              <CheckCircle className="h-4 w-4 text-[#1a3a6b]" />
+                              <span>{t('academic.academicYears.setAsCurrent')}</span>
+                            </button>
+                          )}
+                          {statusTransitions[normalizedStatus] && (
+                            <button
+                              onClick={() => handleAdvanceStatus(year)}
+                              className="flex w-full items-center gap-2 border-b border-[#eef2f9] px-4 py-3 text-start text-xs text-slate-800 hover:bg-slate-50"
+                            >
+                              <TrendingUp className="h-4 w-4 text-amber-600" />
+                              <span>{`${t('academic.academicYears.moveTo', 'Move to')}: ${getStatusLabel(statusTransitions[normalizedStatus])}`}</span>
+                            </button>
+                          )}
+                          <button
+                            onClick={() => handleCloneYear(year)}
+                            className="flex w-full items-center gap-2 border-b border-[#eef2f9] px-4 py-3 text-start text-xs text-slate-800 hover:bg-slate-50"
+                          >
+                            <Copy className="h-4 w-4 text-emerald-700" />
+                            <span>{t('academic.academicYears.cloneYear')}</span>
+                          </button>
+                          {normalizedStatus === 'draft' && (
+                            <button
+                              onClick={() => setOpenDropdown(null)}
+                              className="flex w-full items-center gap-2 px-4 py-3 text-start text-xs text-red-700 hover:bg-red-50"
+                            >
+                              <XCircle className="h-4 w-4" />
+                              <span>{t('common.delete')}</span>
+                            </button>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  </>
+                }
+              />
             )
-          })}
-        </div>
-      )}
+          })
+        )}
+      </Register>
     </div>
   )
 }

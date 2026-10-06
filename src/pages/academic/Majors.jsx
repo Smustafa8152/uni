@@ -5,12 +5,9 @@ import { useLanguage } from '../../contexts/LanguageContext'
 import { getLocalizedName } from '../../utils/localizedName'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
-import {
-  Plus, BookMarked, Search, Eye, Edit, Users, GraduationCap,
-  FileText, Download
-} from 'lucide-react'
-import { Badge, Button, EmptyState, PageHeader, Panel, Skeleton } from '../../components/ui'
-import { Stat, fieldClass } from '../../components/academic/catalogUi'
+import { Plus, BookMarked, Search, Eye, Edit, FileText, Download } from 'lucide-react'
+import { Button, EmptyState, PageHeader, Skeleton } from '../../components/ui'
+import { Facts, Mark, Register, RegisterRow, fieldClass } from '../../components/academic/catalogUi'
 import { exportMajorsList } from '../../utils/exportMajors'
 import { isMajorOfferedOnRegistrationForm, legacyMajorRecordStatus } from '../../utils/majorAdmissionStatus'
 
@@ -248,22 +245,18 @@ export default function Majors() {
         }
       />
 
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
-        <Stat label={t('academic.majors.kpiActiveMajors', 'Active Majors')} value={kpis.activeMajors} tone="ok" />
-        <Stat label={t('academic.majors.kpiTotalEnrolled', 'Total Enrolled')} value={kpis.totalEnrolled} />
-        <Stat label={t('academic.majors.kpiAdmissionFunnel', 'Admission Funnel')} value={`${kpis.admissionFunnel}%`} hint={t('academic.majors.kpiYieldRate', 'Yield Rate')} />
-        <Stat label={t('academic.majors.kpiGraduationReady', 'Graduation Ready')} value={kpis.graduationReady} hint={t('academic.majors.kpiCandidatesThisYear', 'Candidates this year')} tone="gold" />
-        <div className="rounded-2xl border border-[#dde3ef] bg-white px-4 py-3.5">
-          <div className="text-xs font-semibold text-slate-500">{t('academic.majors.kpiPortfolioHealth', 'Portfolio Health')}</div>
-          <div className="mt-2 flex flex-wrap gap-1.5">
-            <Badge tone="ok">{kpis.healthy} {t('academic.majors.healthHealthy', 'Healthy')}</Badge>
-            <Badge tone="warn">{kpis.attention} {t('academic.majors.healthAttention', 'Attention')}</Badge>
-            <Badge tone="err">{kpis.critical} {t('academic.majors.healthCritical', 'Critical')}</Badge>
-          </div>
-        </div>
-      </div>
+      <Facts
+        items={[
+          { label: t('academic.majors.kpiActiveMajors', 'Active Majors'), value: kpis.activeMajors },
+          { label: t('academic.majors.kpiTotalEnrolled', 'Total Enrolled'), value: kpis.totalEnrolled },
+          { label: t('academic.majors.kpiAdmissionFunnel', 'Admission Funnel'), value: `${kpis.admissionFunnel}%` },
+          { label: t('academic.majors.kpiGraduationReady', 'Graduation Ready'), value: kpis.graduationReady },
+          { label: t('academic.majors.kpiPortfolioHealth', 'Portfolio Health'), value: `${kpis.healthy} / ${kpis.attention} / ${kpis.critical}` },
+        ]}
+      />
 
-      <Panel>
+      <Register
+        toolbar={
         <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
           <div className="relative">
             <Search className="pointer-events-none absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" aria-hidden="true" />
@@ -293,119 +286,61 @@ export default function Majors() {
             <option value="phd">{t('academic.majors.phd')}</option>
           </select>
         </div>
-      </Panel>
-
-      {statusError && (
-        <div className="bg-red-50 border border-red-200 rounded-xl p-4 text-red-700 text-sm">{statusError}</div>
-      )}
-
-      {loading ? (
-        <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
-          {Array.from({ length: 3 }, (_, i) => (
-            <Skeleton key={i} className="h-56" />
-          ))}
-        </div>
-      ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">
-          {filteredMajors.map((major) => {
+        }
+      >
+        {statusError && (
+          <div className="border-b border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{statusError}</div>
+        )}
+        {loading ? (
+          <div className="space-y-px p-4">
+            {Array.from({ length: 4 }, (_, i) => (
+              <Skeleton key={i} className="h-16" />
+            ))}
+          </div>
+        ) : filteredMajors.length === 0 ? (
+          <EmptyState icon={BookMarked} title={t('academic.majors.noMajorsFound', 'No majors found')} hint={t('academic.majors.searchPlaceholder')} />
+        ) : (
+          filteredMajors.map((major) => {
             const stats = majorStats[major.id] || {}
             const health = getHealthIndicator(major, majorStats)
             return (
-              <div
+              <RegisterRow
                 key={major.id}
-                className="overflow-hidden rounded-2xl border border-[#dde3ef] bg-white p-5"
-              >
-                <div className={`flex gap-4 mb-4 ${isRTL ? 'flex-row-reverse' : ''}`}>
-                  <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-[#eef2f9] text-[#1a3a6b]">
-                    <BookMarked className="h-6 w-6" />
-                  </div>
-                  <div className="flex-1 min-w-0 overflow-hidden">
-                    <div className={`flex justify-between items-start gap-2 ${isRTL ? 'flex-row-reverse' : ''}`}>
-                      <div className="min-w-0 flex-1 overflow-hidden">
-                        <h3 className="truncate font-extrabold text-[#1a3a6b]">{getLocalizedName(major, isRTL)}</h3>
-                        <div className="text-sm text-gray-500 truncate">{major.code}</div>
-                      </div>
-                      <span className="flex-shrink-0">{getStatusBadge(major)}</span>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-2 gap-3 p-3 bg-gray-50 rounded-lg mb-4">
-                  <div>
-                    <div className="text-xs text-gray-500">{t('academic.majors.college')}</div>
-                    <div className="text-sm font-medium text-gray-900 truncate">
-                      {major.is_university_wide ? t('academic.majors.universityWide') : (getLocalizedName(major.colleges, isRTL) || '-')}
-                    </div>
-                  </div>
-                  <div>
-                    <div className="text-xs text-gray-500">{t('academic.majors.degreeLevel')}</div>
-                    <div className="text-sm font-medium text-gray-900 capitalize">{major.degree_level || '-'}</div>
-                  </div>
-                  <div>
-                    <div className="text-xs text-gray-500">{t('academic.majors.totalCredits')}</div>
-                    <div className="text-sm font-medium text-gray-900">{major.total_credits || '-'}</div>
-                  </div>
-                  <div>
-                    <div className="text-xs text-gray-500">{t('academic.majors.degreePlan')}</div>
-                    <div className="text-sm font-medium text-gray-900">
-                      {stats.degreePlanVersion || t('academic.majors.degreePlanNotConfigured', 'Not Configured')}
-                    </div>
-                  </div>
-                </div>
-
-                <div className={`flex gap-4 mb-4 pb-4 border-b border-gray-200 ${isRTL ? 'flex-row-reverse' : ''}`}>
-                  <div className={`flex items-center gap-1.5 ${isRTL ? 'flex-row-reverse' : ''}`}>
-                    <Users className="w-4 h-4 text-gray-500" />
-                    <span className="text-xs text-gray-600">
-                      <strong className="text-gray-900">{stats.enrolledCount || 0}</strong> {t('academic.majors.enrolled', 'Enrolled')}
-                    </span>
-                  </div>
-                  <div className={`flex items-center gap-1.5 ${isRTL ? 'flex-row-reverse' : ''}`}>
-                    <GraduationCap className="w-4 h-4 text-gray-500" />
-                    <span className="text-xs text-gray-600">
-                      <strong className="text-gray-900">{stats.graduatingCount || 0}</strong> {t('academic.majors.graduating', 'Graduating')}
-                    </span>
-                  </div>
-                  <div className={`flex items-center gap-1.5 ${health.color} ${isRTL ? 'flex-row-reverse' : ''}`}>
-                    <div className={`w-2 h-2 rounded-full ${health.dot}`}></div>
-                    <span className="text-xs font-medium">{health.label}</span>
-                  </div>
-                </div>
-
-                <button
-                  type="button"
-                  onClick={() => toggleMajorStatus(major)}
-                  disabled={updatingId === major.id}
-                  className={`w-full mb-3 py-2.5 rounded-lg text-sm font-medium disabled:opacity-50 ${
-                    isMajorOfferedOnRegistrationForm(major)
-                      ? 'bg-amber-50 border border-amber-200 text-amber-700 hover:bg-amber-100'
-                      : 'bg-green-50 border border-green-200 text-green-700 hover:bg-green-100'
-                  }`}
-                >
-                  {isMajorOfferedOnRegistrationForm(major) ? t('academic.majors.deactivate') : t('academic.majors.activate')}
-                </button>
-                <div className="flex gap-2">
-                  <Button variant="quiet" size="sm" className="flex-1" icon={Eye} onClick={() => navigate(`/academic/majors/${major.id}`)}>
-                    {t('academic.majors.view')}
-                  </Button>
-                  <Button size="sm" className="flex-1" icon={Edit} onClick={() => navigate(`/academic/majors/${major.id}/edit`)}>
-                    {t('academic.majors.edit')}
-                  </Button>
-                  <Button variant="gold" size="sm" className="flex-1" icon={FileText} onClick={() => navigate(`/academic/majors/${major.id}/degree-plan`)}>
-                    {t('academic.majors.degreePlan', 'Degree Plan')}
-                  </Button>
-                </div>
-              </div>
+                mark={<Mark icon={BookMarked} />}
+                title={getLocalizedName(major, isRTL)}
+                code={major.code}
+                tags={getStatusBadge(major)}
+                detail={
+                  <span className="flex flex-wrap gap-x-4 gap-y-1">
+                    <span>{major.is_university_wide ? t('academic.majors.universityWide') : (getLocalizedName(major.colleges, isRTL) || '—')}</span>
+                    <span>{major.degree_level || '—'}</span>
+                    <span>{major.total_credits || '—'} {t('academic.majors.totalCredits')}</span>
+                    <span>{stats.enrolledCount || 0} {t('academic.majors.enrolled', 'Enrolled')}</span>
+                    <span>{stats.graduatingCount || 0} {t('academic.majors.graduating', 'Graduating')}</span>
+                    <span className={health.color}>{health.label}</span>
+                  </span>
+                }
+                actions={
+                  <>
+                    <Button variant="quiet" size="sm" icon={Eye} onClick={() => navigate(`/academic/majors/${major.id}`)}>
+                      {t('academic.majors.view')}
+                    </Button>
+                    <Button size="sm" icon={Edit} onClick={() => navigate(`/academic/majors/${major.id}/edit`)}>
+                      {t('academic.majors.edit')}
+                    </Button>
+                    <Button variant="gold" size="sm" icon={FileText} onClick={() => navigate(`/academic/majors/${major.id}/degree-plan`)}>
+                      {t('academic.majors.degreePlan', 'Degree Plan')}
+                    </Button>
+                    <Button variant="quiet" size="sm" disabled={updatingId === major.id} onClick={() => toggleMajorStatus(major)}>
+                      {isMajorOfferedOnRegistrationForm(major) ? t('academic.majors.deactivate') : t('academic.majors.activate')}
+                    </Button>
+                  </>
+                }
+              />
             )
-          })}
-        </div>
-      )}
-
-      {!loading && filteredMajors.length === 0 && (
-        <Panel>
-          <EmptyState icon={BookMarked} title={t('academic.majors.noMajorsFound', 'No majors found')} hint={t('academic.majors.searchPlaceholder')} />
-        </Panel>
-      )}
+          })
+        )}
+      </Register>
     </div>
   )
 }

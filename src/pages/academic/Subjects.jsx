@@ -7,8 +7,8 @@ import { exportSubjectStudentsList, exportAllSubjectsStudentsWorkbook } from '..
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
 import { Plus, BookOpen, Search, Eye, Edit, Download } from 'lucide-react'
-import { Button, EmptyState, PageHeader, Panel, Skeleton } from '../../components/ui'
-import { fieldClass } from '../../components/academic/catalogUi'
+import { Badge, Button, EmptyState, PageHeader, Skeleton } from '../../components/ui'
+import { Facts, Mark, Register, RegisterRow, fieldClass } from '../../components/academic/catalogUi'
 
 export default function Subjects() {
   const { t, i18n } = useTranslation()
@@ -93,6 +93,24 @@ export default function Subjects() {
 
     return matchesSearch && matchesMajor && matchesCollege
   })
+
+  const subjectKpis = useMemo(() => {
+    const majors = new Set()
+    const colleges = new Set()
+    let universityWide = 0
+    let creditHours = 0
+    for (const subject of filteredSubjects) {
+      const majorId = subject.majors?.id || subject.major_id
+      if (majorId) majors.add(majorId)
+      if (subject.is_university_wide) universityWide += 1
+      const collegeId = subject.colleges?.id || subject.college_id
+      if (collegeId) colleges.add(collegeId)
+      creditHours += Number(subject.credit_hours) || 0
+    }
+    return { count: filteredSubjects.length, majors: majors.size, colleges: colleges.size, universityWide, creditHours }
+  }, [filteredSubjects])
+
+  const kpiNumber = (value) => (loading ? '—' : value.toLocaleString(isRTL ? 'ar-u-nu-latn' : 'en'))
 
   const collegeFilterOptions = [...new Map(
     subjects
@@ -185,108 +203,108 @@ export default function Subjects() {
         }
       />
 
-      <Panel>
-        <div className="grid gap-3 md:grid-cols-3">
-          <div className="relative">
-            <Search className="pointer-events-none absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" aria-hidden="true" />
-            <input
-              type="text"
-              placeholder={t('academic.subjects.searchPlaceholder')}
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className={`${fieldClass} ps-9`}
-              aria-label={t('academic.subjects.searchPlaceholder')}
-            />
-          </div>
-          <select value={collegeFilter} onChange={(e) => setCollegeFilter(e.target.value)} className={fieldClass} aria-label={t('academic.subjects.allColleges')}>
-            <option value="">{t('academic.subjects.allColleges')}</option>
-            <option value="university_wide">{t('academic.subjects.universityWide')}</option>
-            {collegeFilterOptions.map((college) => (
-              <option key={college.id} value={String(college.id)}>
-                {getLocalizedName(college, isRTL)}
-              </option>
-            ))}
-          </select>
-          <select value={majorFilter} onChange={(e) => setMajorFilter(e.target.value)} className={fieldClass} aria-label={t('academic.subjects.allMajors')}>
-            <option value="">{t('academic.subjects.allMajors')}</option>
-            {majorFilterOptions.map((major) => (
-              <option key={major.id} value={String(major.id)}>
-                {getLocalizedName(major, isRTL)}
-              </option>
-            ))}
-          </select>
-        </div>
-      </Panel>
+      <Facts
+        items={[
+          { label: t('academic.subjects.kpiCount'), value: kpiNumber(subjectKpis.count) },
+          { label: t('academic.subjects.kpiMajors'), value: kpiNumber(subjectKpis.majors) },
+          { label: t('academic.subjects.kpiColleges'), value: kpiNumber(subjectKpis.colleges) },
+          { label: t('academic.subjects.kpiUniversityWide'), value: kpiNumber(subjectKpis.universityWide) },
+          { label: t('academic.subjects.kpiCreditHours'), value: kpiNumber(subjectKpis.creditHours) },
+        ]}
+      />
 
       {toast && (
         <div
-          className={`rounded-lg px-4 py-3 text-sm ${
-            toast.startsWith('ERR::') ? 'bg-red-50 text-red-700 border border-red-200' : 'bg-green-50 text-green-800 border border-green-200'
+          className={`rounded-xl border px-4 py-3 text-sm ${
+            toast.startsWith('ERR::') ? 'border-red-200 bg-red-50 text-red-700' : 'border-emerald-200 bg-emerald-50 text-emerald-800'
           }`}
         >
           {toast.startsWith('ERR::') ? toast.slice(5) : toast}
         </div>
       )}
 
-      {loading ? (
-        <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3">
-          {Array.from({ length: 3 }, (_, i) => (
-            <Skeleton key={i} className="h-48" />
-          ))}
-        </div>
-      ) : filteredSubjects.length === 0 ? (
-        <Panel>
-          <EmptyState icon={BookOpen} title={t('academic.subjects.title')} hint={t('academic.subjects.searchPlaceholder')} />
-        </Panel>
-      ) : (
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
-          {filteredSubjects.map((subject) => (
-            <div
-              key={subject.id}
-              className="rounded-2xl border border-[#dde3ef] bg-white p-5"
-            >
-              <div className="mb-4 flex items-center gap-3">
-                <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-[#eef2f9] text-[#1a3a6b]">
-                  <BookOpen className="h-6 w-6" />
-                </div>
-                <div className="min-w-0">
-                  <h3 className="truncate text-base font-extrabold text-[#1a3a6b]">{getLocalizedName(subject, isRTL)}</h3>
-                  <p className="text-sm text-slate-500">{subject.code}</p>
-                </div>
-              </div>
-              <div className="space-y-2 text-sm text-gray-600">
-                <p><strong>{t('academic.subjects.major')}:</strong> {getLocalizedName(subject.majors, isRTL)}</p>
-                <p><strong>{t('academic.subjects.creditHours')}:</strong> {subject.credit_hours}</p>
-                <p><strong>{t('academic.subjects.type')}:</strong> {subject.type}</p>
-                <p><strong>{t('academic.subjects.semester')}:</strong> {subject.semester_number}</p>
-                {subject.is_university_wide && (
-                  <span className="inline-block px-2 py-1 bg-blue-100 text-blue-800 rounded-full text-xs font-medium">
-                    {t('academic.subjects.universityWide')}
-                  </span>
-                )}
-              </div>
-              <div className={`mt-4 flex flex-wrap items-center gap-2 ${isRTL ? 'flex-row-reverse' : ''}`}>
-                <Button variant="quiet" size="sm" className="flex-1" icon={Eye} onClick={() => navigate(`/academic/subjects/${subject.id}`)}>
-                  {t('academic.subjects.view')}
-                </Button>
-                <Button size="sm" className="flex-1" icon={Edit} onClick={() => navigate(`/academic/subjects/${subject.id}/edit`)}>
-                  {t('academic.subjects.edit')}
-                </Button>
-                <Button
-                  variant="quiet"
-                  size="sm"
-                  icon={Download}
-                  loading={exportingSubjectId === subject.id}
-                  title={t('academic.subjects.exportStudents', 'Export enrolled students')}
-                  onClick={() => handleExportSubjectStudents(subject, 'xlsx')}
-                >
-                  {t('academic.subjects.exportStudents', 'Export students')}
-                </Button>
-              </div>
+      <Register
+        toolbar={
+          <div className="grid gap-3 md:grid-cols-3">
+            <div className="relative">
+              <Search className="pointer-events-none absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" aria-hidden="true" />
+              <input
+                type="text"
+                placeholder={t('academic.subjects.searchPlaceholder')}
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className={`${fieldClass} ps-9`}
+                aria-label={t('academic.subjects.searchPlaceholder')}
+              />
             </div>
-          ))}
-        </div>
-      )}
+            <select value={collegeFilter} onChange={(e) => setCollegeFilter(e.target.value)} className={fieldClass} aria-label={t('academic.subjects.allColleges')}>
+              <option value="">{t('academic.subjects.allColleges')}</option>
+              <option value="university_wide">{t('academic.subjects.universityWide')}</option>
+              {collegeFilterOptions.map((college) => (
+                <option key={college.id} value={String(college.id)}>
+                  {getLocalizedName(college, isRTL)}
+                </option>
+              ))}
+            </select>
+            <select value={majorFilter} onChange={(e) => setMajorFilter(e.target.value)} className={fieldClass} aria-label={t('academic.subjects.allMajors')}>
+              <option value="">{t('academic.subjects.allMajors')}</option>
+              {majorFilterOptions.map((major) => (
+                <option key={major.id} value={String(major.id)}>
+                  {getLocalizedName(major, isRTL)}
+                </option>
+              ))}
+            </select>
+          </div>
+        }
+      >
+        {loading ? (
+          <div className="space-y-px p-4">
+            {Array.from({ length: 5 }, (_, i) => (
+              <Skeleton key={i} className="h-16" />
+            ))}
+          </div>
+        ) : filteredSubjects.length === 0 ? (
+          <EmptyState icon={BookOpen} title={t('academic.subjects.title')} hint={t('academic.subjects.searchPlaceholder')} />
+        ) : (
+          filteredSubjects.map((subject) => (
+            <RegisterRow
+              key={subject.id}
+              mark={<Mark icon={BookOpen} />}
+              title={getLocalizedName(subject, isRTL)}
+              code={subject.code}
+              tags={subject.is_university_wide ? <Badge tone="info">{t('academic.subjects.universityWide')}</Badge> : null}
+              detail={
+                <span className="flex flex-wrap gap-x-4 gap-y-1">
+                  <span>{t('academic.subjects.major')}: {getLocalizedName(subject.majors, isRTL)}</span>
+                  <span>{subject.credit_hours} {t('academic.subjects.creditHours')}</span>
+                  <span>{subject.type}</span>
+                  <span>{t('academic.subjects.semester')} {subject.semester_number}</span>
+                </span>
+              }
+              actions={
+                <>
+                  <Button variant="quiet" size="sm" icon={Eye} onClick={() => navigate(`/academic/subjects/${subject.id}`)}>
+                    {t('academic.subjects.view')}
+                  </Button>
+                  <Button size="sm" icon={Edit} onClick={() => navigate(`/academic/subjects/${subject.id}/edit`)}>
+                    {t('academic.subjects.edit')}
+                  </Button>
+                  <Button
+                    variant="quiet"
+                    size="sm"
+                    icon={Download}
+                    loading={exportingSubjectId === subject.id}
+                    title={t('academic.subjects.exportStudents', 'Export enrolled students')}
+                    onClick={() => handleExportSubjectStudents(subject, 'xlsx')}
+                  >
+                    {t('academic.subjects.exportStudents', 'Export students')}
+                  </Button>
+                </>
+              }
+            />
+          ))
+        )}
+      </Register>
     </div>
   )
 }
