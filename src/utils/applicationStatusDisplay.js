@@ -64,6 +64,40 @@ export function getApplicantStatus(code) {
   return APPLICANT_STATUS[key] || { phase: 'review', ...IN_REVIEW }
 }
 
+const REQUIRED_VERIFIED_TYPES = ['id_photo', 'transcript']
+
+/** ID photo and transcript are verified, and every uploaded file has been verified. */
+export function coreDocumentsVerified(docs) {
+  const list = Array.isArray(docs) ? docs : []
+  if (list.length === 0) return false
+  const coreOk = REQUIRED_VERIFIED_TYPES.every((type) =>
+    list.some((d) => d.document_type === type && d.verified_at)
+  )
+  return coreOk && list.every((d) => d.verified_at)
+}
+
+/**
+ * Timeline states. Once the required documents are verified, that stage is complete
+ * and the applicant moves to review, unless they still have an action on an earlier step.
+ */
+export function applicantProgress(code, { documentsVerified = false } = {}) {
+  const info = getApplicantStatus(code)
+  const docIdx = APPLICANT_PHASES.indexOf('documents')
+  const reviewIdx = APPLICANT_PHASES.indexOf('review')
+  let current = APPLICANT_PHASES.indexOf(info.phase)
+  if (current < 0) current = 0
+  const heldForApplicant = info.view === 'action' && current <= docIdx
+  if (documentsVerified && !heldForApplicant && current < reviewIdx) {
+    current = reviewIdx
+  }
+  return APPLICANT_PHASES.map((phase, idx) => {
+    let state = 'pending'
+    if (idx < current) state = 'done'
+    else if (idx === current) state = info.view === 'outcome' ? info.tone : 'current'
+    return { key: phase, state }
+  })
+}
+
 export function applicantStatusClass(info) {
   if (info.tone === 'rejected') return 'bg-rose-50 text-rose-800 border-rose-200'
   if (info.tone === 'accepted') return 'bg-emerald-50 text-emerald-800 border-emerald-200'

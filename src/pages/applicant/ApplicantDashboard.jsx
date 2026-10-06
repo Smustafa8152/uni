@@ -6,26 +6,23 @@ import { useAuth } from '../../contexts/AuthContext'
 import { supabase } from '../../lib/supabase'
 import { getLocalizedName } from '../../utils/localizedName'
 import {
-  APPLICANT_PHASES,
+  applicantProgress,
   applicantStatusClass,
+  coreDocumentsVerified,
   getApplicantReasonMeta,
   getApplicantStatus,
 } from '../../utils/applicationStatusDisplay'
-import ApplicantNextStep, { applicantHasNextStep } from '../../components/applicant/ApplicantNextStep'
+import ApplicantNextStep, { applicantHasNextStep, ApplicantSessionLinks } from '../../components/applicant/ApplicantNextStep'
 import { FilePlus2, ChevronRight, Loader2 } from 'lucide-react'
 
 const CLOSED_CODES = new Set(['DCRJ', 'ENCA', 'ENCU', 'ACWD'])
-
-function phaseIndex(code) {
-  const idx = APPLICANT_PHASES.indexOf(getApplicantStatus(code).phase)
-  return idx < 0 ? 0 : idx
-}
 
 export default function ApplicantDashboard() {
   const { t, i18n } = useTranslation()
   const { isRTL } = useLanguage()
   const { user } = useAuth()
   const [rows, setRows] = useState([])
+  const [documentsVerified, setDocumentsVerified] = useState(false)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
 
@@ -82,6 +79,25 @@ export default function ApplicantDashboard() {
 
   const displayName = user?.user_metadata?.name || user?.email?.split('@')[0] || '—'
   const active = rows.find((r) => !CLOSED_CODES.has(String(r.status_code || '').toUpperCase())) || rows[0] || null
+
+  useEffect(() => {
+    let cancelled = false
+    async function loadDocs() {
+      if (!active?.id) {
+        setDocumentsVerified(false)
+        return
+      }
+      const { data } = await supabase
+        .from('application_documents')
+        .select('document_type, verified_at')
+        .eq('application_id', active.id)
+      if (!cancelled) setDocumentsVerified(coreDocumentsVerified(data))
+    }
+    loadDocs()
+    return () => {
+      cancelled = true
+    }
+  }, [active?.id])
   const others = active ? rows.filter((r) => r.id !== active.id) : []
 
   const showNext = Boolean(active && applicantHasNextStep(active.status_code))
@@ -108,14 +124,11 @@ export default function ApplicantDashboard() {
 
   const steps = useMemo(() => {
     if (!active) return []
-    const current = phaseIndex(active.status_code)
-    return APPLICANT_PHASES.map((phase, idx) => {
-      let state = 'pending'
-      if (idx < current) state = 'done'
-      else if (idx === current) state = activeStatus.view === 'outcome' ? activeStatus.tone : 'current'
-      return { key: phase, state, title: t(`track.steps.${phase}`) }
-    })
-  }, [active, activeStatus.view, activeStatus.tone, t])
+    return applicantProgress(active.status_code, { documentsVerified }).map((step) => ({
+      ...step,
+      title: t(`track.steps.${step.key}`),
+    }))
+  }, [active, documentsVerified, t])
 
   const formatDate = (value) =>
     value
@@ -219,9 +232,10 @@ export default function ApplicantDashboard() {
             </div>
 
             <div className="px-5 sm:px-7 py-6">
-              {showNext && (
-                <div className="mb-6">
-                  <ApplicantNextStep application={active} isRTL={isRTL} portal />
+              {(showNext || active.interview_meeting_url || active.exam_location_or_link || active.interview_at || active.exam_at) && (
+                <div className="mb-6 space-y-3">
+                  {showNext && <ApplicantNextStep application={active} isRTL={isRTL} portal />}
+                  <ApplicantSessionLinks application={active} isRTL={isRTL} />
                 </div>
               )}
               <p className="text-xs font-bold uppercase tracking-wide text-[#6b7a99] mb-4">

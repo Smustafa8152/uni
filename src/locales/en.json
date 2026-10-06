@@ -5004,7 +5004,7 @@
       "receivedDone": "Your application was received and registered.",
       "receivedNow": "Your application is with us.",
       "receivedWait": "Waiting to receive your application.",
-      "documentsDone": "Your documents are on file.",
+      "documentsDone": "Your documents have been verified.",
       "documentsNow": "Your documents are being checked.",
       "documentsWait": "Documents are checked after the application is received.",
       "reviewDone": "The academic review is finished.",
@@ -5057,7 +5057,8 @@
       "nextStep": "What to do now",
       "updateForYou": "Update for you",
       "startNew": "Start a new application",
-      "openExam": "Open the exam link"
+      "openExam": "Open the test",
+      "joinInterview": "Join interview"
     },
     "stagesTitle": "Application processing stages",
     "stages": {

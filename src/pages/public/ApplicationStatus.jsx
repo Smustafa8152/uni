@@ -6,8 +6,8 @@ import { FlagAr, FlagEn } from '../../components/LanguageFlags'
 import { useAuth } from '../../contexts/AuthContext'
 import { supabase, SUPABASE_STORAGE_BUCKET } from '../../lib/supabase'
 import { getLocalizedName } from '../../utils/localizedName'
-import { APPLICANT_PHASES, applicantStatusClass, getApplicantReasonMeta, getApplicantStatus } from '../../utils/applicationStatusDisplay'
-import ApplicantNextStep, { applicantHasNextStep } from '../../components/applicant/ApplicantNextStep'
+import { APPLICANT_PHASES, applicantProgress, applicantStatusClass, coreDocumentsVerified, getApplicantReasonMeta, getApplicantStatus } from '../../utils/applicationStatusDisplay'
+import ApplicantNextStep, { applicantHasNextStep, ApplicantSessionLinks } from '../../components/applicant/ApplicantNextStep'
 import { canLoginWithoutSemesterPm10Milestone } from '../../utils/financePermissions'
 import PaymentModal from '../../components/payment/PaymentModal'
 import { getPaymentsEnabled } from '../../utils/getPaymentsEnabled'
@@ -16,14 +16,12 @@ import {
   CheckCircle,
   XCircle,
   CreditCard,
-  GraduationCap,
   Upload,
   ArrowLeft,
   AlertTriangle,
   Loader2,
   LogIn,
   Printer,
-  Video,
 } from 'lucide-react'
 
 // Same document types as in register form; uploadable on track page if not filled at registration
@@ -375,39 +373,26 @@ export default function ApplicationStatus() {
   const statusLabel = t(applicantStatus.labelKey)
   const statusClass = applicantStatusClass(applicantStatus)
 
-  const coreDocuments = useMemo(
-    () => (Array.isArray(applicationDocuments) ? applicationDocuments.filter((d) => d.document_type !== 'additional') : []),
+  const allRequiredCoreVerified = useMemo(
+    () => coreDocumentsVerified(applicationDocuments),
     [applicationDocuments],
   )
 
-  const requiredCoreTypes = useMemo(() => new Set(['id_photo', 'transcript']), [])
-
-  const allRequiredCoreVerified = useMemo(
-    () => Array.from(requiredCoreTypes).every((k) => coreDocuments.some((d) => d.document_type === k && d.verified_at)),
-    [requiredCoreTypes, coreDocuments],
-  )
-
   const progressSteps = useMemo(() => {
-    const current = phaseIndex(application?.status_code)
-    return APPLICANT_PHASES.map((phase, idx) => {
-      let state = 'pending'
-      if (idx < current) state = 'done'
-      else if (idx === current) state = applicantStatus.view === 'outcome' ? applicantStatus.tone : 'current'
-      return { key: phase, state, title: t(`track.steps.${phase}`) }
-    })
-  }, [application?.status_code, applicantStatus.view, applicantStatus.tone, t])
+    return applicantProgress(application?.status_code, { documentsVerified: allRequiredCoreVerified }).map((step) => ({
+      ...step,
+      title: t(`track.steps.${step.key}`),
+    }))
+  }, [application?.status_code, allRequiredCoreVerified, t])
 
   const hasDoc = (type) => applicationDocuments.some((d) => d.document_type === type)
 
   const documentItems = () => {
     const code = application?.status_code
     const pastDoc = phaseIndex(code) > APPLICANT_PHASES.indexOf('documents')
-    const idPhotoDone = hasDoc('id_photo')
-    const transcriptDone = hasDoc('transcript')
-    const allUploadableDone = idPhotoDone && transcriptDone
     return [
       { key: 'application', label: t('track.documents.applicationForm', 'Application form'), done: true, uploadable: false },
-      { key: 'docVerification', label: t('track.documents.documentVerification', 'Documents verification'), done: pastDoc || allUploadableDone, uploadable: false },
+      { key: 'docVerification', label: t('track.documents.documentVerification', 'Documents verification'), done: pastDoc || allRequiredCoreVerified, uploadable: false },
       ...UPLOADABLE_DOCUMENT_TYPES.map((d) => ({
         key: d.key,
         label: t(d.labelKey, d.key),
@@ -723,15 +708,19 @@ export default function ApplicationStatus() {
                 {statusLabel}
               </span>
             </header>
-            {applicantHasNextStep(application.status_code) && (
-              <div className="px-5 sm:px-7 pt-6">
-                <ApplicantNextStep
-                  application={application}
-                  isRTL={isRTL}
-                  portal={portalMode}
-                  onPage
-                  onPay={() => setShowPaymentModal(true)}
-                />
+            {(applicantHasNextStep(application.status_code) || application.interview_meeting_url || application.exam_location_or_link || application.interview_at || application.exam_at) && (
+              <div className="space-y-3 px-5 sm:px-7 pt-6">
+                {applicantHasNextStep(application.status_code) && (
+                  <ApplicantNextStep
+                    application={application}
+                    isRTL={isRTL}
+                    portal={portalMode}
+                    audience={studentMode ? 'student' : 'applicant'}
+                    onPage
+                    onPay={() => setShowPaymentModal(true)}
+                  />
+                )}
+                <ApplicantSessionLinks application={application} isRTL={isRTL} />
               </div>
             )}
             <ol className="px-5 sm:px-7 py-6" aria-label={t('track.stagesTitle', 'Application processing stages')}>
@@ -799,61 +788,6 @@ export default function ApplicationStatus() {
                           {reasonNotes && reasonNotes !== reasonLabel && (
                             <p className="mt-1 whitespace-pre-wrap text-sm text-[#3d4d66]">{reasonNotes}</p>
                           )}
-                        </div>
-                      )}
-                      {showAction && action === 'interview' && (application.interview_at || application.interview_meeting_url || application.interview_instructions) && (
-                        <div className="mt-3 rounded-xl border border-violet-200 bg-violet-50 px-4 py-3 text-sm text-violet-950">
-                          <div className="flex items-start gap-2">
-                            <Video className="mt-0.5 h-5 w-5 shrink-0" />
-                            <div className="min-w-0 flex-1 space-y-1">
-                              <p className="font-bold">{t('admissions.interview.portalTitle', 'Admission interview')}</p>
-                              {application.interview_at && (
-                                <p>
-                                  {t('admissions.interview.when', 'When')}:{' '}
-                                  {new Date(application.interview_at).toLocaleString(isRTL ? 'ar-u-nu-latn' : 'en-GB')}
-                                  {application.interview_timezone ? ` (${application.interview_timezone})` : ''}
-                                </p>
-                              )}
-                              {application.interview_meeting_url && (
-                                <a href={application.interview_meeting_url} target="_blank" rel="noopener noreferrer" className="font-semibold text-violet-800 underline">
-                                  {t('admissions.interview.joinMeeting', 'Join meeting')}
-                                </a>
-                              )}
-                              {application.interview_instructions && (
-                                <p className="whitespace-pre-wrap text-violet-800/90">{application.interview_instructions}</p>
-                              )}
-                            </div>
-                          </div>
-                        </div>
-                      )}
-                      {showAction && action === 'exam' && (application.exam_at || application.exam_location_or_link || application.exam_instructions) && (
-                        <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950">
-                          <div className="flex items-start gap-2">
-                            <GraduationCap className="mt-0.5 h-5 w-5 shrink-0" />
-                            <div className="min-w-0 flex-1 space-y-1">
-                              <p className="font-bold">{t('admissions.exam.portalTitle', 'Entrance exam / admission test')}</p>
-                              {application.exam_at && (
-                                <p>
-                                  {t('admissions.exam.when', 'When')}:{' '}
-                                  {new Date(application.exam_at).toLocaleString(isRTL ? 'ar-u-nu-latn' : 'en-GB')}
-                                  {application.exam_timezone ? ` (${application.exam_timezone})` : ''}
-                                </p>
-                              )}
-                              {application.exam_location_or_link && (
-                                <p>
-                                  {t('admissions.exam.location', 'Location / link')}:{' '}
-                                  {/^https?:\/\//i.test(application.exam_location_or_link) ? (
-                                    <a href={application.exam_location_or_link} target="_blank" rel="noopener noreferrer" className="font-semibold underline">
-                                      {application.exam_location_or_link}
-                                    </a>
-                                  ) : (
-                                    application.exam_location_or_link
-                                  )}
-                                </p>
-                              )}
-                              {application.exam_instructions && <p className="whitespace-pre-wrap">{application.exam_instructions}</p>}
-                            </div>
-                          </div>
                         </div>
                       )}
                       {showAction && actionButton && (
