@@ -121,7 +121,7 @@ async function createRegistrationFeeInvoice(student, application) {
  * This function handles the complete student creation process including:
  * - Student ID generation
  * - Student record creation
- * - Auth user account creation (with custom or auto-generated password)
+ * - Linking the existing applicant login (same email and password)
  * - Registration fee invoice creation (if fee was paid during application)
  * @param {Object} application - The application object
  * @param {string} [customPassword] - Optional custom password for the auth user account
@@ -271,31 +271,47 @@ export async function createStudentFromApplication(application, customPassword =
         // Success! Break out of retry loop
         insertSuccess = true
         
-        // Create auth user account automatically
-        // Use custom password if provided, otherwise generate a temporary password
-        const password = customPassword || `Temp${currentStudentId}@${new Date().getFullYear()}`
-        
+        // The applicant already chose a password when they applied. Promote that
+        // account to student and leave the password as it is.
         try {
-          const { data: functionResult, error: functionError } = await createAuthUser({
-            email: application.email,
-            password: password,
-            role: 'student',
-            college_id: application.college_id,
-            name: name_en,
-          })
+          let account = null
+          if (application.applicant_user_id) {
+            const { data: byOpen } = await supabase
+              .from('users')
+              .select('id, role')
+              .eq('openId', application.applicant_user_id)
+              .maybeSingle()
+            account = byOpen
+          }
+          if (!account?.id && application.email) {
+            const { data: byEmail } = await supabase
+              .from('users')
+              .select('id, role')
+              .ilike('email', application.email)
+              .maybeSingle()
+            account = byEmail
+          }
 
-          if (functionError) {
-            console.warn('Failed to create auth account:', functionError.message)
-            // Continue anyway - student is created, just no login account
-            // The student can request password reset later
-          } else if (functionResult?.success) {
-            console.log('✅ Student login account created successfully')
-          } else {
-            console.warn('Failed to create auth account:', functionResult?.error)
+          const role = String(account?.role || '').toLowerCase()
+          if (account?.id && (role === 'applicant' || role === 'student')) {
+            if (role === 'applicant') {
+              await supabase
+                .from('users')
+                .update({ role: 'student', college_id: application.college_id })
+                .eq('id', account.id)
+            }
+            await supabase.from('students').update({ user_id: account.id }).eq('id', createdStudent.id)
+          } else if (customPassword) {
+            await createAuthUser({
+              email: application.email,
+              password: customPassword,
+              role: 'student',
+              college_id: application.college_id,
+              name: name_en,
+            })
           }
         } catch (authErr) {
-          console.error('Error creating auth account:', authErr)
-          // Continue anyway - student is created, just no login account
+          console.error('Error linking student login account:', authErr)
         }
 
         // Create invoice retroactively if registration fee was paid during application
@@ -342,7 +358,6 @@ export async function createStudentFromApplication(application, customPassword =
         return {
           success: true,
           student: createdStudent,
-          password: password, // Return password for potential email notification
           alreadyExists: false
         }
       }

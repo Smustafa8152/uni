@@ -830,7 +830,6 @@ export default function ViewApplication() {
   const [statusNotes, setStatusNotes] = useState('')
   const [modalStep, setModalStep] = useState(1) // 1: Select Status, 2: Select Reason (if needed), 3: Add Notes
   const [showAllStatuses, setShowAllStatuses] = useState(false)
-  const [statusPassword, setStatusPassword] = useState('') // Password for student account when accepting application
   
   // Edit mode state
   const [isEditMode, setIsEditMode] = useState(false)
@@ -1669,9 +1668,7 @@ export default function ViewApplication() {
             .single()
 
           if (!fetchError && fullApplication) {
-            // Pass custom password if provided
-            const password = statusPassword?.trim() || null
-            const result = await createStudentFromApplication(fullApplication, password)
+            const result = await createStudentFromApplication(fullApplication)
             
             if (result.success) {
               console.log('✅ Student created successfully from application:', result.student.student_id)
@@ -1729,7 +1726,6 @@ export default function ViewApplication() {
     setSelectedStatus('')
     setSelectedReason('')
     setStatusNotes('')
-    setStatusPassword('')
     setModalStep(1)
     setShowAllStatuses(false)
     setError('')
@@ -2104,7 +2100,6 @@ export default function ViewApplication() {
                 setSelectedStatus('')
                 setSelectedReason('')
                 setStatusNotes('')
-                setStatusPassword('')
                 setShowAllStatuses(false)
                 setError('')
                 setShowStatusModal(true)
@@ -2571,39 +2566,6 @@ export default function ViewApplication() {
                       )}
                     </div>
                   </div>
-
-                  {selectedStatus === 'DCFA' && (
-                    <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 mb-6">
-                      <div className="flex items-start gap-3">
-                        <Info className="w-5 h-5 text-blue-600 mt-0.5" />
-                        <div className="flex-1">
-                          <p className="font-semibold text-blue-900 mb-1">
-                            {t('admissions.viewApplication.statusModal.studentPasswordTitle')}
-                          </p>
-                          <p className="text-sm text-blue-700 mb-3">
-                            {t('admissions.viewApplication.statusModal.studentPasswordHint')}
-                          </p>
-                          <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-2">
-                              {t('admissions.viewApplication.statusModal.passwordLabel')}{' '}
-                              <span className="text-gray-400 font-normal">({t('admissions.viewApplication.statusModal.passwordOptional')})</span>
-                            </label>
-                            <input
-                              type="password"
-                              value={statusPassword}
-                              onChange={(e) => setStatusPassword(e.target.value)}
-                              className="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 transition-all"
-                              placeholder={t('admissions.viewApplication.statusModal.passwordPlaceholder')}
-                              dir="ltr"
-                            />
-                            <p className="text-xs text-gray-500 mt-1">
-                              {t('admissions.viewApplication.statusModal.passwordHelp')}
-                            </p>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  )}
 
                   <div>
                     <label className="block text-sm font-semibold text-gray-700 mb-2">
