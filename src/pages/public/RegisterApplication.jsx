@@ -30,8 +30,11 @@ const ALL_DOCUMENT_SPECS = [...CORE_DOCUMENT_SPECS, ...SCHOLARSHIP_DOCUMENT_SPEC
 
 const EDUCATION_LEVELS = ['high_school', 'diploma', 'bachelor', 'master', 'phd']
 
-/** Previous qualifications that sit below the program the applicant is applying for. */
+/** Qualifications the applicant can already hold.
+ *  A master's application requires a completed bachelor's, so high school and diploma are not offered.
+ */
 function previousEducationFor(degreeLevel) {
+  if (degreeLevel === 'master') return ['bachelor', 'master', 'phd']
   const idx = EDUCATION_LEVELS.indexOf(degreeLevel)
   if (idx <= 0) return []
   return EDUCATION_LEVELS.slice(0, idx)
@@ -1542,7 +1545,11 @@ export default function RegisterApplication({ portal = false }) {
                       label={t('applyForm.fields.highestEducationLevel', 'Highest education level')}
                       required
                       invalid={invalidFields.includes('highest_education_level')}
-                      hint={t('applyForm.hints.educationForLevel', 'Qualifications below the academic level you selected.')}
+                      hint={
+                        formData.degree_level === 'master'
+                          ? t('applyForm.hints.educationForMaster', "A bachelor's degree or higher.")
+                          : t('applyForm.hints.educationForLevel', 'Qualifications below the academic level you selected.')
+                      }
                     >
                       <select name="highest_education_level" value={formData.highest_education_level} onChange={handleChange} className={inputClass}>
                         <option value="">{t('common.select', 'Please select')}</option>
