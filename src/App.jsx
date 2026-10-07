@@ -153,6 +153,7 @@ import FinanceConfiguration from './pages/finance/FinanceConfiguration'
 import CreateFeeStructure from './pages/finance/CreateFeeStructure'
 import CreateFeeType from './pages/finance/CreateFeeType'
 import RegisterApplication from './pages/public/RegisterApplication'
+import ApplicationFeeResult from './pages/public/ApplicationFeeResult'
 import TrackApplication from './pages/public/TrackApplication'
 import ApplicationStatus from './pages/public/ApplicationStatus'
 import { ApplicantProtectedRoute } from './components/ApplicantProtectedRoute'
@@ -196,6 +197,7 @@ function App() {
           <Route path="/signup" element={<Signup />} />
           {/* Public apply first; account is created at the end of the form */}
           <Route path="/apply" element={<RegisterApplication />} />
+          <Route path="/apply/payment-result" element={<ApplicationFeeResult />} />
           <Route path="/register" element={<Navigate to="/apply" replace />} />
           <Route path="/login/applicant" element={<LoginApplicant />} />
           <Route

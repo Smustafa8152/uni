@@ -13,6 +13,7 @@ import { exportApplicationsList, applyApplicationFilters } from '../../utils/exp
 import SearchableMultiSelect from '../../components/SearchableMultiSelect'
 import { ADMISSION_MESSAGE_TEMPLATES, getAdmissionTemplate } from '../../utils/admissionMessageTemplates'
 import { APPLICATION_DEGREE_LEVELS, resolveActiveDegreeLevels } from '../../utils/getApplicationFormDefaults'
+import { APPLICATION_FEE_DEFAULT, readApplicationFeeSettings } from '../../utils/applicationFee'
 
 const ASSIGN_FIELDS = [
   { key: 'college_id', labelKey: 'admissions.applicationsPage.assignCollege', fallback: 'College' },
@@ -47,7 +48,7 @@ function academicYearLabel(ay, isArabic, fallbackId) {
   return getLocalizedName(ay, isArabic) || ay?.name_en || ay?.code || (fallbackId != null ? `#${fallbackId}` : null)
 }
 
-const PENDING_CODES = ['APSB', 'APPN', 'RVQU', 'RVIN', 'DCPN', 'ENPN']
+const PENDING_CODES = ['APSB', 'APFP', 'APPN', 'RVQU', 'RVIN', 'DCPN', 'ENPN']
 const ACCEPTED_CODES = ['DCFA', 'DCCA', 'ENCF', 'ENAC']
 
 function summarizeApps(list) {
@@ -168,6 +169,10 @@ export default function Applications() {
   const [degreeLevelsSaving, setDegreeLevelsSaving] = useState(false)
   const [degreeLevelsError, setDegreeLevelsError] = useState('')
   const [degreeLevelsSaved, setDegreeLevelsSaved] = useState(false)
+  const [applicationFee, setApplicationFee] = useState({ enabled: false, amount: String(APPLICATION_FEE_DEFAULT) })
+  const [applicationFeeSaving, setApplicationFeeSaving] = useState(false)
+  const [applicationFeeError, setApplicationFeeError] = useState('')
+  const [applicationFeeSaved, setApplicationFeeSaved] = useState(false)
 
   const fetchApplications = useCallback(async () => {
     if (authLoading || userRole === null || userRole === undefined) {
@@ -295,6 +300,8 @@ export default function Applications() {
         academic_year_id: raw.academic_year_id != null ? String(raw.academic_year_id) : '',
       })
       setActiveDegreeLevels(resolveActiveDegreeLevels(raw.active_degree_levels))
+      const fee = readApplicationFeeSettings(data?.onboarding_settings)
+      setApplicationFee({ enabled: fee.enabled, amount: String(fee.amount) })
     } catch (e) {
       setProgramDefaultsError(e?.message || 'Failed to load application defaults')
     } finally {
@@ -461,6 +468,54 @@ export default function Applications() {
       setDegreeLevelsSaving(false)
     }
   }, [userRole, activeDegreeLevels, settingsMeta, t])
+
+  const saveApplicationFee = useCallback(async () => {
+    if (userRole !== 'admin') return
+    const amount = Math.round(Number(applicationFee.amount) * 100) / 100
+    if (!Number.isFinite(amount) || amount <= 0) {
+      setApplicationFeeError(t('admissions.applicationsPage.applicationFeeInvalid'))
+      setApplicationFeeSaved(false)
+      return
+    }
+    setApplicationFeeSaving(true)
+    setApplicationFeeError('')
+    setApplicationFeeSaved(false)
+    try {
+      const currentOnboarding = settingsMeta.onboarding_settings && typeof settingsMeta.onboarding_settings === 'object'
+        ? settingsMeta.onboarding_settings
+        : {}
+      const payload = {
+        ...currentOnboarding,
+        application_fee: { enabled: Boolean(applicationFee.enabled), amount },
+      }
+      let res
+      if (settingsMeta.id) {
+        res = await supabase
+          .from('university_settings')
+          .update({ onboarding_settings: payload, updated_at: new Date().toISOString() })
+          .eq('id', settingsMeta.id)
+          .select('id, onboarding_settings')
+          .limit(1)
+          .maybeSingle()
+      } else {
+        res = await supabase
+          .from('university_settings')
+          .insert({ onboarding_settings: payload })
+          .select('id, onboarding_settings')
+          .limit(1)
+          .maybeSingle()
+      }
+      if (res.error) throw res.error
+      setSettingsMeta({ id: res.data?.id ?? settingsMeta.id ?? null, onboarding_settings: res.data?.onboarding_settings ?? payload })
+      setApplicationFee({ enabled: Boolean(applicationFee.enabled), amount: String(amount) })
+      setApplicationFeeSaved(true)
+      setTimeout(() => setApplicationFeeSaved(false), 2000)
+    } catch (e) {
+      setApplicationFeeError(e?.message || t('admissions.applicationsPage.applicationFeeFailed'))
+    } finally {
+      setApplicationFeeSaving(false)
+    }
+  }, [userRole, applicationFee, settingsMeta, t])
 
   useEffect(() => {
     fetchApplications()
@@ -1367,6 +1422,7 @@ export default function Applications() {
   const getStatusColor = (statusCode) => {
     const statusMap = {
       APDR: 'bg-gray-100 text-gray-800 border-gray-200',
+      APFP: 'bg-amber-100 text-amber-900 border-amber-200',
       APSB: 'bg-blue-100 text-blue-800 border-blue-200',
       APPN: 'bg-yellow-100 text-yellow-800 border-yellow-200',
       APPC: 'bg-green-100 text-green-800 border-green-200',
@@ -1530,6 +1586,70 @@ export default function Applications() {
                   </label>
                 )
               })}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {userRole === 'admin' && (
+        <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6">
+          <div className={`flex flex-col gap-4 ${alignStart}`}>
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <h2 className="text-lg font-bold text-gray-900">{t('admissions.applicationsPage.applicationFeeTitle')}</h2>
+                <p className="text-sm text-gray-600 mt-1">{t('admissions.applicationsPage.applicationFeeHint')}</p>
+              </div>
+              <button
+                type="button"
+                onClick={saveApplicationFee}
+                disabled={applicationFeeSaving}
+                className="shrink-0 bg-primary-gradient text-white px-5 py-2.5 rounded-xl font-semibold shadow-sm hover:shadow-md transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {applicationFeeSaving
+                  ? t('admissions.applicationsPage.applicationFeeSaving')
+                  : t('admissions.applicationsPage.applicationFeeSave')}
+              </button>
+            </div>
+            {(applicationFeeError || applicationFeeSaved) && (
+              <div
+                className={`rounded-lg border p-3 text-sm ${
+                  applicationFeeError
+                    ? 'bg-red-50 border-red-200 text-red-700'
+                    : 'bg-green-50 border-green-200 text-green-700'
+                }`}
+              >
+                {applicationFeeError || t('admissions.applicationsPage.applicationFeeSaved')}
+              </div>
+            )}
+            <div className="flex flex-wrap items-end gap-4">
+              <label className="flex items-center gap-2 rounded-xl border border-gray-200 px-4 py-3 text-sm font-medium text-gray-900">
+                <input
+                  type="checkbox"
+                  checked={applicationFee.enabled}
+                  onChange={(e) => {
+                    setApplicationFeeError('')
+                    setApplicationFeeSaved(false)
+                    setApplicationFee((prev) => ({ ...prev, enabled: e.target.checked }))
+                  }}
+                />
+                <span>{t('admissions.applicationsPage.applicationFeeEnable')}</span>
+              </label>
+              <label className="block text-sm">
+                <span className="mb-1 block font-medium text-gray-700">{t('admissions.applicationsPage.applicationFeeAmount')}</span>
+                <input
+                  type="number"
+                  min="0.01"
+                  step="0.01"
+                  dir="ltr"
+                  value={applicationFee.amount}
+                  onChange={(e) => {
+                    setApplicationFeeError('')
+                    setApplicationFeeSaved(false)
+                    setApplicationFee((prev) => ({ ...prev, amount: e.target.value }))
+                  }}
+                  className="w-36 rounded-xl border border-gray-200 px-3 py-2.5"
+                />
+              </label>
             </div>
           </div>
         </div>

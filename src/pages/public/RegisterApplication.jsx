@@ -10,6 +10,7 @@ import { getNationalityLabel, normalizeNationalityCode } from '../../utils/natio
 import { formatStoredPhone } from '../../utils/callingCodes'
 import ApplyPhoneInput from '../../components/common/ApplyPhoneInput'
 import { notifyApplicationSubmitted } from '../../utils/notifyApplicationSubmitted'
+import { formatApplicationFee } from '../../utils/applicationFee'
 import { syncApplicantProfile } from '../../utils/syncApplicantProfile'
 import { resolvePortalAccountByEmail } from '../../utils/resolvePortalAccountByEmail'
 import NationalitySelect from '../../components/common/NationalitySelect'
@@ -423,6 +424,8 @@ export default function RegisterApplication({ portal = false }) {
   )
   const [formData, setFormData] = useState(() => (portal ? { ...INITIAL_FORM } : formFromDraft(readApplyDraft())))
   const [activeDegreeLevels, setActiveDegreeLevels] = useState(() => [...APPLICATION_DEGREE_LEVELS])
+  const [applicationFee, setApplicationFee] = useState({ enabled: false, amount: 20 })
+  const [feeCheckout, setFeeCheckout] = useState(null)
 
   const programLocked = Boolean(forcedProgram?.enabled && forcedProgram?.lock_fields !== false)
 
@@ -544,6 +547,7 @@ export default function RegisterApplication({ portal = false }) {
         if (Array.isArray(cfg?.active_degree_levels)) {
           setActiveDegreeLevels(cfg.active_degree_levels)
         }
+        if (cfg?.application_fee) setApplicationFee(cfg.application_fee)
         if (cfg?.enabled && cfg.college_id && cfg.major_id) {
           setForcedProgram(cfg)
           setSelectedCollegeId(String(cfg.college_id))
@@ -1076,7 +1080,14 @@ export default function RegisterApplication({ portal = false }) {
     setLoading(true)
     setError('')
 
+    const feeRequired = applicationFee.enabled && applicationFee.amount > 0 && !formData.submit_as_draft
+
     try {
+      if (feeCheckout?.id && feeRequired) {
+        sessionStorage.removeItem(APPLY_DRAFT_KEY)
+        navigate(`/apply/payment-result?application=${feeCheckout.id}`)
+        return
+      }
       let applicantUserId = portal && user?.id ? user.id : null
       if (needsAccount || (!portal && user?.id && userRole === 'applicant')) {
         applicantUserId = await ensureApplicantSession()
@@ -1152,7 +1163,10 @@ export default function RegisterApplication({ portal = false }) {
 
           // Workflow
           status: 'pending',
-          status_code: formData.submit_as_draft ? 'APDR' : 'APSB',
+          status_code: formData.submit_as_draft ? 'APDR' : feeRequired ? 'APFP' : 'APSB',
+          application_fee_status: feeRequired ? 'pending' : 'not_required',
+          application_fee_amount: feeRequired ? applicationFee.amount : null,
+          application_fee_currency: feeRequired ? 'USD' : null,
           financial_milestone_code: 'PM00',
           status_changed_at: new Date().toISOString(),
           ...(applicantUserId ? { applicant_user_id: applicantUserId } : {}),
@@ -1162,14 +1176,14 @@ export default function RegisterApplication({ portal = false }) {
 
       if (insertError) throw insertError
 
-      if (!formData.submit_as_draft && application?.id) {
+      if (!formData.submit_as_draft && !feeRequired && application?.id) {
         const mailResult = await notifyApplicationSubmitted(supabase, application, { isDraft: false, language })
         if (!mailResult.sent && !mailResult.skipped) {
           console.warn('Submit confirmation email was not sent:', mailResult.error)
         }
       }
 
-      if (!formData.submit_as_draft && application?.id) {
+      if (!formData.submit_as_draft && !feeRequired && application?.id) {
         supabase
           .from('status_change_audit_log')
           .insert({
@@ -1185,6 +1199,13 @@ export default function RegisterApplication({ portal = false }) {
       }
 
       if (application?.id) await uploadDocuments(application.id)
+
+      if (feeRequired && application?.id) {
+        sessionStorage.removeItem(APPLY_DRAFT_KEY)
+        setFeeCheckout(application)
+        navigate(`/apply/payment-result?application=${application.id}`)
+        return
+      }
 
       setApplicationNumber(application.application_number)
       setSubmittedApplication(application)
@@ -1773,6 +1794,19 @@ export default function RegisterApplication({ portal = false }) {
 
             {currentStep === 6 && (
               <div className="space-y-5">
+                {applicationFee.enabled && applicationFee.amount > 0 && !formData.submit_as_draft && (
+                  <div className="rounded-2xl border border-[#c8a84b]/50 bg-[#fff9ec] px-4 py-4">
+                    <p className="text-sm font-extrabold text-[#1a3a6b]">{t('registerApplication.feeTitle')}</p>
+                    <p className="mt-1 text-sm text-slate-600">
+                      {t('registerApplication.feeHint', { amount: formatApplicationFee(applicationFee.amount, 'USD') })}
+                    </p>
+                    {feeCheckout?.application_number && (
+                      <p className="mt-2 text-sm font-semibold text-slate-800">
+                        {t('registerApplication.feeSaved')} <span dir="ltr">{feeCheckout.application_number}</span>
+                      </p>
+                    )}
+                  </div>
+                )}
                 <SectionCard title={t('applyForm.sections.referral', 'How you found us')}>
                   <Field label={t('applyForm.fields.referralSource', 'How did you hear about us?')}>
                     <select name="referral_source" value={formData.referral_source} onChange={handleChange} className={`${inputClass} md:max-w-md`}>
@@ -1937,7 +1971,11 @@ export default function RegisterApplication({ portal = false }) {
                 ) : (
                   <>
                     <Save className="h-4 w-4" />
-                    <span>{t('registerApplication.navSubmit')}</span>
+                    <span>
+                      {applicationFee.enabled && applicationFee.amount > 0 && !formData.submit_as_draft
+                        ? t('registerApplication.navPaySubmit')
+                        : t('registerApplication.navSubmit')}
+                    </span>
                   </>
                 )}
               </button>
