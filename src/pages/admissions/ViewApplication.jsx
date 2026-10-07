@@ -789,6 +789,7 @@ export default function ViewApplication() {
   const [loading, setLoading] = useState(true)
   const [application, setApplication] = useState(null)
   const [secondChoiceMajor, setSecondChoiceMajor] = useState(null)
+  const [secondChoiceCollege, setSecondChoiceCollege] = useState(null)
   const [paymentsEnabled, setPaymentsEnabled] = useState(true)
   const [error, setError] = useState('')
   const [updating, setUpdating] = useState(false)
@@ -812,6 +813,26 @@ export default function ViewApplication() {
       alive = false
     }
   }, [application?.second_choice_major_id])
+
+  useEffect(() => {
+    const collegeId = application?.second_choice_college_id
+    if (!collegeId) {
+      setSecondChoiceCollege(null)
+      return
+    }
+    let alive = true
+    supabase
+      .from('colleges')
+      .select('id, name_en, name_ar, code')
+      .eq('id', collegeId)
+      .maybeSingle()
+      .then(({ data }) => {
+        if (alive) setSecondChoiceCollege(data || null)
+      })
+    return () => {
+      alive = false
+    }
+  }, [application?.second_choice_college_id])
   
   // Status management state
   const [statusCodes, setStatusCodes] = useState([])
@@ -2710,13 +2731,13 @@ export default function ViewApplication() {
                   {application?.place_of_birth || t('admissions.viewApplication.detail.notAvailable')}
                 </p>
               </div>
-              {(application?.first_name_ar || application?.last_name_ar) && (
-                <div className="md:col-span-2">
+              {(application?.first_name_ar || application?.middle_name_ar || application?.last_name_ar) && (
+                <div className="sm:col-span-2 lg:col-span-3">
                   <label className={`block text-xs font-semibold text-slate-500 mb-1 ${alignStart}`}>
                     {t('admissions.viewApplication.detail.nameArabic')}
                   </label>
-                  <p className="text-gray-900" dir="rtl">
-                    {application?.first_name_ar} {application?.middle_name_ar} {application?.last_name_ar}
+                  <p className={`text-gray-900 ${alignStart}`}>
+                    <span dir="rtl">{arabicName}</span>
                   </p>
                 </div>
               )}
@@ -2771,7 +2792,7 @@ export default function ViewApplication() {
                   </span>
                 </div>
               </div>
-              {application?.street_address && (
+              {(application?.street_address || application?.city || application?.state_province || application?.postal_code || application?.country) && (
                 <div className="md:col-span-2">
                   <label className={`block text-xs font-semibold text-slate-500 mb-1 ${alignStart}`}>
                     {t('admissions.viewApplication.detail.address')}
@@ -2779,11 +2800,9 @@ export default function ViewApplication() {
                   <div className={`flex items-start gap-2 ${isArabicLayout ? 'flex-row-reverse' : ''}`}>
                     <MapPin className="w-4 h-4 text-gray-400 mt-1 shrink-0" />
                     <p className={`text-gray-900 ${alignStart}`}>
-                      {application.street_address}
-                      {application.city && `, ${application.city}`}
-                      {application.state_province && `, ${application.state_province}`}
-                      {application.postal_code && ` ${application.postal_code}`}
-                      {application.country && `, ${application.country}`}
+                      {[application.street_address, application.city, application.state_province, application.postal_code, application.country]
+                        .filter(Boolean)
+                        .join(', ')}
                     </p>
                   </div>
                 </div>
@@ -2924,9 +2943,31 @@ export default function ViewApplication() {
           {/* Application form details (simplified public form) */}
           {(() => {
             const rows = [
+              [
+                t('applyForm.fields.academicLevel'),
+                application?.majors?.degree_level
+                  ? t(`applyForm.degreeLevels.${application.majors.degree_level}`, application.majors.degree_level)
+                  : null,
+              ],
+              [
+                t('applyForm.fields.faculty2'),
+                secondChoiceCollege ? getLocalizedName(secondChoiceCollege, isArabicLayout) || secondChoiceCollege.name_en : null,
+              ],
               [t('applyForm.fields.secondChoice'), secondChoiceMajor ? getLocalizedName(secondChoiceMajor, isArabicLayout) || secondChoiceMajor.name_en : null],
               [t('applyForm.fields.workload'), application?.study_type ? t(`applyForm.workload.${application.study_type}`, application.study_type) : null],
+              [
+                t('applyForm.fields.isFormerStudent'),
+                application?.is_former_student == null
+                  ? null
+                  : application.is_former_student
+                    ? t('registerApplication.fields.yes')
+                    : t('registerApplication.fields.no'),
+              ],
               [t('applyForm.fields.matricNo'), application?.is_former_student ? application?.matric_no || '—' : null],
+              [
+                t('applyForm.fields.educationCountry'),
+                application?.high_school_country ? getNationalityLabel(application.high_school_country, isArabicLayout) : null,
+              ],
               [
                 t('applyForm.fields.highestEducationLevel'),
                 application?.highest_education_level
