@@ -8,6 +8,7 @@ import { supabase, SUPABASE_STORAGE_BUCKET } from '../../lib/supabase'
 import { getLocalizedName } from '../../utils/localizedName'
 import { APPLICANT_PHASES, applicantProgress, applicantStatusClass, coreDocumentsVerified, getApplicantReasonMeta, getApplicantStatus } from '../../utils/applicationStatusDisplay'
 import ApplicantNextStep, { applicantHasNextStep, ApplicantSessionLinks } from '../../components/applicant/ApplicantNextStep'
+import ApplicationFeeSummary from '../../components/applicant/ApplicationFeeSummary'
 import { canLoginWithoutSemesterPm10Milestone } from '../../utils/financePermissions'
 import PaymentModal from '../../components/payment/PaymentModal'
 import { getPaymentsEnabled } from '../../utils/getPaymentsEnabled'
@@ -708,6 +709,7 @@ export default function ApplicationStatus() {
                 {statusLabel}
               </span>
             </header>
+            <ApplicationFeeSummary application={application} className="mx-5 mt-6 sm:mx-7" />
             {(applicantHasNextStep(application.status_code) || application.interview_meeting_url || application.exam_location_or_link || application.interview_at || application.exam_at) && (
               <div className="space-y-3 px-5 sm:px-7 pt-6">
                 {applicantHasNextStep(application.status_code) && (

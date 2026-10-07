@@ -9,6 +9,7 @@ import { getLocalizedName } from '../../utils/localizedName'
 import { resolveOnboardingFeeAmount } from '../../utils/resolveOnboardingFeeAmount'
 import { resolveRegistrationFeeAmount } from '../../utils/resolveRegistrationFeeAmount'
 import { getPaymentsEnabled } from '../../utils/getPaymentsEnabled'
+import ApplicationFeeSummary from '../../components/applicant/ApplicationFeeSummary'
 import { getNationalityLabel, normalizeNationalityCode } from '../../utils/nationalities'
 import { getApplicantStatus } from '../../utils/applicationStatusDisplay'
 import { emailForActionStatus } from '../../utils/admissionMessageTemplates'
@@ -2621,6 +2622,7 @@ export default function ViewApplication() {
       </div>
 
       <div role="tabpanel" className={activeTab === 'overview' ? 'space-y-5' : 'hidden'}>
+          <ApplicationFeeSummary application={application} />
           {/* Personal Information */}
           <div className="rounded-2xl border border-[#dde3ef] bg-white p-5 sm:p-6">
             <div className={`flex items-center gap-2 mb-6 ${isArabicLayout ? 'justify-start' : ''}`}>

@@ -58,6 +58,8 @@ export default function ApplicantNextStep({ application, isRTL, portal = true, o
     button = onPage
       ? { label: t('track.applicant.goToDocuments'), href: '#status-documents-panel' }
       : { label: t('track.applicant.goToDocuments'), to: `${statusPath}#status-documents-panel` }
+  } else if (info.action === 'applicationFee') {
+    button = { label: t('track.applicant.payApplicationFee'), to: `/apply/payment-result?application=${id}&retry=1` }
   } else if (info.action === 'payment') {
     button = onPay
       ? { label: t('track.payRegistrationFee'), onClick: onPay }

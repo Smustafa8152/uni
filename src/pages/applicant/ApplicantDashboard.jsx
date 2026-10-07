@@ -13,6 +13,7 @@ import {
   getApplicantStatus,
 } from '../../utils/applicationStatusDisplay'
 import ApplicantNextStep, { applicantHasNextStep, ApplicantSessionLinks } from '../../components/applicant/ApplicantNextStep'
+import ApplicationFeeSummary from '../../components/applicant/ApplicationFeeSummary'
 import { FilePlus2, ChevronRight, Loader2 } from 'lucide-react'
 
 const CLOSED_CODES = new Set(['DCRJ', 'ENCA', 'ENCU', 'ACWD'])
@@ -44,6 +45,11 @@ export default function ApplicantDashboard() {
             id,
             application_number,
             status_code,
+            application_fee_status,
+            application_fee_amount,
+            application_fee_currency,
+            application_fee_paid_at,
+            application_fee_reference,
             status_reason_code,
             review_notes,
             interview_at,
@@ -232,6 +238,7 @@ export default function ApplicantDashboard() {
             </div>
 
             <div className="px-5 sm:px-7 py-6">
+              <ApplicationFeeSummary application={active} className="mb-6" />
               {(showNext || active.interview_meeting_url || active.exam_location_or_link || active.interview_at || active.exam_at) && (
                 <div className="mb-6 space-y-3">
                   {showNext && <ApplicantNextStep application={active} isRTL={isRTL} portal />}

@@ -1,4 +1,5 @@
 import { supabase } from '../lib/supabase'
+import { readApplicationFeeSettings } from './applicationFee'
 
 /** Academic levels offered on the public application form, in display order. */
 export const APPLICATION_DEGREE_LEVELS = ['diploma', 'bachelor', 'master', 'phd']
@@ -40,10 +41,11 @@ export async function getApplicationFormDefaults() {
     if (error) throw error
 
     const raw = data?.onboarding_settings?.application_form_defaults
+    const application_fee = readApplicationFeeSettings(data?.onboarding_settings)
     const active_degree_levels = resolveActiveDegreeLevels(raw?.active_degree_levels)
     const enabled = Boolean(raw?.enabled)
     if (!enabled) {
-      return { enabled: false, active_degree_levels }
+      return { enabled: false, active_degree_levels, application_fee }
     }
 
     const toNumOrNull = (v) => {
@@ -60,10 +62,11 @@ export async function getApplicationFormDefaults() {
       semester_id: toNumOrNull(raw?.semester_id),
       academic_year_id: toNumOrNull(raw?.academic_year_id),
       active_degree_levels,
+      application_fee,
     }
   } catch (e) {
     console.warn('getApplicationFormDefaults failed:', e?.message || e)
-    return { enabled: false, active_degree_levels: [...APPLICATION_DEGREE_LEVELS] }
+    return { enabled: false, active_degree_levels: [...APPLICATION_DEGREE_LEVELS], application_fee: readApplicationFeeSettings(null) }
   }
 }
 

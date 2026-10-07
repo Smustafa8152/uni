@@ -373,6 +373,10 @@ deno_version = 2
 # Disable JWT verification since we use service role key for admin operations
 verify_jwt = false
 
+[functions.myfatoorah-application-fee]
+# Confirm runs when MyFatoorah sends the browser back. Create checks the user itself.
+verify_jwt = false
+
 [analytics]
 enabled = true
 port = 54327

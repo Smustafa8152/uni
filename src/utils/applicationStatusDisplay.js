@@ -6,6 +6,7 @@ export const APPLICANT_PHASES = ['received', 'documents', 'review', 'decision']
 
 export const APPLICANT_STATUS = {
   APDR: { phase: 'received', view: 'action', action: 'draft', labelKey: 'track.applicant.finishApplication', tone: 'action' },
+  APFP: { phase: 'received', view: 'action', action: 'applicationFee', labelKey: 'track.applicant.payApplicationFee', tone: 'action' },
   APSB: { phase: 'received', ...IN_REVIEW },
   APIV: { phase: 'received', view: 'action', action: 'documents', labelKey: 'track.applicant.correctApplication', tone: 'action' },
   APPN: { phase: 'documents', view: 'action', action: 'payment', labelKey: 'track.applicant.paymentDue', tone: 'action' },
