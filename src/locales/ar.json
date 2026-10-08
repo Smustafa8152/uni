@@ -3072,7 +3072,8 @@
           "interview": "المقابلة والاختبار",
           "activity": "سجل النشاط"
         }
-      }
+      },
+      "sessionEnded": "انتهت جلسة تسجيل الدخول، لذلك لم يتغيّر شيء. سجّل الخروج ثم سجّل الدخول من جديد، وبعدها أرسل خطاب القبول."
     },
     "statusCodes": {
       "application": {
@@ -5653,7 +5654,13 @@
       "sessionOtherTitle": "Safari — iPhone",
       "sessionOtherMeta": "منذ يومين",
       "endSession": "إنهاء",
-      "signOutAll": "تسجيل الخروج من جميع الأجهزة"
+      "signOutAll": "تسجيل الخروج من جميع الأجهزة",
+      "fromApplication": "كما أدخلتها في نموذج طلب الالتحاق.",
+      "applicationNumber": "رقم الطلب",
+      "studyMode": "نمط الدراسة",
+      "admissionDate": "تاريخ القبول",
+      "saved": "تم حفظ بيانات التواصل.",
+      "saveError": "تعذّر حفظ بيانات التواصل. يرجى المحاولة مرة أخرى."
     },
     "documents": {
       "breadcrumbHome": "الرئيسية",

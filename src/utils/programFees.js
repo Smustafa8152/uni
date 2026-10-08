@@ -40,6 +40,61 @@ export function openedSemesterIds(openings, semesters) {
   return ids
 }
 
+/**
+ * The student's program fee plan and the installments open to them: one per opened semester that has not
+ * ended before they joined, up to the plan's number of installments. Each row carries its paid payment, if any.
+ */
+export async function loadStudentInstallments(supabase, student) {
+  if (!student?.major_id) return { plan: null, rows: [] }
+  const { data: plan, error: planErr } = await supabase
+    .from('program_fee_plans')
+    .select(PLAN_SELECT)
+    .eq('major_id', student.major_id)
+    .eq('is_active', true)
+    .maybeSingle()
+  if (planErr) throw planErr
+  if (!plan) return { plan: null, rows: [] }
+
+  const [openRes, payRes] = await Promise.all([
+    supabase.from('program_fee_openings').select('semester_id, academic_year_id').eq('plan_id', plan.id),
+    supabase
+      .from('program_fee_payments')
+      .select('semester_id, amount, currency, paid_at, myfatoorah_payment_id')
+      .eq('student_id', student.id)
+      .eq('plan_id', plan.id)
+      .eq('status', 'paid'),
+  ])
+  if (openRes.error) throw openRes.error
+  if (payRes.error) throw payRes.error
+  const openings = openRes.data || []
+  const yearIds = openings.map((o) => o.academic_year_id).filter(Boolean)
+  const semesterIds = openings.map((o) => o.semester_id).filter(Boolean)
+  let semesters = []
+  if (yearIds.length || semesterIds.length) {
+    const filters = [
+      yearIds.length ? `academic_year_id.in.(${yearIds.join(',')})` : null,
+      semesterIds.length ? `id.in.(${semesterIds.join(',')})` : null,
+    ].filter(Boolean)
+    const { data: semData, error: semErr } = await supabase
+      .from('semesters')
+      .select('id, name_en, name_ar, academic_year_id, start_date, end_date')
+      .or(filters.join(','))
+      .order('start_date', { ascending: true })
+    if (semErr) throw semErr
+    semesters = semData || []
+  }
+
+  const opened = openedSemesterIds(openings, semesters)
+  const paidBySemester = new Map((payRes.data || []).map((p) => [p.semester_id, p]))
+  const joined = student.enrollment_date ? String(student.enrollment_date) : ''
+  const rows = semesters
+    .filter((s) => opened.has(s.id))
+    .filter((s) => !joined || !s.end_date || String(s.end_date) >= joined)
+    .slice(0, plan.installments)
+    .map((s, index) => ({ semester: s, number: index + 1, payment: paidBySemester.get(s.id) || null }))
+  return { plan, rows }
+}
+
 async function invoke(supabase, body) {
   const { data, error } = await supabase.functions.invoke('myfatoorah-student-fee', { body })
   if (error) {

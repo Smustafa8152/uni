@@ -291,9 +291,9 @@ export async function createStudentFromApplication(application, customPassword =
         emergency_contact_relation: application.emergency_contact_relationship || application.emergency_contact_relation || null,
         emergency_phone: application.emergency_contact_phone || application.emergency_phone || null,
         emergency_contact_email: application.emergency_contact_email || null,
-        national_id: null, // Not in application form
-        passport_number: null, // Not in application form
-        passport_expiry: null,
+        national_id: application.id_number || null,
+        passport_number: application.id_type === 'passport' ? application.id_number || null : null,
+        passport_expiry: application.id_type === 'passport' ? application.id_expiry_date || null : null,
         visa_number: null,
         visa_expiry: null,
         residence_permit_number: null,

@@ -1,10 +1,9 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useMemo, useState } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
 import { useLanguage } from '../contexts/LanguageContext'
 import { FlagAr, FlagEn } from './LanguageFlags'
 import { ChevronDown, Home, LogOut, Menu, Search, Video, X } from 'lucide-react'
-import { getPaymentsEnabled } from '../utils/getPaymentsEnabled'
 
 const UI = {
   p: '#1a3a6b',
@@ -58,16 +57,9 @@ export default function StudentLayout({ children }) {
   const { isRTL, language, changeLanguage } = useLanguage()
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [langMenuOpen, setLangMenuOpen] = useState(false)
-  const { user, signOut, collegeId } = useAuth()
+  const { user, signOut } = useAuth()
   const location = useLocation()
   const navigate = useNavigate()
-  const [paymentsEnabled, setPaymentsEnabled] = useState(true)
-
-  useEffect(() => {
-    if (!collegeId) return
-    getPaymentsEnabled(collegeId).then(setPaymentsEnabled).catch(() => setPaymentsEnabled(true))
-  }, [collegeId])
-
   const handleSignOut = async () => {
     await signOut()
     navigate('/login/student')
@@ -87,10 +79,7 @@ export default function StudentLayout({ children }) {
   const avatarLetter = useMemo(() => (displayName || 'م').charAt(0).toUpperCase(), [displayName])
   const isArabic = language === 'ar' || isRTL
   const tx = (val) => (typeof val === 'string' ? val : (isArabic ? val?.ar : val?.en) || val?.ar || val?.en || '')
-  const navSections = useMemo(() => {
-    if (paymentsEnabled) return NAV
-    return NAV.filter((s) => s?.label?.en !== 'Financial affairs')
-  }, [paymentsEnabled])
+  const navSections = NAV
 
   return (
     <div className="min-h-screen" style={{ backgroundColor: UI.bg }} dir={isRTL ? 'rtl' : 'ltr'}>

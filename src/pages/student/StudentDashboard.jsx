@@ -10,6 +10,7 @@ import { formatInstructorDisplayName } from '../../utils/academicTitle'
 import { supabase } from '../../lib/supabase'
 import ApplicantNextStep, { ApplicantSessionLinks } from '../../components/applicant/ApplicantNextStep'
 import { getApplicantStatus } from '../../utils/applicationStatusDisplay'
+import { formatMoney, installmentAmount, loadStudentInstallments } from '../../utils/programFees'
 import { AlertTriangle, CreditCard, Calendar, GraduationCap, PenLine, Search, Receipt, GitBranch, Video, ExternalLink } from 'lucide-react'
 
 const STUDENT_PORTAL_BG = '#1a3a6b'
@@ -26,6 +27,7 @@ export default function StudentDashboard() {
   const [loading, setLoading] = useState(true)
   const [student, setStudent] = useState(null)
   const [invoices, setInvoices] = useState([])
+  const [programFees, setProgramFees] = useState({ plan: null, rows: [] })
   const [enrollments, setEnrollments] = useState([])
   const [activeSemester, setActiveSemester] = useState(null)
   const [todaySchedule, setTodaySchedule] = useState([])
@@ -98,7 +100,7 @@ export default function StudentDashboard() {
       const emailCandidates = getEmailLookupCandidates(user.email)
       let studentQuery = supabase
         .from('students')
-        .select('id, student_id, name_en, name_ar, first_name, last_name, gpa, college_id, major_id, notes, total_credits_earned, financial_hold_reason_code, financial_milestone_code, colleges(id, name_en, name_ar), majors(id, name_en, name_ar, total_credits)')
+        .select('id, student_id, name_en, name_ar, first_name, last_name, gpa, college_id, major_id, enrollment_date, notes, total_credits_earned, financial_hold_reason_code, financial_milestone_code, colleges(id, name_en, name_ar), majors(id, name_en, name_ar, total_credits)')
         .eq('status', 'active')
 
       studentQuery =
@@ -121,6 +123,7 @@ export default function StudentDashboard() {
         .select('id, invoice_number, total_amount, paid_amount, pending_amount, status, invoice_type, due_date, invoice_date')
         .eq('student_id', studentData.id)
       setInvoices(invData || [])
+      setProgramFees(await loadStudentInstallments(supabase, studentData).catch(() => ({ plan: null, rows: [] })))
 
       const { data: semData } = await supabase
         .from('semesters')
@@ -256,9 +259,15 @@ export default function StudentDashboard() {
     }
   }
 
-  const balanceDue = invoices.reduce((sum, inv) => sum + parseFloat(inv.pending_amount || 0), 0)
-  const amountPaid = invoices.reduce((sum, inv) => sum + parseFloat(inv.paid_amount || 0), 0)
-  const hasFinancialHold = balanceDue > 0 || !!student?.financial_hold_reason_code
+  const invoiceDue = invoices.reduce((sum, inv) => sum + parseFloat(inv.pending_amount || 0), 0)
+  const installmentDue = programFees.plan
+    ? programFees.rows.filter((r) => !r.payment).length * installmentAmount(programFees.plan)
+    : 0
+  const balanceDue = invoiceDue + installmentDue
+  const amountPaid =
+    invoices.reduce((sum, inv) => sum + parseFloat(inv.paid_amount || 0), 0) +
+    programFees.rows.reduce((sum, r) => sum + (r.payment ? Number(r.payment.amount || 0) : 0), 0)
+  const hasFinancialHold = invoiceDue > 0 || !!student?.financial_hold_reason_code
   const dayNum = new Date().getDay()
   const dayName = language === 'ar' ? DAY_NAMES_AR[DAYS[dayNum]] : DAY_NAMES_EN[DAYS[dayNum]]
   // Prefer GPA computed from enrollment grades; fallback to students.gpa
@@ -418,8 +427,8 @@ export default function StudentDashboard() {
               <div className="text-xl font-extrabold mt-1">{tx('لديك تعليق مالي — التسجيل موقوف', 'Financial hold — registration suspended')}</div>
               <div className="text-sm opacity-90 mt-1">
                 {tx(
-                  `يجب سداد الرسوم المستحقة (${balanceDue.toFixed(2)} ر.س) قبل التمكن من التسجيل في المقررات.`,
-                  `Please pay outstanding fees (${balanceDue.toFixed(2)} SAR) before course registration is allowed.`
+                  `يجب سداد الرسوم المستحقة (${formatMoney(invoiceDue)}) قبل التمكن من التسجيل في المقررات.`,
+                  `Please pay outstanding fees (${formatMoney(invoiceDue)}) before course registration is allowed.`
                 )}
               </div>
             </div>
@@ -459,8 +468,8 @@ export default function StudentDashboard() {
         </div>
         <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-4 border-t-4" style={{ borderTopColor: '#b45309' }}>
           <div className="text-[11px] font-extrabold text-slate-500 uppercase tracking-wide">{tx('الرصيد المستحق', 'Balance due')}</div>
-          <div className="text-3xl font-extrabold mt-1" style={{ color: STUDENT_PORTAL_BG }}>{balanceDue.toFixed(0)}</div>
-          <div className="text-xs text-slate-500">{tx('ريال سعودي', 'SAR')}</div>
+          <div className="text-3xl font-extrabold mt-1" style={{ color: STUDENT_PORTAL_BG }} dir="ltr">{formatMoney(balanceDue)}</div>
+          <div className="text-xs text-slate-500">{tx('دولار أمريكي', 'US dollars')}</div>
         </div>
         <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-4 border-t-4" style={{ borderTopColor: '#1d4ed8' }}>
           <div className="text-[11px] font-extrabold text-slate-500 uppercase tracking-wide">{tx('الساعات المكتملة', 'Completed hours')}</div>
@@ -666,18 +675,18 @@ export default function StudentDashboard() {
             <div className="flex items-start justify-between gap-3 mb-5">
               <div className="text-lg font-extrabold" style={{ color: STUDENT_PORTAL_BG }}>{tx('الملخص المالي', 'Financial summary')}</div>
               <button type="button" className="text-sm font-bold text-slate-600 hover:text-slate-900" onClick={() => navigate('/student/payments')}>
-                {tx('عرض الفواتير', 'View invoices')}
+                {tx('الرسوم والمدفوعات', 'Fees & payments')}
               </button>
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div className="rounded-lg border p-4" style={{ borderColor: '#b91c1c', backgroundColor: '#fee2e2' }}>
                 <div className="text-[11px] font-extrabold uppercase tracking-wide text-red-700">{tx('مستحق الدفع', 'Due')}</div>
-                <div className="text-2xl font-extrabold text-red-700 mt-1">{balanceDue.toFixed(0)} {tx('ر.س', 'SAR')}</div>
+                <div className="text-2xl font-extrabold text-red-700 mt-1" dir="ltr">{formatMoney(balanceDue)}</div>
                 <div className="text-xs text-red-700 mt-1">{financialDueDate ? tx(`آخر موعد: ${financialDueDate}`, `Deadline: ${financialDueDate}`) : tx('آخر موعد: —', 'Deadline: —')}</div>
               </div>
               <div className="rounded-lg border p-4" style={{ borderColor: '#1a7a4a', backgroundColor: '#e6f7ef' }}>
                 <div className="text-[11px] font-extrabold uppercase tracking-wide text-emerald-800">{tx('مدفوع', 'Paid')}</div>
-                <div className="text-2xl font-extrabold text-emerald-800 mt-1">{amountPaid.toFixed(0)} {tx('ر.س', 'SAR')}</div>
+                <div className="text-2xl font-extrabold text-emerald-800 mt-1" dir="ltr">{formatMoney(amountPaid)}</div>
                 <div className="text-xs text-emerald-800 mt-1">{tx('ملخص المدفوعات', 'Payment summary')}</div>
               </div>
             </div>

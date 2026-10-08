@@ -1490,10 +1490,19 @@ export default function ViewApplication() {
     }
   }
 
+  /** The database accepts a token until it expires; Edge Functions also need the sign-in to still exist. */
+  const requireLiveSession = async () => {
+    const { error: userErr } = await supabase.auth.getUser()
+    if (!userErr) return
+    const { error: refreshErr } = await supabase.auth.refreshSession()
+    if (refreshErr) throw new Error(t('admissions.viewApplication.sessionEnded'))
+  }
+
   const handleSendOfferLetter = async () => {
     if (!applicationId || !application) return
     setSendingOffer(true)
     setError('')
+    let statusChanged = false
     try {
       const deadlineIso = null
       let amountNum = tuitionAmount !== '' ? Number(tuitionAmount) : null
@@ -1502,6 +1511,8 @@ export default function ViewApplication() {
       } else if (!Number.isFinite(amountNum) || Number(amountNum) <= 0) {
         throw new Error('Tuition fee amount is required.')
       }
+
+      await requireLiveSession()
 
       const now = new Date().toISOString()
       const { error: updErr } = await supabase
@@ -1517,6 +1528,7 @@ export default function ViewApplication() {
         })
         .eq('id', applicationId)
       if (updErr) throw updErr
+      statusChanged = true
 
       await supabase.from('status_change_audit_log').insert({
         entity_type: 'application',
@@ -1534,10 +1546,20 @@ export default function ViewApplication() {
       const { data: acceptData, error: acceptErr } = await supabase.functions.invoke('accept-offer', {
         body: { applicationId, forceFinalize: true },
       })
-      if (acceptErr) throw acceptErr
+      if (acceptErr) {
+        let detail = acceptErr.message || 'Failed to finalize admission'
+        try {
+          const body = await acceptErr.context?.json?.()
+          if (body?.error) detail = String(body.error)
+        } catch {
+          /* keep the invoke message */
+        }
+        throw new Error(detail === 'Invalid session' ? t('admissions.viewApplication.sessionEnded') : detail)
+      }
       if (acceptData?.error || acceptData?.success === false) {
         throw new Error(acceptData?.error || 'Failed to finalize admission')
       }
+      statusChanged = false
 
       setApplication((prev) =>
         prev
@@ -1585,6 +1607,19 @@ export default function ViewApplication() {
       setTuitionAmount('')
       setTuitionTotalAmount(0)
     } catch (e) {
+      if (statusChanged) {
+        await supabase
+          .from('applications')
+          .update({
+            status_code: application.status_code,
+            status: application.status,
+            status_changed_at: application.status_changed_at,
+            offer_sent_at: application.offer_sent_at,
+            offer_deadline: application.offer_deadline,
+            tuition_fee_amount: application.tuition_fee_amount,
+          })
+          .eq('id', applicationId)
+      }
       setError(e?.message || 'Failed to send offer letter')
     } finally {
       setSendingOffer(false)
