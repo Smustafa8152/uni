@@ -2285,7 +2285,8 @@
           "interview": "Interview and exam",
           "activity": "Activity"
         }
-      }
+      },
+      "sessionEnded": "Your sign-in has ended, so nothing was changed. Sign out, sign in again, then send the offer letter."
     },
     "statusReasons": {
       "requestInfo": {

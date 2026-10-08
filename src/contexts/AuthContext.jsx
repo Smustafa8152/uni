@@ -423,7 +423,7 @@ export const AuthProvider = ({ children }) => {
           }
 
           if (expectedRole === 'applicant' && inst) {
-            await supabase.auth.signOut()
+            await supabase.auth.signOut({ scope: 'local' })
             return {
               data: null,
               error: {
@@ -434,7 +434,7 @@ export const AuthProvider = ({ children }) => {
             }
           }
 
-          await supabase.auth.signOut()
+          await supabase.auth.signOut({ scope: 'local' })
           return {
             data: null,
             error: { message: 'User not found in system' },
@@ -452,7 +452,7 @@ export const AuthProvider = ({ children }) => {
         } else if (expectedRole === 'applicant' && userData.role === 'applicant') {
           // Pre-enrollment applicant portal
         } else if (expectedRole !== userRole) {
-          await supabase.auth.signOut()
+          await supabase.auth.signOut({ scope: 'local' })
           if (expectedRole === 'applicant' && userRole === 'instructor') {
             return {
               data: null,
@@ -507,7 +507,7 @@ export const AuthProvider = ({ children }) => {
   }
 
   const signOut = async () => {
-    const { error } = await supabase.auth.signOut()
+    const { error } = await supabase.auth.signOut({ scope: 'local' })
     return { error }
   }
 
