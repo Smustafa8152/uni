@@ -7533,6 +7533,7 @@
     "hints": {
       "gpa": "On a 4.00 scale",
       "selectLevelFirst": "Select an academic level first.",
+      "onCampusOnly": "On campus study is for the bachelor's in Fiqh and Usul al-Fiqh at the Faculty of Sharia. Choose Online for every other program.",
       "educationForLevel": "Qualifications below the academic level you selected.",
       "educationForMaster": "A bachelor's degree or higher.",
       "educationForPhd": "A master's degree or higher.",
