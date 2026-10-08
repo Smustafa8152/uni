@@ -377,6 +377,10 @@ verify_jwt = false
 # Confirm runs when MyFatoorah sends the browser back. Create checks the user itself.
 verify_jwt = false
 
+[functions.myfatoorah-student-fee]
+# Same as the application fee: confirm trusts MyFatoorah, methods and create check the student.
+verify_jwt = false
+
 [analytics]
 enabled = true
 port = 54327

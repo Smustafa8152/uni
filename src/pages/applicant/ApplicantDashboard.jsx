@@ -14,7 +14,7 @@ import {
 } from '../../utils/applicationStatusDisplay'
 import ApplicantNextStep, { applicantHasNextStep, ApplicantSessionLinks } from '../../components/applicant/ApplicantNextStep'
 import ApplicationFeeSummary from '../../components/applicant/ApplicationFeeSummary'
-import { FilePlus2, ChevronRight, Loader2 } from 'lucide-react'
+import { FilePlus2, ChevronRight, Loader2, AlertTriangle, Upload } from 'lucide-react'
 
 const CLOSED_CODES = new Set(['DCRJ', 'ENCA', 'ENCU', 'ACWD'])
 
@@ -24,6 +24,7 @@ export default function ApplicantDashboard() {
   const { user } = useAuth()
   const [rows, setRows] = useState([])
   const [documentsVerified, setDocumentsVerified] = useState(false)
+  const [rejectedDocCount, setRejectedDocCount] = useState(0)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
 
@@ -91,13 +92,16 @@ export default function ApplicantDashboard() {
     async function loadDocs() {
       if (!active?.id) {
         setDocumentsVerified(false)
+        setRejectedDocCount(0)
         return
       }
       const { data } = await supabase
         .from('application_documents')
-        .select('document_type, verified_at')
+        .select('document_type, verified_at, rejected_at')
         .eq('application_id', active.id)
-      if (!cancelled) setDocumentsVerified(coreDocumentsVerified(data))
+      if (cancelled) return
+      setDocumentsVerified(coreDocumentsVerified(data))
+      setRejectedDocCount((data || []).filter((d) => !d.verified_at && d.rejected_at).length)
     }
     loadDocs()
     return () => {
@@ -238,6 +242,24 @@ export default function ApplicantDashboard() {
             </div>
 
             <div className="px-5 sm:px-7 py-6">
+              {rejectedDocCount > 0 && (
+                <div className="mb-6 flex flex-col gap-3 rounded-xl border border-[#fecaca] bg-[#fef2f2] px-4 py-3.5 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="flex items-start gap-2.5 text-[#991b1b]">
+                    <AlertTriangle className="mt-0.5 w-5 h-5 shrink-0" />
+                    <div>
+                      <p className="text-sm font-bold">{t('track.rejectedDocsTitle', { count: rejectedDocCount })}</p>
+                      <p className="text-xs mt-0.5">{t('track.rejectedDocsHint')}</p>
+                    </div>
+                  </div>
+                  <Link
+                    to={`/portal/applications/${active.id}#status-documents-panel`}
+                    className="inline-flex shrink-0 items-center justify-center gap-2 rounded-lg bg-[#b91c1c] px-4 py-2 text-sm font-bold text-white no-underline hover:bg-[#991b1b]"
+                  >
+                    <Upload className="w-4 h-4" />
+                    {t('track.uploadNewFile')}
+                  </Link>
+                </div>
+              )}
               <ApplicationFeeSummary application={active} className="mb-6" />
               {(showNext || active.interview_meeting_url || active.exam_location_or_link || active.interview_at || active.exam_at) && (
                 <div className="mb-6 space-y-3">

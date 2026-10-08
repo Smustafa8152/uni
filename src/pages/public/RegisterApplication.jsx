@@ -75,6 +75,9 @@ function isCompleteMobile(phone) {
   return national.length >= MIN_MOBILE_DIGITS && dial.replace(/\D/g, '').length + national.length <= MAX_PHONE_DIGITS
 }
 
+/** Programs taught on campus, matched by faculty code, program code, and level. Every other program is online only. */
+const ON_CAMPUS_PROGRAMS = [{ collegeCode: 'SH001', majorCode: '0141', degreeLevel: 'bachelor' }]
+
 const PAST_SEMESTER_STATUSES = new Set(['completed', 'archived', 'closed', 'cancelled', 'ended'])
 
 function isUpcomingSemester(semester, today = new Date()) {
@@ -105,7 +108,7 @@ function isUpcomingSemester(semester, today = new Date()) {
 const INITIAL_FORM = {
   // Program
   degree_level: '',
-  study_type: 'on_campus',
+  study_type: 'online',
   semester_id: '',
   academic_year_id: '',
   major_id: '',
@@ -197,7 +200,7 @@ function formFromLastApplication(app) {
     collegeId: app.college_id ? String(app.college_id) : '',
     form: {
       ...INITIAL_FORM,
-      study_type: String(app.study_type || '').toLowerCase() === 'online' ? 'online' : 'on_campus',
+      study_type: String(app.study_type || '').toLowerCase() === 'on_campus' ? 'on_campus' : 'online',
       semester_id: app.semester_id ? String(app.semester_id) : '',
       academic_year_id: app.academic_year_id ? String(app.academic_year_id) : '',
       major_id: app.major_id ? String(app.major_id) : '',
@@ -689,8 +692,29 @@ export default function RegisterApplication({ portal = false }) {
     )
   }, [availableSemesters, loadingColleges])
 
+  const onCampus = formData.study_type === 'on_campus'
+
+  const campusMajors = useMemo(() => {
+    const collegeCode = (id) => String(colleges.find((c) => String(c.id) === String(id))?.code || '').trim()
+    return majors.filter((m) =>
+      ON_CAMPUS_PROGRAMS.some(
+        (p) =>
+          m.degree_level === p.degreeLevel &&
+          String(m.code || '').trim() === p.majorCode &&
+          collegeCode(m.college_id) === p.collegeCode
+      )
+    )
+  }, [colleges, majors])
+
+  const programMajors = onCampus && !programLocked ? campusMajors : majors
+
+  const campusDegreeLevels = useMemo(
+    () => [...new Set(campusMajors.map((m) => m.degree_level))].filter((lvl) => activeDegreeLevels.includes(lvl)),
+    [campusMajors, activeDegreeLevels]
+  )
+
   const majorsFor = (collegeId) =>
-    majors.filter(
+    programMajors.filter(
       (m) =>
         Boolean(collegeId) &&
         (!formData.degree_level || m.degree_level === formData.degree_level) &&
@@ -701,12 +725,12 @@ export default function RegisterApplication({ portal = false }) {
   const collegesForDegreeLevel = useMemo(() => {
     if (!formData.degree_level) return []
     const collegeIds = new Set(
-      majors
+      programMajors
         .filter((m) => m.degree_level === formData.degree_level && m.college_id != null)
         .map((m) => String(m.college_id))
     )
     return colleges.filter((c) => collegeIds.has(String(c.id)))
-  }, [colleges, majors, formData.degree_level])
+  }, [colleges, programMajors, formData.degree_level])
 
   // Drop faculty / program picks that no longer match the academic level
   useEffect(() => {
@@ -729,23 +753,49 @@ export default function RegisterApplication({ portal = false }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [formData.degree_level, collegesForDegreeLevel])
 
+  // On campus fills in the campus program, so the applicant does not pick a level, faculty, or program that is online only.
+  useEffect(() => {
+    if (!onCampus || programLocked || loadingColleges) return
+    const level = campusDegreeLevels.includes(formData.degree_level)
+      ? formData.degree_level
+      : campusDegreeLevels.length === 1
+        ? campusDegreeLevels[0]
+        : ''
+    const atLevel = campusMajors.filter((m) => m.degree_level === level)
+    const keepMajor = atLevel.some((m) => String(m.id) === String(formData.major_id))
+    const only = atLevel.length === 1 ? atLevel[0] : null
+    const nextMajor = keepMajor ? formData.major_id : only ? String(only.id) : ''
+    const nextCollege = keepMajor ? selectedCollegeId : only ? String(only.college_id) : ''
+    if (level === formData.degree_level && nextMajor === formData.major_id && nextCollege === selectedCollegeId) return
+    setSelectedCollegeId(nextCollege)
+    setFormData((prev) => ({
+      ...prev,
+      degree_level: level,
+      major_id: nextMajor,
+      second_choice_college_id: '',
+      second_choice_major_id: '',
+    }))
+    clearInvalid(['degree_level', 'college_id', 'major_id'])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [onCampus, programLocked, loadingColleges, campusDegreeLevels, campusMajors, formData.degree_level, formData.major_id, selectedCollegeId])
+
   const firstChoiceMajors = useMemo(
     () => majorsFor(selectedCollegeId),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [majors, selectedCollegeId, formData.degree_level]
+    [programMajors, selectedCollegeId, formData.degree_level]
   )
   const secondChoiceMajors = useMemo(
     () => majorsFor(formData.second_choice_college_id),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [majors, formData.second_choice_college_id, formData.degree_level]
+    [programMajors, formData.second_choice_college_id, formData.degree_level]
   )
 
   // A second choice needs another program at the same level. PhD currently has one, so the section stays hidden.
   const showSecondChoice = useMemo(() => {
     if (!formData.degree_level) return false
-    const programs = majors.filter((m) => m.degree_level === formData.degree_level)
+    const programs = programMajors.filter((m) => m.degree_level === formData.degree_level)
     return programs.length > 1
-  }, [majors, formData.degree_level])
+  }, [programMajors, formData.degree_level])
 
   useEffect(() => {
     if (showSecondChoice) return
@@ -807,7 +857,11 @@ export default function RegisterApplication({ portal = false }) {
         add('degree_level', t('applyForm.errors.degreeLevelInactive', 'This academic level is not open for applications.'))
       }
       if (!selectedCollegeId) add('college_id', t('registerApplication.errors.selectCollegeFirst'))
-      if (!formData.major_id) add('major_id', t('registerApplication.errors.selectMajor'))
+      if (!formData.major_id) {
+        add('major_id', t('registerApplication.errors.selectMajor'))
+      } else if (onCampus && !programLocked && !campusMajors.some((m) => String(m.id) === String(formData.major_id))) {
+        add('major_id', t('applyForm.hints.onCampusOnly'))
+      }
     }
 
     if (step === 2) {
@@ -1381,7 +1435,10 @@ export default function RegisterApplication({ portal = false }) {
                       </select>
                     </Field>
 
-                    <Field label={t('applyForm.fields.workload', 'Study mode')}>
+                    <Field
+                      label={t('applyForm.fields.workload', 'Study mode')}
+                      hint={onCampus && !programLocked ? t('applyForm.hints.onCampusOnly') : null}
+                    >
                       <Segmented
                         name="study_type"
                         value={formData.study_type}
@@ -1420,7 +1477,11 @@ export default function RegisterApplication({ portal = false }) {
                       >
                         <option value="">{t('common.select', 'Please select')}</option>
                         {APPLICATION_DEGREE_LEVELS.map((lvl) => (
-                          <option key={lvl} value={lvl} disabled={!activeDegreeLevels.includes(lvl)}>
+                          <option
+                            key={lvl}
+                            value={lvl}
+                            disabled={!activeDegreeLevels.includes(lvl) || (onCampus && !programLocked && !campusDegreeLevels.includes(lvl))}
+                          >
                             {activeDegreeLevels.includes(lvl)
                               ? t(`applyForm.degreeLevels.${lvl}`)
                               : t('applyForm.degreeLevelClosed', '{{level}} (not open for applications)', {
@@ -1687,10 +1748,10 @@ export default function RegisterApplication({ portal = false }) {
                     </select>
                   </Field>
                   <div className="hidden md:block" />
-                  <Field label={t('applyForm.fields.firstName', 'First name (as in ID)')} required invalid={invalidFields.includes('first_name')}>
+                  <Field label={t('applyForm.fields.firstName', 'First name in English (as in ID)')} required invalid={invalidFields.includes('first_name')}>
                     <input type="text" name="first_name" value={formData.first_name} onChange={handleChange} dir="ltr" className={inputClass} />
                   </Field>
-                  <Field label={t('applyForm.fields.lastName', 'Last name (as in ID)')} required invalid={invalidFields.includes('last_name')}>
+                  <Field label={t('applyForm.fields.lastName', 'Last name in English (as in ID)')} required invalid={invalidFields.includes('last_name')}>
                     <input type="text" name="last_name" value={formData.last_name} onChange={handleChange} dir="ltr" className={inputClass} />
                   </Field>
                   <Field label={t('applyForm.fields.nameAr', 'Full name in Arabic')} className="md:col-span-2">

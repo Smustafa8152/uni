@@ -36,6 +36,8 @@ const UPLOADABLE_DOCUMENT_TYPES = [
 ]
 const MAX_FILE_SIZE_MB = 10
 
+const isRejected = (doc) => Boolean(doc && !doc.verified_at && doc.rejected_at)
+
 function phaseIndex(code) {
   const idx = APPLICANT_PHASES.indexOf(getApplicantStatus(code).phase)
   return idx >= 0 ? idx : 0
@@ -140,6 +142,19 @@ export default function ApplicationStatus() {
     document.getElementById('status-documents-panel')?.scrollIntoView({ block: 'start' })
   }, [application, location.hash])
 
+  const loadDocuments = useCallback(async (appId) => {
+    const { data, error } = await supabase
+      .from('application_documents')
+      .select('id, document_type, document_label, file_path, file_name, uploaded_at, verified_at, rejected_at, rejection_reason')
+      .eq('application_id', appId)
+    if (error) {
+      console.error('Application documents fetch error:', error.message, error.code)
+      setApplicationDocuments([])
+      return
+    }
+    setApplicationDocuments(data ?? [])
+  }, [])
+
   // Fetch application documents when we have application
   useEffect(() => {
     const appId = application?.id
@@ -148,20 +163,8 @@ export default function ApplicationStatus() {
       setDocumentRequests([])
       return
     }
-    const fetchDocs = async () => {
-      const { data, error } = await supabase
-        .from('application_documents')
-        .select('id, document_type, document_label, file_path, file_name, uploaded_at, verified_at')
-        .eq('application_id', appId)
-      if (error) {
-        console.error('Application documents fetch error:', error.message, error.code)
-        setApplicationDocuments([])
-        return
-      }
-      setApplicationDocuments(data ?? [])
-    }
-    fetchDocs()
-  }, [application?.id])
+    loadDocuments(appId)
+  }, [application?.id, loadDocuments])
 
   // Portal-only: fetch staff requests for additional documents/info
   useEffect(() => {
@@ -386,7 +389,10 @@ export default function ApplicationStatus() {
     }))
   }, [application?.status_code, allRequiredCoreVerified, t])
 
-  const hasDoc = (type) => applicationDocuments.some((d) => d.document_type === type)
+  const latestDoc = (type) =>
+    applicationDocuments
+      .filter((d) => d.document_type === type || (type === 'medical_certificate' && d.document_type === 'medication_certificate'))
+      .sort((a, b) => String(b.uploaded_at || '').localeCompare(String(a.uploaded_at || '')))[0] || null
 
   const documentItems = () => {
     const code = application?.status_code
@@ -394,14 +400,22 @@ export default function ApplicationStatus() {
     return [
       { key: 'application', label: t('track.documents.applicationForm', 'Application form'), done: true, uploadable: false },
       { key: 'docVerification', label: t('track.documents.documentVerification', 'Documents verification'), done: pastDoc || allRequiredCoreVerified, uploadable: false },
-      ...UPLOADABLE_DOCUMENT_TYPES.map((d) => ({
-        key: d.key,
-        label: t(d.labelKey, d.key),
-        done: hasDoc(d.key) || (d.key === 'medical_certificate' && hasDoc('medication_certificate')),
-        uploadable: true,
-      })),
+      ...UPLOADABLE_DOCUMENT_TYPES.map((d) => {
+        const doc = latestDoc(d.key)
+        const rejected = isRejected(doc)
+        return {
+          key: d.key,
+          label: t(d.labelKey, d.key),
+          done: Boolean(doc) && !rejected,
+          rejected,
+          reason: rejected ? doc.rejection_reason : '',
+          uploadable: true,
+        }
+      }),
     ]
   }
+
+  const rejectedDocs = useMemo(() => applicationDocuments.filter(isRejected), [applicationDocuments])
 
   const openStaffRequests = useMemo(
     () => (portalMode ? documentRequests.filter((r) => r.status === 'open') : []),
@@ -425,10 +439,10 @@ export default function ApplicationStatus() {
     return portalMode && !blocked.has(c)
   }, [portalMode, application?.status_code])
 
-  const handleDocumentUpload = async (documentType, file, documentLabel = null) => {
+  const handleDocumentUpload = async (documentType, file, documentLabel = null, replaceId = null) => {
     if (!application?.id || !file) return
     setDocumentError('')
-    setUploadingDocType(documentType)
+    setUploadingDocType(replaceId ? `replace:${replaceId}` : documentType)
     try {
       const safeName = `${Date.now()}-${file.name.replace(/[^a-zA-Z0-9.-]/g, '_')}`
       const storagePath = `${application.id}/${documentType}/${safeName}`
@@ -448,11 +462,16 @@ export default function ApplicationStatus() {
         file_size: file.size,
         content_type: file.type,
         uploaded_at: new Date().toISOString(),
+        rejected_at: null,
+        rejected_by: null,
+        rejection_reason: null,
       }
 
       const isAdditional = documentType === 'additional'
       let insertError = null
-      if (isAdditional) {
+      if (replaceId) {
+        ;({ error: insertError } = await supabase.from('application_documents').update(payload).eq('id', replaceId))
+      } else if (isAdditional) {
         ;({ error: insertError } = await supabase.from('application_documents').insert(payload))
       } else {
         // We allow multiple documents overall (partial unique index), so "upsert on (application_id, document_type)"
@@ -474,31 +493,7 @@ export default function ApplicationStatus() {
       }
       if (insertError) throw insertError
 
-      setApplicationDocuments((prev) => {
-        if (isAdditional) {
-          return [
-            ...prev,
-            {
-              document_type: documentType,
-              document_label: documentLabel,
-              file_path: storagePath,
-              file_name: file.name,
-              uploaded_at: new Date().toISOString(),
-            },
-          ]
-        }
-        const rest = prev.filter((d) => d.document_type !== documentType)
-        return [
-          ...rest,
-          {
-            document_type: documentType,
-            document_label: documentLabel,
-            file_path: storagePath,
-            file_name: file.name,
-            uploaded_at: new Date().toISOString(),
-          },
-        ]
-      })
+      await loadDocuments(application.id)
     } catch (err) {
       setDocumentError(err.message || t('track.documentUploadError', 'Upload failed. Please try again.'))
     } finally {
@@ -873,6 +868,15 @@ export default function ApplicationStatus() {
                   </div>
                 </div>
               )}
+              {rejectedDocs.length > 0 && (
+                <div className="mb-3 flex items-start gap-2.5 rounded-md border border-[#fecaca] bg-[#fef2f2] px-3 py-2.5 text-sm text-[#991b1b] text-start">
+                  <AlertTriangle className="mt-0.5 w-4 h-4 shrink-0" />
+                  <div>
+                    <div className="font-bold">{t('track.rejectedDocsTitle', { count: rejectedDocs.length })}</div>
+                    <div className="text-xs leading-relaxed mt-0.5">{t('track.rejectedDocsHint')}</div>
+                  </div>
+                </div>
+              )}
               {documentError && <p className="text-sm text-[#b91c1c] mb-3">{documentError}</p>}
 
               {portalMode && openStaffRequests.length > 0 && (
@@ -915,7 +919,7 @@ export default function ApplicationStatus() {
                 </div>
               )}
 
-              {portalMode && additionalDocs.length > 0 && (
+              {(portalMode || additionalDocs.some(isRejected)) && additionalDocs.length > 0 && (
                 <div className={`mb-2 text-start`}>
                   <div className="text-xs font-bold text-[#6b7a99] mb-2">
                     {t('track.additionalUploadsTitle', 'Additional uploads')}
@@ -923,16 +927,60 @@ export default function ApplicationStatus() {
                   <ul className="space-y-1">
                     {additionalDocs
                       .slice()
-                      .sort((a, b) => String(b.uploaded_at || '').localeCompare(String(a.uploaded_at || '')))
+                      .sort((a, b) => Number(isRejected(b)) - Number(isRejected(a)) || String(b.uploaded_at || '').localeCompare(String(a.uploaded_at || '')))
                       .slice(0, 8)
-                      .map((d) => (
-                        <li key={d.id || d.file_path} className="flex items-center justify-between gap-2 text-xs border border-[#dde3ef] rounded-md px-3 py-2 bg-white">
-                          <span className="font-semibold text-[#1e2a3a] truncate">
-                            {d.document_label || t('track.additionalDocument', 'Additional document')}
-                          </span>
-                          <span className="text-[#6b7a99] truncate">{d.file_name || ''}</span>
-                        </li>
-                      ))}
+                      .map((d) => {
+                        const rejected = isRejected(d)
+                        return (
+                          <li
+                            key={d.id || d.file_path}
+                            className={`text-xs border rounded-md px-3 py-2 ${rejected ? 'border-[#fecaca] bg-[#fef2f2]' : 'border-[#dde3ef] bg-white'}`}
+                          >
+                            <div className="flex items-center justify-between gap-2">
+                              <span className="font-semibold text-[#1e2a3a] truncate">
+                                {d.document_label || t('track.additionalDocument', 'Additional document')}
+                              </span>
+                              {rejected ? (
+                                <span className="inline-flex shrink-0 items-center gap-1 font-bold text-[#b91c1c]">
+                                  <XCircle className="w-3.5 h-3.5" />
+                                  {t('track.documentRejected')}
+                                </span>
+                              ) : (
+                                <span className="text-[#6b7a99] truncate">{d.file_name || ''}</span>
+                              )}
+                            </div>
+                            {rejected && (
+                              <div className="mt-1.5 flex flex-wrap items-center justify-between gap-2">
+                                <span className="leading-relaxed text-[#991b1b]">
+                                  <span className="font-bold">{t('track.rejectionReason')}: </span>
+                                  {d.rejection_reason}
+                                </span>
+                                <label className="inline-flex cursor-pointer">
+                                  <input
+                                    type="file"
+                                    className="sr-only"
+                                    onChange={(e) => {
+                                      const f = e.target.files?.[0]
+                                      e.target.value = ''
+                                      if (!f) return
+                                      if (f.size > MAX_FILE_SIZE_MB * 1024 * 1024) {
+                                        setDocumentError(t('track.documentFileTooBig', `File must be under ${MAX_FILE_SIZE_MB} MB`))
+                                        return
+                                      }
+                                      handleDocumentUpload('additional', f, d.document_label, d.id)
+                                    }}
+                                    disabled={uploadingDocType !== null}
+                                  />
+                                  <span className="inline-flex items-center gap-1.5 rounded-md bg-[#b91c1c] px-3 py-1.5 font-semibold text-white hover:bg-[#991b1b]">
+                                    {uploadingDocType === `replace:${d.id}` ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Upload className="w-3.5 h-3.5" />}
+                                    {t('track.uploadNewFile')}
+                                  </span>
+                                </label>
+                              </div>
+                            )}
+                          </li>
+                        )
+                      })}
                   </ul>
                 </div>
               )}
@@ -945,14 +993,27 @@ export default function ApplicationStatus() {
                   >
                     <div className="flex items-center justify-between gap-2 text-[13px]">
                       <span className="font-medium text-[#1e2a3a]">{item.label}</span>
-                      <span
-                        className={`inline-flex items-center justify-center min-w-[28px] h-7 px-2 rounded-full text-xs font-bold ${
-                          item.done ? 'bg-[#e6f7ef] text-[#1a7a4a]' : 'bg-[#fef3c7] text-[#b45309]'
-                        }`}
-                      >
-                        {item.done ? '✓' : '⚠'}
-                      </span>
+                      {item.rejected ? (
+                        <span className="inline-flex items-center gap-1 h-7 px-2.5 rounded-full text-xs font-bold bg-[#fee2e2] text-[#b91c1c]">
+                          <XCircle className="w-3.5 h-3.5" />
+                          {t('track.documentRejected')}
+                        </span>
+                      ) : (
+                        <span
+                          className={`inline-flex items-center justify-center min-w-[28px] h-7 px-2 rounded-full text-xs font-bold ${
+                            item.done ? 'bg-[#e6f7ef] text-[#1a7a4a]' : 'bg-[#fef3c7] text-[#b45309]'
+                          }`}
+                        >
+                          {item.done ? '✓' : '⚠'}
+                        </span>
+                      )}
                     </div>
+                    {item.rejected && item.reason && (
+                      <div className="rounded-md border border-[#fecaca] bg-[#fef2f2] px-3 py-2 text-xs leading-relaxed text-[#991b1b]">
+                        <span className="font-bold">{t('track.rejectionReason')}: </span>
+                        {item.reason}
+                      </div>
+                    )}
                     {item.uploadable && !item.done && (
                       <div className="flex flex-wrap items-center gap-2">
                         <label className="inline-flex cursor-pointer">
@@ -973,8 +1034,13 @@ export default function ApplicationStatus() {
                           }}
                           disabled={uploadingDocType !== null}
                         />
-                        <span className="inline-flex items-center rounded-md bg-[#f0f4fb] px-3 py-1.5 text-xs font-semibold text-[#1a3a6b]">
-                          {t('track.chooseFile', 'Choose file')}
+                        <span
+                          className={`inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-semibold ${
+                            item.rejected ? 'bg-[#b91c1c] text-white hover:bg-[#991b1b]' : 'bg-[#f0f4fb] text-[#1a3a6b]'
+                          }`}
+                        >
+                          {item.rejected && <Upload className="w-3.5 h-3.5" />}
+                          {item.rejected ? t('track.uploadNewFile') : t('track.chooseFile', 'Choose file')}
                         </span>
                         </label>
                         {uploadingDocType === item.key && <Loader2 className="w-4 h-4 animate-spin text-[#1a3a6b]" />}
