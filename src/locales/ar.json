@@ -5654,7 +5654,13 @@
       "sessionOtherTitle": "Safari — iPhone",
       "sessionOtherMeta": "منذ يومين",
       "endSession": "إنهاء",
-      "signOutAll": "تسجيل الخروج من جميع الأجهزة"
+      "signOutAll": "تسجيل الخروج من جميع الأجهزة",
+      "fromApplication": "كما أدخلتها في نموذج طلب الالتحاق.",
+      "applicationNumber": "رقم الطلب",
+      "studyMode": "نمط الدراسة",
+      "admissionDate": "تاريخ القبول",
+      "saved": "تم حفظ بيانات التواصل.",
+      "saveError": "تعذّر حفظ بيانات التواصل. يرجى المحاولة مرة أخرى."
     },
     "documents": {
       "breadcrumbHome": "الرئيسية",

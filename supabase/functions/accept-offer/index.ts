@@ -295,6 +295,48 @@ serve(async (req) => {
     const computedNameAr = [app.first_name_ar, app.middle_name_ar, app.last_name_ar].filter(Boolean).join(' ').trim()
     const safeNameEn = (computedNameEn || `${app.first_name || ''} ${app.last_name || ''}`.trim() || app.email || '').trim()
     const safeNameAr = (computedNameAr || safeNameEn).trim()
+    const rawGender = String(app.gender || '').trim().toLowerCase()
+    const safeGender = rawGender === 'male' || rawGender === 'female' ? rawGender : null
+    const idNumber = String(app.id_number || '').trim() || null
+    const isPassport = String(app.id_type || '').toLowerCase() === 'passport'
+    const gpaNum = app.gpa != null && app.gpa !== '' ? Number(app.gpa) : null
+
+    // Everything the applicant filled in on the application form that the student record can hold.
+    const profileFromApplication: Record<string, unknown> = {
+      name_en: safeNameEn,
+      name_ar: safeNameAr,
+      first_name: app.first_name || null,
+      middle_name: app.middle_name || null,
+      last_name: app.last_name || null,
+      first_name_ar: app.first_name_ar || null,
+      middle_name_ar: app.middle_name_ar || null,
+      last_name_ar: app.last_name_ar || null,
+      phone: app.phone || null,
+      mobile_phone: app.phone || null,
+      date_of_birth: app.date_of_birth || null,
+      gender: safeGender,
+      nationality: app.nationality || null,
+      religion: app.religion || null,
+      national_id: app.national_id || idNumber,
+      passport_number: isPassport ? idNumber : null,
+      passport_expiry: isPassport ? app.id_expiry_date || null : null,
+      address: app.street_address || null,
+      city: app.city || null,
+      state: app.state_province || null,
+      country: app.country || null,
+      postal_code: app.postal_code || null,
+      emergency_contact_name: app.emergency_contact_name || null,
+      emergency_contact_relation: app.emergency_contact_relationship || app.emergency_contact_relation || null,
+      emergency_contact_email: app.emergency_contact_email || null,
+      emergency_phone: app.emergency_contact_phone || app.emergency_phone || null,
+      high_school_name: app.high_school_name || null,
+      high_school_country: app.high_school_country || null,
+      graduation_year: app.graduation_year || null,
+      high_school_gpa: Number.isFinite(gpaNum) ? gpaNum : null,
+      major_id: Number(app.major_id),
+      college_id: Number(app.college_id),
+      study_approach: app.study_type === 'online' ? 'online' : 'on_campus',
+    }
 
     if (paymentsEnabled && !forceFinalize) {
       if (!app.registration_fee_paid_at) {
@@ -351,42 +393,19 @@ serve(async (req) => {
     let createdStudent: any = existingStudent
     if (!existingStudent) {
       const enrollmentDate = new Date().toISOString().split('T')[0]
-      const rawGender = String(app.gender || '').trim().toLowerCase()
-      const safeGender = rawGender === 'male' || rawGender === 'female' ? rawGender : null
       let lastInsErr: any = null
       for (let attempt = 0; attempt < 8; attempt++) {
         const studentId = await generateStudentId(supabaseAdmin, Number(app.college_id))
         const { data: inserted, error: insErr } = await supabaseAdmin
           .from('students')
           .insert({
+            ...profileFromApplication,
             user_id: userId,
             student_id: studentId,
-            name_en: safeNameEn,
-            name_ar: safeNameAr,
-            first_name: app.first_name || null,
-            middle_name: app.middle_name || null,
-            last_name: app.last_name || null,
-            first_name_ar: app.first_name_ar || null,
-            middle_name_ar: app.middle_name_ar || null,
-            last_name_ar: app.last_name_ar || null,
             email: app.email,
-            phone: app.phone || null,
-            mobile_phone: app.phone || null,
-            date_of_birth: app.date_of_birth || null,
-            gender: safeGender,
-            nationality: app.nationality || null,
-            national_id: app.national_id || null,
-            city: app.city || null,
-            postal_code: app.postal_code || null,
-            emergency_contact_name: app.emergency_contact_name || null,
-            emergency_contact_relation: app.emergency_contact_relation || null,
-            emergency_phone: app.emergency_contact_phone || app.emergency_phone || null,
-            major_id: Number(app.major_id),
-            college_id: Number(app.college_id),
             enrollment_date: enrollmentDate,
             status: 'active',
             study_type: app.study_type === 'part_time' ? 'part_time' : 'full_time',
-            study_approach: app.study_type === 'online' ? 'online' : 'on_campus',
           })
           .select('id, student_id')
           .single()
@@ -402,36 +421,14 @@ serve(async (req) => {
       }
       if (!createdStudent) throw lastInsErr || new Error('Unable to generate a unique student ID')
     }
-    // Keep student record in sync with the latest application data (best-effort update)
+    // Keep student record in sync with the latest application data (best-effort update).
+    // Empty application values never overwrite what the student record already has.
     try {
       if (createdStudent?.id) {
-        await supabaseAdmin
-          .from('students')
-          .update({
-            name_en: safeNameEn,
-            name_ar: safeNameAr,
-            first_name: app.first_name || null,
-            middle_name: app.middle_name || null,
-            last_name: app.last_name || null,
-            first_name_ar: app.first_name_ar || null,
-            middle_name_ar: app.middle_name_ar || null,
-            last_name_ar: app.last_name_ar || null,
-            phone: app.phone || null,
-            mobile_phone: app.phone || null,
-            date_of_birth: app.date_of_birth || null,
-            gender: app.gender || null,
-            nationality: app.nationality || null,
-            national_id: app.national_id || null,
-            city: app.city || null,
-            postal_code: app.postal_code || null,
-            emergency_contact_name: app.emergency_contact_name || null,
-            emergency_contact_relation: app.emergency_contact_relation || null,
-            emergency_phone: app.emergency_contact_phone || app.emergency_phone || null,
-            major_id: Number(app.major_id),
-            college_id: Number(app.college_id),
-            study_approach: app.study_type === 'online' ? 'online' : 'on_campus',
-          })
-          .eq('id', createdStudent.id)
+        const filled = Object.fromEntries(
+          Object.entries(profileFromApplication).filter(([, v]) => v !== null && v !== undefined && v !== ''),
+        )
+        await supabaseAdmin.from('students').update(filled).eq('id', createdStudent.id)
       }
     } catch {
       // ignore

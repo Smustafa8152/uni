@@ -5650,7 +5650,13 @@
       "sessionOtherTitle": "Safari — iPhone",
       "sessionOtherMeta": "2 days ago",
       "endSession": "End",
-      "signOutAll": "Sign out of all devices"
+      "signOutAll": "Sign out of all devices",
+      "fromApplication": "As you entered it on your application form.",
+      "applicationNumber": "Application number",
+      "studyMode": "Study mode",
+      "admissionDate": "Admission date",
+      "saved": "Your contact details have been saved.",
+      "saveError": "Your contact details could not be saved. Please try again."
     },
     "documents": {
       "breadcrumbHome": "Home",

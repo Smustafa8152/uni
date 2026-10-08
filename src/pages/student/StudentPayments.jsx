@@ -7,12 +7,11 @@ import { useAuth } from '../../contexts/AuthContext'
 import { useLanguage } from '../../contexts/LanguageContext'
 import { getLocalizedName } from '../../utils/localizedName'
 import {
-  PLAN_SELECT,
   confirmStudentFeePayment,
   formatMoney,
   installmentAmount,
   listStudentFeeMethods,
-  openedSemesterIds,
+  loadStudentInstallments,
   planTotal,
   sortedItems,
   startStudentFeeCheckout,
@@ -61,62 +60,17 @@ export default function StudentPayments() {
         return
       }
 
-      const [planRes, invoiceRes] = await Promise.all([
-        student.major_id
-          ? supabase.from('program_fee_plans').select(PLAN_SELECT).eq('major_id', student.major_id).eq('is_active', true).maybeSingle()
-          : Promise.resolve({ data: null }),
+      const [installments, invoiceRes] = await Promise.all([
+        loadStudentInstallments(supabase, student),
         supabase
           .from('invoices')
           .select('id, invoice_number, invoice_date, invoice_type, status, total_amount, paid_amount')
           .eq('student_id', student.id)
           .order('invoice_date', { ascending: false }),
       ])
-      if (planRes.error) throw planRes.error
       setInvoices(invoiceRes.data || [])
-      const currentPlan = planRes.data || null
-      setPlan(currentPlan)
-      if (!currentPlan) {
-        setRows([])
-        return
-      }
-
-      const [openRes, payRes] = await Promise.all([
-        supabase.from('program_fee_openings').select('semester_id, academic_year_id').eq('plan_id', currentPlan.id),
-        supabase
-          .from('program_fee_payments')
-          .select('semester_id, amount, currency, paid_at, myfatoorah_payment_id')
-          .eq('student_id', student.id)
-          .eq('plan_id', currentPlan.id)
-          .eq('status', 'paid'),
-      ])
-      if (openRes.error) throw openRes.error
-      const openings = openRes.data || []
-      const yearIds = openings.map((o) => o.academic_year_id).filter(Boolean)
-      const semesterIds = openings.map((o) => o.semester_id).filter(Boolean)
-      let semesters = []
-      if (yearIds.length || semesterIds.length) {
-        const filters = [
-          yearIds.length ? `academic_year_id.in.(${yearIds.join(',')})` : null,
-          semesterIds.length ? `id.in.(${semesterIds.join(',')})` : null,
-        ].filter(Boolean)
-        const { data: semData, error: semErr } = await supabase
-          .from('semesters')
-          .select('id, name_en, name_ar, academic_year_id, start_date, end_date')
-          .or(filters.join(','))
-          .order('start_date', { ascending: true })
-        if (semErr) throw semErr
-        semesters = semData || []
-      }
-
-      const opened = openedSemesterIds(openings, semesters)
-      const paidBySemester = new Map((payRes.data || []).map((p) => [p.semester_id, p]))
-      const joined = student.enrollment_date ? String(student.enrollment_date) : ''
-      const list = semesters
-        .filter((s) => opened.has(s.id))
-        .filter((s) => !joined || !s.end_date || String(s.end_date) >= joined)
-        .slice(0, currentPlan.installments)
-        .map((s, index) => ({ semester: s, number: index + 1, payment: paidBySemester.get(s.id) || null }))
-      setRows(list)
+      setPlan(installments.plan)
+      setRows(installments.rows)
     } catch (err) {
       setError(err?.message || t('studentFees.loadError'))
     } finally {
