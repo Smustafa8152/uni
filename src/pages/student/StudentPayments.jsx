@@ -1,527 +1,402 @@
-import { useState, useEffect } from 'react'
+import { useEffect, useMemo, useState } from 'react'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
+import { CheckCircle, CreditCard, Loader2, Receipt, Wallet, X, AlertCircle } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
-import PaymentModal from '../../components/payment/PaymentModal'
-import { calculateFinancialMilestone, getMilestoneInfo } from '../../utils/financePermissions'
-import { useNavigate } from 'react-router-dom'
-import { 
-  CreditCard, DollarSign, AlertCircle, CheckCircle, Clock, FileText,
-  Download, Eye, Loader2, GraduationCap
-} from 'lucide-react'
+import { useLanguage } from '../../contexts/LanguageContext'
+import { getLocalizedName } from '../../utils/localizedName'
+import {
+  PLAN_SELECT,
+  confirmStudentFeePayment,
+  formatMoney,
+  installmentAmount,
+  listStudentFeeMethods,
+  openedSemesterIds,
+  planTotal,
+  sortedItems,
+  startStudentFeeCheckout,
+} from '../../utils/programFees'
+
+const NAVY = '#1a3a6b'
 
 export default function StudentPayments() {
   const { t } = useTranslation()
   const { user } = useAuth()
+  const { isRTL, language } = useLanguage()
+  const isArabic = isRTL || language === 'ar'
   const navigate = useNavigate()
+  const [params] = useSearchParams()
+  const paymentId = params.get('paymentId')
+  const failed = params.get('failed') === '1'
+
   const [loading, setLoading] = useState(true)
-  const [student, setStudent] = useState(null)
-  const [invoices, setInvoices] = useState([])
-  const [payments, setPayments] = useState([])
-  const [semesterStatuses, setSemesterStatuses] = useState([]) // Per-semester financial status
-  const [selectedInvoice, setSelectedInvoice] = useState(null)
-  const [showPaymentModal, setShowPaymentModal] = useState(false)
   const [error, setError] = useState('')
+  const [plan, setPlan] = useState(null)
+  const [rows, setRows] = useState([])
+  const [invoices, setInvoices] = useState([])
+  const [notice, setNotice] = useState(failed ? 'failed' : paymentId ? 'checking' : '')
+  const [picker, setPicker] = useState(null)
 
-  useEffect(() => {
-    fetchData()
-  }, [user])
+  const nameOf = (row) => (row ? getLocalizedName(row, isArabic) || row.name_en || row.name_ar : '') || '—'
+  const formatDate = (value) =>
+    value ? new Date(value).toLocaleDateString(isArabic ? 'ar-u-nu-latn' : 'en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : ''
 
-  const fetchData = async () => {
+  const load = async () => {
     if (!user?.email) return
-
     setLoading(true)
+    setError('')
     try {
-      // Fetch student data
-      const { data: studentData, error: studentError } = await supabase
+      const { data: students, error: studentErr } = await supabase
         .from('students')
-        .select('id, student_id, name_en, email, financial_hold_reason_code, college_id')
-        .eq('email', user.email)
-        .eq('status', 'active')
-        .single()
-
-      if (studentError) throw studentError
-      setStudent(studentData)
-
-      // Fetch all invoices for this student (grouped by semester)
-      const { data: invoicesData, error: invoicesError } = await supabase
-        .from('invoices')
-        .select(`
-          id,
-          invoice_number,
-          invoice_date,
-          due_date,
-          invoice_type,
-          status,
-          total_amount,
-          paid_amount,
-          pending_amount,
-          parent_invoice_id,
-          student_id,
-          college_id,
-          semester_id,
-          semesters (id, name_en, code, start_date)
-        `)
-        .eq('student_id', studentData.id)
-        .order('invoice_date', { ascending: false })
-
-      if (invoicesError) throw invoicesError
-      setInvoices(invoicesData || [])
-
-      // Fetch per-semester financial statuses
-      const { data: semesterStatusesData, error: statusesError } = await supabase
-        .from('student_semester_financial_status')
-        .select(`
-          id,
-          semester_id,
-          financial_milestone_code,
-          total_due,
-          total_paid,
-          financial_hold_reason_code,
-          semesters (id, name_en, code, start_date)
-        `)
-        .eq('student_id', studentData.id)
-        .order('semesters(start_date)', { ascending: false })
-
-      if (statusesError) {
-        console.error('Error fetching semester statuses:', statusesError)
-        // If table doesn't exist yet, continue without it
-        setSemesterStatuses([])
-      } else {
-        setSemesterStatuses(semesterStatusesData || [])
+        .select('id, major_id, enrollment_date')
+        .ilike('email', user.email.trim().replace(/[\\%_]/g, '\\$&'))
+        .order('id', { ascending: false })
+        .limit(1)
+      if (studentErr) throw studentErr
+      const student = students?.[0]
+      if (!student) {
+        setPlan(null)
+        setRows([])
+        return
       }
 
-      // Fetch payment history
-      const { data: paymentsData, error: paymentsError } = await supabase
-        .from('payments')
-        .select(`
-          id,
-          payment_number,
-          payment_date,
-          payment_method,
-          amount,
-          status,
-          invoices (invoice_number, invoice_type)
-        `)
-        .eq('student_id', studentData.id)
-        .order('payment_date', { ascending: false })
-        .limit(20)
+      const [planRes, invoiceRes] = await Promise.all([
+        student.major_id
+          ? supabase.from('program_fee_plans').select(PLAN_SELECT).eq('major_id', student.major_id).eq('is_active', true).maybeSingle()
+          : Promise.resolve({ data: null }),
+        supabase
+          .from('invoices')
+          .select('id, invoice_number, invoice_date, invoice_type, status, total_amount, paid_amount')
+          .eq('student_id', student.id)
+          .order('invoice_date', { ascending: false }),
+      ])
+      if (planRes.error) throw planRes.error
+      setInvoices(invoiceRes.data || [])
+      const currentPlan = planRes.data || null
+      setPlan(currentPlan)
+      if (!currentPlan) {
+        setRows([])
+        return
+      }
 
-      if (paymentsError) throw paymentsError
-      setPayments(paymentsData || [])
+      const [openRes, payRes] = await Promise.all([
+        supabase.from('program_fee_openings').select('semester_id, academic_year_id').eq('plan_id', currentPlan.id),
+        supabase
+          .from('program_fee_payments')
+          .select('semester_id, amount, currency, paid_at, myfatoorah_payment_id')
+          .eq('student_id', student.id)
+          .eq('plan_id', currentPlan.id)
+          .eq('status', 'paid'),
+      ])
+      if (openRes.error) throw openRes.error
+      const openings = openRes.data || []
+      const yearIds = openings.map((o) => o.academic_year_id).filter(Boolean)
+      const semesterIds = openings.map((o) => o.semester_id).filter(Boolean)
+      let semesters = []
+      if (yearIds.length || semesterIds.length) {
+        const filters = [
+          yearIds.length ? `academic_year_id.in.(${yearIds.join(',')})` : null,
+          semesterIds.length ? `id.in.(${semesterIds.join(',')})` : null,
+        ].filter(Boolean)
+        const { data: semData, error: semErr } = await supabase
+          .from('semesters')
+          .select('id, name_en, name_ar, academic_year_id, start_date, end_date')
+          .or(filters.join(','))
+          .order('start_date', { ascending: true })
+        if (semErr) throw semErr
+        semesters = semData || []
+      }
+
+      const opened = openedSemesterIds(openings, semesters)
+      const paidBySemester = new Map((payRes.data || []).map((p) => [p.semester_id, p]))
+      const joined = student.enrollment_date ? String(student.enrollment_date) : ''
+      const list = semesters
+        .filter((s) => opened.has(s.id))
+        .filter((s) => !joined || !s.end_date || String(s.end_date) >= joined)
+        .slice(0, currentPlan.installments)
+        .map((s, index) => ({ semester: s, number: index + 1, payment: paidBySemester.get(s.id) || null }))
+      setRows(list)
     } catch (err) {
-      console.error('Error fetching payment data:', err)
-      setError(err.message || 'Failed to load payment information')
+      setError(err?.message || t('studentFees.loadError'))
     } finally {
       setLoading(false)
     }
   }
 
-  const handlePayInvoice = (invoice) => {
-    if (invoice.status === 'paid') {
-      alert(t('payments.alreadyPaid'))
-      return
-    }
-    setSelectedInvoice(invoice)
-    setShowPaymentModal(true)
-  }
+  useEffect(() => {
+    load()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.email])
 
-  const handlePaymentSuccess = async (newMilestone, payment) => {
-    // Refresh data after payment to get updated financial milestone
-    await fetchData()
-    setShowPaymentModal(false)
-    setSelectedInvoice(null)
-    
-    if (newMilestone) {
-      // Show success message
-      alert(t('payments.paymentSuccessful'))
-    }
+  useEffect(() => {
+    if (!paymentId) return
+    confirmStudentFeePayment(supabase, paymentId)
+      .then((result) => {
+        setNotice(result?.paid ? 'paid' : result?.pending ? 'pending' : 'failed')
+        load()
+      })
+      .catch(() => setNotice('failed'))
+      .finally(() => navigate('/student/payments', { replace: true }))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [paymentId])
 
-    // If we have a real payment row, take student to the receipt
-    if (payment?.id) {
-      navigate(`/student/payments/receipt/${payment.id}`)
-    }
-  }
+  const currency = plan?.currency || 'USD'
+  const total = plan ? planTotal(plan) : 0
+  const perInstallment = plan ? installmentAmount(plan) : 0
+  const paidTotal = rows.reduce((sum, r) => sum + (r.payment ? Number(r.payment.amount || 0) : 0), 0)
+  const items = useMemo(() => (plan ? sortedItems(plan) : []), [plan])
+  const otherInvoices = invoices.filter((inv) => inv.status !== 'cancelled')
 
-  const openLatestReceiptForInvoice = async (invoiceId) => {
+  const openPicker = async (row) => {
+    setPicker({ row, loading: true, methods: [], error: '', payingId: null })
     try {
-      const { data, error } = await supabase
-        .from('payments')
-        .select('id')
-        .eq('invoice_id', invoiceId)
-        .order('created_at', { ascending: false })
-        .limit(1)
-        .maybeSingle()
-      if (error) throw error
-      if (data?.id) {
-        navigate(`/student/payments/receipt/${data.id}`)
-      } else {
-        alert(t('payments.noReceiptYet', { defaultValue: 'No receipt available yet for this invoice.' }))
+      const result = await listStudentFeeMethods(supabase, row.semester.id)
+      if (result?.alreadyPaid) {
+        setPicker(null)
+        load()
+        return
       }
-    } catch (e) {
-      console.error('openLatestReceiptForInvoice error:', e)
-      alert(t('payments.noReceiptYet', { defaultValue: 'No receipt available yet for this invoice.' }))
+      setPicker({ row, loading: false, methods: result?.methods || [], error: '', payingId: null })
+    } catch (err) {
+      setPicker({ row, loading: false, methods: [], error: err?.message || '', payingId: null })
     }
   }
 
-
-  const getStatusColor = (status) => {
-    const colors = {
-      'paid': 'bg-green-100 text-green-800 border-green-200',
-      'pending': 'bg-yellow-100 text-yellow-800 border-yellow-200',
-      'partially_paid': 'bg-blue-100 text-blue-800 border-blue-200',
-      'overdue': 'bg-red-100 text-red-800 border-red-200',
-      'cancelled': 'bg-gray-100 text-gray-800 border-gray-200'
+  const payWith = async (methodId) => {
+    if (!picker) return
+    setPicker((prev) => ({ ...prev, payingId: methodId, error: '' }))
+    try {
+      const result = await startStudentFeeCheckout(supabase, { semesterId: picker.row.semester.id, paymentMethodId: methodId, language })
+      if (result?.alreadyPaid) {
+        setPicker(null)
+        load()
+      }
+    } catch (err) {
+      setPicker((prev) => ({ ...prev, payingId: null, error: err?.message || '' }))
     }
-    return colors[status] || colors.pending
   }
 
-  // Collapse parent/child portion invoices:
-  // If a parent invoice has children, ignore the parent in totals/lists.
-  const parentInvoiceIds = new Set(
-    (invoices || [])
-      .filter((inv) => inv.parent_invoice_id != null)
-      .map((inv) => inv.parent_invoice_id)
-      .filter(Boolean)
-  )
-  const effectiveSemesterInvoices = (invoices || []).filter((inv) => {
-    if (!inv?.semester_id) return false
-    if (inv.invoice_type === 'admission_fee') return false
-    // If this invoice is a parent with children, ignore it (children are payable invoices)
-    if (parentInvoiceIds.has(inv.id)) return false
-    return true
-  })
-
-  // Calculate totals across all semesters (excluding admission fees)
-  const allSemesterInvoices = effectiveSemesterInvoices
-  const totalDue = allSemesterInvoices.reduce((sum, inv) => sum + parseFloat(inv.total_amount || 0), 0)
-  const totalPaid = allSemesterInvoices
-    .filter(inv => inv.status === 'paid' || inv.status === 'partially_paid')
-    .reduce((sum, inv) => sum + parseFloat(inv.paid_amount || 0), 0)
-  const outstandingBalance = totalDue - totalPaid
-
-  if (loading) {
+  if (loading && !plan) {
     return (
-      <div className="flex items-center justify-center min-h-screen">
-        <Loader2 className="w-8 h-8 animate-spin text-primary-600" />
+      <div className="flex min-h-[50vh] items-center justify-center">
+        <Loader2 className="h-8 w-8 animate-spin" style={{ color: NAVY }} />
       </div>
     )
   }
 
-  if (error) {
-    return (
-      <div className="bg-red-50 border border-red-200 rounded-xl p-6 text-red-800">
-        {error}
-      </div>
-    )
-  }
+  const noticeView = {
+    checking: { tone: 'border-slate-200 bg-white text-slate-700', icon: <Loader2 className="h-5 w-5 animate-spin" />, text: t('studentFees.confirming') },
+    paid: { tone: 'border-emerald-200 bg-emerald-50 text-emerald-800', icon: <CheckCircle className="h-5 w-5" />, text: t('studentFees.paymentReceived') },
+    pending: { tone: 'border-amber-200 bg-amber-50 text-amber-800', icon: <Loader2 className="h-5 w-5" />, text: t('studentFees.paymentPending') },
+    failed: { tone: 'border-rose-200 bg-rose-50 text-rose-800', icon: <AlertCircle className="h-5 w-5" />, text: t('studentFees.paymentFailed') },
+  }[notice]
 
   return (
-    <div className="space-y-6">
+    <div className="mx-auto max-w-4xl space-y-5">
       <div>
-        <h1 className="text-3xl font-bold text-gray-900">{t('payments.title')}</h1>
-        <p className="text-gray-600 mt-1">{t('payments.subtitle')}</p>
+        <h1 className="text-2xl font-black text-slate-900">{t('studentFees.title')}</h1>
+        <p className="mt-1 text-sm text-slate-500">{t('studentFees.subtitle')}</p>
       </div>
 
-      {/* Overall Financial Summary */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-          <div className="flex items-center space-x-3 mb-2">
-            <DollarSign className="w-5 h-5 text-gray-400" />
-            <span className="text-sm text-gray-600">{t('payments.totalDue')}</span>
-          </div>
-          <p className="text-2xl font-bold text-gray-900">${totalDue.toFixed(2)}</p>
-          <p className="text-xs text-gray-500 mt-1">All semesters (excluding registration fees)</p>
-        </div>
-
-        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-          <div className="flex items-center space-x-3 mb-2">
-            <CheckCircle className="w-5 h-5 text-green-500" />
-            <span className="text-sm text-gray-600">{t('payments.totalPaid')}</span>
-          </div>
-          <p className="text-2xl font-bold text-green-600">${totalPaid.toFixed(2)}</p>
-          <p className="text-xs text-gray-500 mt-1">Total paid across all semesters</p>
-        </div>
-
-        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-          <div className="flex items-center space-x-3 mb-2">
-            <AlertCircle className="w-5 h-5 text-orange-500" />
-            <span className="text-sm text-gray-600">{t('payments.outstandingBalance')}</span>
-          </div>
-          <p className="text-2xl font-bold text-orange-600">${outstandingBalance.toFixed(2)}</p>
-          <p className="text-xs text-gray-500 mt-1">Outstanding balance</p>
-        </div>
-      </div>
-
-      {/* Per-Semester Financial Status */}
-      {semesterStatuses.length > 0 && (
-        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-          <h2 className="text-xl font-bold text-gray-900 mb-4 flex items-center space-x-2">
-            <GraduationCap className="w-5 h-5 text-primary-600" />
-            <span>Per-Semester Payment Status</span>
-          </h2>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {semesterStatuses.map((status) => {
-              const milestoneInfo = getMilestoneInfo(status.financial_milestone_code || 'PM00')
-              const percentage = status.total_due > 0 
-                ? ((status.total_paid / status.total_due) * 100).toFixed(1)
-                : '0'
-              
-              return (
-                <div key={status.id} className="border border-gray-200 rounded-lg p-4">
-                  <div className="flex items-center justify-between mb-3">
-                    <div>
-                      <h3 className="font-semibold text-gray-900">{status.semesters?.name_en || 'N/A'}</h3>
-                      <p className="text-xs text-gray-500">{status.semesters?.code || ''}</p>
-                    </div>
-                    <span className={`text-xs font-semibold px-2 py-1 rounded ${milestoneInfo.color}`}>
-                      {Number(percentage) >= 100 ? '100% Paid' : `${percentage}% Paid`}
-                    </span>
-                  </div>
-                  <div className="space-y-2">
-                    <div className="flex justify-between text-sm">
-                      <span className="text-gray-600">Due:</span>
-                      <span className="font-semibold">${parseFloat(status.total_due || 0).toFixed(2)}</span>
-                    </div>
-                    <div className="flex justify-between text-sm">
-                      <span className="text-gray-600">Paid:</span>
-                      <span className="font-semibold text-green-600">${parseFloat(status.total_paid || 0).toFixed(2)}</span>
-                    </div>
-                    <div className="w-full bg-gray-200 rounded-full h-2 mt-2">
-                      <div 
-                        className={`h-2 rounded-full transition-all ${
-                          percentage >= 100 ? 'bg-green-500' :
-                          percentage >= 60 ? 'bg-orange-500' :
-                          percentage >= 30 ? 'bg-yellow-500' :
-                          percentage >= 10 ? 'bg-blue-500' :
-                          'bg-gray-400'
-                        }`}
-                        style={{ width: `${Math.min(percentage, 100)}%` }}
-                      />
-                    </div>
-                    <p className="text-xs text-gray-500 text-center mt-1">{percentage}% paid</p>
-                  </div>
-                </div>
-              )
-            })}
-          </div>
+      {noticeView && (
+        <div className={`flex items-center gap-3 rounded-2xl border px-4 py-3 text-sm font-semibold ${noticeView.tone}`}>
+          {noticeView.icon}
+          <span className="flex-1">{noticeView.text}</span>
+          {notice !== 'checking' && (
+            <button type="button" onClick={() => setNotice('')} className="rounded-lg p-1 opacity-60 hover:opacity-100">
+              <X className="h-4 w-4" />
+            </button>
+          )}
         </div>
       )}
 
-      {/* Financial Hold Warning */}
-      {student?.financial_hold_reason_code && (
-        <div className="bg-red-50 border border-red-200 rounded-xl p-4">
-          <div className="flex items-start space-x-3">
-            <AlertCircle className="w-5 h-5 text-red-600 flex-shrink-0 mt-0.5" />
-            <div>
-              <p className="font-semibold text-red-900">{t('payments.financialHold')}</p>
-              <p className="text-sm text-red-700 mt-1">
-                {t('payments.financialHoldMessage', { code: student.financial_hold_reason_code })}
-              </p>
+      {error && <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800">{error}</div>}
+
+      {rows.length === 0 ? (
+        <div className="rounded-3xl border border-slate-200 bg-white px-6 py-12 text-center">
+          <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-slate-100">
+            <Wallet className="h-7 w-7 text-slate-400" />
+          </div>
+          <p className="mx-auto mt-4 max-w-md text-sm text-slate-600">{t('studentFees.nothingOpen')}</p>
+        </div>
+      ) : (
+        <>
+          <section className="rounded-3xl p-6 text-white shadow-lg" style={{ backgroundColor: NAVY }}>
+            <p className="text-xs font-semibold uppercase tracking-wider text-white/60">{t('studentFees.programFees')}</p>
+            <h2 className="mt-1 text-lg font-extrabold leading-snug">{nameOf(plan?.majors)}</h2>
+            <div className="mt-5 grid grid-cols-3 gap-3">
+              <div>
+                <div className="text-xs text-white/60">{t('studentFees.total')}</div>
+                <div className="mt-0.5 text-xl font-black" dir="ltr">{formatMoney(total, currency)}</div>
+              </div>
+              <div>
+                <div className="text-xs text-white/60">{t('studentFees.installmentsOf', { count: plan.installments })}</div>
+                <div className="mt-0.5 text-xl font-black" dir="ltr">{formatMoney(perInstallment, currency)}</div>
+              </div>
+              <div>
+                <div className="text-xs text-white/60">{t('studentFees.paidSoFar')}</div>
+                <div className="mt-0.5 text-xl font-black text-[#e5c76b]" dir="ltr">{formatMoney(paidTotal, currency)}</div>
+              </div>
             </div>
-          </div>
-        </div>
-      )}
+          </section>
 
-      {/* Outstanding Invoices */}
-      <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-        <h2 className="text-xl font-bold text-gray-900 mb-4">{t('payments.outstandingInvoices')}</h2>
-        {effectiveSemesterInvoices.filter(inv => inv.status !== 'paid').length > 0 ? (
-          <div className="space-y-4">
-              {(() => {
-                // Group outstanding invoices by semester
-                const outstandingInvoices = effectiveSemesterInvoices.filter(inv => inv.status !== 'paid')
-                const groupedBySemester = outstandingInvoices.reduce((acc, invoice) => {
-                  const key = invoice.semester_id ? `semester_${invoice.semester_id}` : 'no_semester'
-                  if (!acc[key]) {
-                    acc[key] = {
-                      semester: invoice.semesters,
-                      invoices: []
-                    }
-                  }
-                  acc[key].invoices.push(invoice)
-                  return acc
-                }, {})
-
-                return Object.entries(groupedBySemester).map(([key, group]) => (
-                  <div key={key} className="mb-6 last:mb-0">
-                    {group.semester && (
-                      <div className="mb-3 pb-2 border-b border-gray-200">
-                        <h3 className="font-semibold text-gray-900">{group.semester.name_en}</h3>
-                        <p className="text-xs text-gray-500">{group.semester.code}</p>
+          <section className="rounded-3xl border border-slate-200 bg-white">
+            <h2 className="border-b border-slate-100 px-5 py-4 text-base font-extrabold text-slate-900">{t('studentFees.installments')}</h2>
+            <ul className="divide-y divide-slate-100">
+              {rows.map((row) => (
+                <li key={row.semester.id} className="flex flex-wrap items-center gap-4 px-5 py-4">
+                  <div
+                    className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-sm font-black ${
+                      row.payment ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'
+                    }`}
+                  >
+                    {row.payment ? <CheckCircle className="h-5 w-5" /> : row.number}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <div className="font-bold text-slate-900">{nameOf(row.semester)}</div>
+                    <div className="mt-0.5 text-xs text-slate-500">
+                      {t('studentFees.installmentN', { n: row.number, total: plan.installments })}
+                      {row.payment?.paid_at && <> · {t('studentFees.paidOn', { date: formatDate(row.payment.paid_at) })}</>}
+                    </div>
+                    {row.payment?.myfatoorah_payment_id && (
+                      <div className="mt-0.5 text-xs text-slate-400">
+                        {t('studentFees.reference')}: <span dir="ltr">{row.payment.myfatoorah_payment_id}</span>
                       </div>
                     )}
-                    {/* no_semester is intentionally omitted here; we only show semester payables */}
-                    <div className="space-y-3">
-                      {group.invoices.map(invoice => (
-                        <div
-                          key={invoice.id}
-                          className="border border-gray-200 rounded-lg p-4 hover:border-primary-300 transition-colors bg-gray-50"
-                        >
-                          <div className="flex items-center justify-between flex-wrap gap-4">
-                            <div className="flex-1">
-                              <div className="flex items-center space-x-3 mb-2">
-                                <FileText className="w-4 h-4 text-gray-400" />
-                                <span className="font-semibold text-gray-900 text-sm">{invoice.invoice_number}</span>
-                                <span className={`text-xs px-2 py-1 rounded border ${getStatusColor(invoice.status)}`}>
-                                  {invoice.status.replace('_', ' ').toUpperCase()}
-                                </span>
-                              </div>
-                              <p className="text-sm text-gray-600">
-                                {invoice.invoice_type.replace('_', ' ')} • Due: {new Date(invoice.due_date || invoice.invoice_date).toLocaleDateString()}
-                              </p>
-                            </div>
-                            <div className="text-right">
-                              <p className="text-lg font-bold text-gray-900">${invoice.pending_amount?.toFixed(2) || invoice.total_amount?.toFixed(2)}</p>
-                              {invoice.status !== 'paid' && (
-                                <button
-                                  onClick={() => handlePayInvoice(invoice)}
-                                  className="mt-2 px-3 py-1.5 bg-primary-gradient text-white rounded-lg font-semibold hover:shadow-lg transition-all text-xs"
-                                >
-                                  {t('payments.payNow')}
-                                </button>
-                              )}
-                            </div>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
                   </div>
-                ))
-              })()}
-          </div>
-        ) : (
-          <p className="text-gray-500 text-center py-8">{t('payments.noOutstandingInvoices')}</p>
-        )}
-      </div>
-
-      {/* All Invoices */}
-      <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-        <h2 className="text-xl font-bold text-gray-900 mb-4">{t('payments.allInvoices')}</h2>
-        <div className="overflow-x-auto">
-          <table className="w-full">
-            <thead>
-              <tr className="border-b border-gray-200">
-                <th className="text-left py-3 px-4 text-sm font-semibold text-gray-700">{t('payments.invoiceNumber')}</th>
-                <th className="text-left py-3 px-4 text-sm font-semibold text-gray-700">{t('payments.invoiceDate')}</th>
-                <th className="text-left py-3 px-4 text-sm font-semibold text-gray-700">{t('payments.invoiceType')}</th>
-                <th className="text-left py-3 px-4 text-sm font-semibold text-gray-700">Semester</th>
-                <th className="text-left py-3 px-4 text-sm font-semibold text-gray-700">{t('payments.total')}</th>
-                <th className="text-left py-3 px-4 text-sm font-semibold text-gray-700">{t('payments.paid')}</th>
-                <th className="text-left py-3 px-4 text-sm font-semibold text-gray-700">{t('common.status')}</th>
-                <th className="text-left py-3 px-4 text-sm font-semibold text-gray-700">{t('common.actions')}</th>
-              </tr>
-            </thead>
-            <tbody>
-              {[...invoices.filter((inv) => inv.invoice_type === 'admission_fee'), ...effectiveSemesterInvoices].map(invoice => (
-                <tr key={invoice.id} className="border-b border-gray-100 hover:bg-gray-50">
-                  <td className="py-3 px-4 text-sm font-mono">{invoice.invoice_number}</td>
-                  <td className="py-3 px-4 text-sm text-gray-600">
-                    {new Date(invoice.invoice_date).toLocaleDateString()}
-                  </td>
-                  <td className="py-3 px-4 text-sm text-gray-600">
-                    {invoice.invoice_type.replace('_', ' ')}
-                  </td>
-                  <td className="py-3 px-4 text-sm text-gray-600">
-                    {invoice.semesters ? `${invoice.semesters.name_en} (${invoice.semesters.code})` : 'N/A'}
-                  </td>
-                  <td className="py-3 px-4 text-sm font-semibold">${invoice.total_amount?.toFixed(2)}</td>
-                  <td className="py-3 px-4 text-sm text-green-600">${invoice.paid_amount?.toFixed(2)}</td>
-                  <td className="py-3 px-4">
-                    <span className={`text-xs px-2 py-1 rounded border ${getStatusColor(invoice.status)}`}>
-                      {invoice.status.replace('_', ' ').toUpperCase()}
-                    </span>
-                  </td>
-                  <td className="py-3 px-4">
-                    <div className="flex items-center space-x-2">
-                      {invoice.status !== 'paid' && (
-                        <button
-                          onClick={() => handlePayInvoice(invoice)}
-                          className="text-primary-600 hover:text-primary-700 text-sm font-semibold"
-                        >
-                          {t('payments.payNow')}
-                        </button>
-                      )}
+                  <div className="text-end">
+                    <div className="text-lg font-black text-slate-900" dir="ltr">
+                      {formatMoney(row.payment ? row.payment.amount : perInstallment, row.payment?.currency || currency)}
+                    </div>
+                    {row.payment ? (
+                      <span className="mt-1 inline-block rounded-full bg-emerald-50 px-2.5 py-0.5 text-xs font-bold text-emerald-700">{t('studentFees.paid')}</span>
+                    ) : (
                       <button
                         type="button"
-                        className="text-gray-400 hover:text-gray-600"
-                        title={t('payments.downloadReceipt')}
-                        onClick={() => openLatestReceiptForInvoice(invoice.id)}
+                        onClick={() => openPicker(row)}
+                        className="mt-1.5 inline-flex items-center gap-1.5 rounded-xl px-4 py-2 text-sm font-bold text-white shadow"
+                        style={{ backgroundColor: NAVY }}
                       >
-                        <Download className="w-4 h-4" />
+                        <CreditCard className="h-4 w-4" />
+                        {t('studentFees.payNow')}
                       </button>
-                    </div>
-                  </td>
-                </tr>
+                    )}
+                  </div>
+                </li>
               ))}
-            </tbody>
-          </table>
-        </div>
-      </div>
+            </ul>
+          </section>
 
-      {/* Payment History */}
-      <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-        <h2 className="text-xl font-bold text-gray-900 mb-4">{t('payments.paymentHistory')}</h2>
-        {payments.length > 0 ? (
-          <div className="space-y-3">
-            {payments.map(payment => (
-              <div
-                key={payment.id}
-                className="border border-gray-200 rounded-lg p-4"
-              >
-                <div className="flex items-center justify-between">
-                  <div>
-                    <div className="flex items-center space-x-3 mb-1">
-                      <CheckCircle className="w-5 h-5 text-green-500" />
-                      <span className="font-semibold text-gray-900 font-mono">{payment.payment_number}</span>
-                      <span className={`text-xs px-2 py-1 rounded ${
-                        payment.status === 'verified' 
-                          ? 'bg-green-100 text-green-800'
-                          : 'bg-yellow-100 text-yellow-800'
-                      }`}>
-                        {payment.status.toUpperCase()}
-                      </span>
-                    </div>
-                    <p className="text-sm text-gray-600">
-                      {new Date(payment.payment_date).toLocaleDateString()} • {payment.payment_method?.replace('_', ' ')}
-                      {payment.invoices && ` • Invoice: ${payment.invoices.invoice_number}`}
-                    </p>
-                  </div>
-                  <div className="text-right">
-                    <p className="text-lg font-bold text-green-600">${payment.amount?.toFixed(2)}</p>
-                  </div>
+          <section className="rounded-3xl border border-slate-200 bg-white p-5">
+            <h2 className="text-base font-extrabold text-slate-900">{t('studentFees.itemsTitle')}</h2>
+            <table className="mt-3 w-full text-sm">
+              <thead>
+                <tr className="text-xs text-slate-500">
+                  <th className="pb-2 text-start font-semibold">{t('studentFees.item')}</th>
+                  <th className="pb-2 text-end font-semibold">{t('studentFees.amount')}</th>
+                  <th className="pb-2 text-end font-semibold">{t('studentFees.perInstallment')}</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {items.map((item) => (
+                  <tr key={item.id} className={item.is_optional ? 'text-slate-400' : 'text-slate-800'}>
+                    <td className="py-2">
+                      {isArabic ? item.name_ar || item.name_en : item.name_en || item.name_ar}
+                      {item.is_optional && <span className="ms-1.5 text-xs">({t('studentFees.notInTotal')})</span>}
+                    </td>
+                    <td className="py-2 text-end tabular-nums" dir="ltr">{formatMoney(item.amount, currency)}</td>
+                    <td className="py-2 text-end tabular-nums" dir="ltr">
+                      {item.is_optional ? '—' : formatMoney(Number(item.amount) / plan.installments, currency)}
+                    </td>
+                  </tr>
+                ))}
+                <tr className="font-extrabold text-slate-900">
+                  <td className="pt-3">{t('studentFees.total')}</td>
+                  <td className="pt-3 text-end tabular-nums" dir="ltr">{formatMoney(total, currency)}</td>
+                  <td className="pt-3 text-end tabular-nums" dir="ltr">{formatMoney(perInstallment, currency)}</td>
+                </tr>
+              </tbody>
+            </table>
+          </section>
+        </>
+      )}
+
+      {otherInvoices.length > 0 && (
+        <section className="rounded-3xl border border-slate-200 bg-white">
+          <h2 className="flex items-center gap-2 border-b border-slate-100 px-5 py-4 text-base font-extrabold text-slate-900">
+            <Receipt className="h-5 w-5 text-slate-400" />
+            {t('studentFees.otherInvoices')}
+          </h2>
+          <ul className="divide-y divide-slate-100">
+            {otherInvoices.map((inv) => (
+              <li key={inv.id} className="flex flex-wrap items-center justify-between gap-3 px-5 py-3 text-sm">
+                <div>
+                  <div className="font-mono font-semibold text-slate-800" dir="ltr">{inv.invoice_number}</div>
+                  <div className="text-xs text-slate-500">{formatDate(inv.invoice_date)}</div>
                 </div>
-                <div className="mt-3 flex justify-end">
-                  <button
-                    type="button"
-                    className="text-sm font-semibold text-primary-600 hover:text-primary-700"
-                    onClick={() => navigate(`/student/payments/receipt/${payment.id}`)}
+                <div className="text-end">
+                  <div className="font-bold text-slate-900" dir="ltr">{formatMoney(inv.total_amount)}</div>
+                  <span
+                    className={`text-xs font-bold ${inv.status === 'paid' ? 'text-emerald-700' : 'text-amber-700'}`}
                   >
-                    {t('payments.viewReceipt', { defaultValue: 'View receipt' })}
-                  </button>
+                    {inv.status === 'paid' ? t('studentFees.paid') : t('studentFees.unpaid')}
+                  </span>
                 </div>
-              </div>
+              </li>
             ))}
-          </div>
-        ) : (
-          <p className="text-gray-500 text-center py-8">{t('payments.noPaymentHistory')}</p>
-        )}
-      </div>
+          </ul>
+        </section>
+      )}
 
-      {/* Payment Modal */}
-      {selectedInvoice && (
-        <PaymentModal
-          isOpen={showPaymentModal}
-          onClose={() => {
-            setShowPaymentModal(false)
-            setSelectedInvoice(null)
-          }}
-          invoice={selectedInvoice}
-          student={student}
-          onPaymentSuccess={handlePaymentSuccess}
-        />
+      {picker && (
+        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 p-4 sm:items-center" onClick={() => !picker.payingId && setPicker(null)}>
+          <div className="w-full max-w-md rounded-3xl bg-white p-6 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <h3 className="text-lg font-black text-slate-900">{t('studentFees.chooseMethod')}</h3>
+                <p className="mt-1 text-sm text-slate-500">
+                  {nameOf(picker.row.semester)} · <span dir="ltr">{formatMoney(perInstallment, currency)}</span>
+                </p>
+              </div>
+              <button type="button" onClick={() => setPicker(null)} disabled={Boolean(picker.payingId)} className="rounded-lg p-1 text-slate-400 hover:text-slate-700">
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+            {picker.loading ? (
+              <div className="flex justify-center py-8">
+                <Loader2 className="h-7 w-7 animate-spin" style={{ color: NAVY }} />
+              </div>
+            ) : (
+              <div className="mt-4 grid gap-2.5">
+                {picker.methods.map((method) => (
+                  <button
+                    key={method.id}
+                    type="button"
+                    disabled={picker.payingId != null}
+                    onClick={() => payWith(method.id)}
+                    className="flex items-center gap-3 rounded-2xl border border-slate-200 px-4 py-3 text-start transition hover:border-[#1a3a6b] hover:bg-slate-50 disabled:opacity-60"
+                  >
+                    {method.imageUrl ? (
+                      <img src={method.imageUrl} alt="" className="h-9 w-14 object-contain" />
+                    ) : (
+                      <span className="flex h-9 w-14 items-center justify-center rounded-lg bg-slate-100 text-xs font-bold text-slate-500">{method.code}</span>
+                    )}
+                    <span className="flex-1">
+                      <span className="block text-sm font-extrabold text-slate-900">{isArabic && method.nameAr ? method.nameAr : method.nameEn || method.nameAr}</span>
+                      {method.totalAmount != null && (
+                        <span className="block text-xs text-slate-500" dir="ltr">{formatMoney(method.totalAmount, method.currency || currency)}</span>
+                      )}
+                    </span>
+                    {picker.payingId === method.id && <Loader2 className="h-4 w-4 animate-spin" style={{ color: NAVY }} />}
+                  </button>
+                ))}
+              </div>
+            )}
+            {picker.error && <p className="mt-3 text-sm text-rose-700">{picker.error}</p>}
+          </div>
+        </div>
       )}
     </div>
   )
 }
-

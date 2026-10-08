@@ -7,7 +7,8 @@ import { getCollegeCurrencyCode } from '../../utils/getCollegeSettings'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
 import { useCollege } from '../../contexts/CollegeContext'
-import { Plus, Edit, Trash2, Settings, Loader2, Tag, FileText } from 'lucide-react'
+import { Plus, Edit, Trash2, Settings, Loader2, Tag, FileText, GraduationCap } from 'lucide-react'
+import ProgramFeesPanel from '../../components/finance/ProgramFeesPanel'
 
 function RtlMoney({ isArabicLayout, className = '', children }) {
   const inner = (
@@ -35,8 +36,8 @@ export default function FinanceConfiguration() {
   const collegeId = userRole === 'admin' ? selectedCollegeId : authCollegeId
 
   const searchParams = new URLSearchParams(window.location.search)
-  const initialTab = searchParams.get('tab') || 'structures'
-  const [activeTab, setActiveTab] = useState(initialTab === 'types' ? 'types' : 'structures')
+  const initialTab = searchParams.get('tab') || 'programs'
+  const [activeTab, setActiveTab] = useState(['types', 'structures'].includes(initialTab) ? initialTab : 'programs')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [feeStructures, setFeeStructures] = useState([])
@@ -256,6 +257,23 @@ export default function FinanceConfiguration() {
             <button
               type="button"
               onClick={() => {
+                setActiveTab('programs')
+                navigate('/finance/configuration', { replace: true })
+              }}
+              className={`py-4 px-1 border-b-2 font-medium text-sm transition-colors ${
+                activeTab === 'programs'
+                  ? 'border-primary-500 text-primary-600'
+                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+              }`}
+            >
+              <div className="flex items-center gap-2">
+                <GraduationCap className="w-4 h-4 shrink-0" />
+                <span>{t('programFees.tab')}</span>
+              </div>
+            </button>
+            <button
+              type="button"
+              onClick={() => {
                 setActiveTab('structures')
                 navigate('/finance/configuration?tab=structures', { replace: true })
               }}
@@ -291,7 +309,9 @@ export default function FinanceConfiguration() {
         </div>
       </div>
 
-      {userRole === 'admin' && (
+      {activeTab === 'programs' && <ProgramFeesPanel isArabic={isArabicLayout} />}
+
+      {activeTab !== 'programs' && userRole === 'admin' && (
         <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-4" dir={isArabicLayout ? 'rtl' : 'ltr'}>
           <label className={`block text-sm font-medium text-gray-700 mb-2 ${alignStart}`}>
             {t('finance.financeConfigPage.filterCollege')} {requiresCollegeSelection && <span className="text-red-500">*</span>}
@@ -321,7 +341,7 @@ export default function FinanceConfiguration() {
         <div className={`bg-red-50 border border-red-200 text-red-800 px-4 py-3 rounded-xl ${alignStart}`}>{error}</div>
       )}
 
-      {loading ? (
+      {activeTab === 'programs' ? null : loading ? (
         <div className="flex items-center justify-center py-12">
           <Loader2 className="w-8 h-8 animate-spin text-primary-600" />
         </div>

@@ -1748,10 +1748,10 @@ export default function RegisterApplication({ portal = false }) {
                     </select>
                   </Field>
                   <div className="hidden md:block" />
-                  <Field label={t('applyForm.fields.firstName', 'First name (as in ID)')} required invalid={invalidFields.includes('first_name')}>
+                  <Field label={t('applyForm.fields.firstName', 'First name in English (as in ID)')} required invalid={invalidFields.includes('first_name')}>
                     <input type="text" name="first_name" value={formData.first_name} onChange={handleChange} dir="ltr" className={inputClass} />
                   </Field>
-                  <Field label={t('applyForm.fields.lastName', 'Last name (as in ID)')} required invalid={invalidFields.includes('last_name')}>
+                  <Field label={t('applyForm.fields.lastName', 'Last name in English (as in ID)')} required invalid={invalidFields.includes('last_name')}>
                     <input type="text" name="last_name" value={formData.last_name} onChange={handleChange} dir="ltr" className={inputClass} />
                   </Field>
                   <Field label={t('applyForm.fields.nameAr', 'Full name in Arabic')} className="md:col-span-2">

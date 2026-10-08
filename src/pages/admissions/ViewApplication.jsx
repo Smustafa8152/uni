@@ -872,6 +872,9 @@ export default function ViewApplication() {
   const [requestDocsMessage, setRequestDocsMessage] = useState('')
   const [requestDocsSending, setRequestDocsSending] = useState(false)
   const [verifyingDocId, setVerifyingDocId] = useState(null)
+  const [rejectDoc, setRejectDoc] = useState(null)
+  const [rejectReason, setRejectReason] = useState('')
+  const [rejectingDoc, setRejectingDoc] = useState(false)
   const [staffUserId, setStaffUserId] = useState(null)
 
   const [showOfferModal, setShowOfferModal] = useState(false)
@@ -1186,7 +1189,7 @@ export default function ViewApplication() {
         const [{ data: docs }, { data: reqs }] = await Promise.all([
           supabase
             .from('application_documents')
-            .select('id, application_id, document_type, document_label, file_path, file_name, file_size, content_type, uploaded_at, verified_at, verified_by, verification_notes')
+            .select('id, application_id, document_type, document_label, file_path, file_name, file_size, content_type, uploaded_at, verified_at, verified_by, verification_notes, rejected_at, rejection_reason')
             .eq('application_id', applicationId)
             .order('uploaded_at', { ascending: false }),
           supabase
@@ -1355,18 +1358,17 @@ export default function ViewApplication() {
     setVerifyingDocId(docId)
     try {
       const staffUserId = await getStaffUserId()
-      const { error: upErr } = await supabase
-        .from('application_documents')
-        .update({
-          verified_at: new Date().toISOString(),
-          verified_by: staffUserId,
-        })
-        .eq('id', docId)
+      const verified = {
+        verified_at: new Date().toISOString(),
+        verified_by: staffUserId,
+        rejected_at: null,
+        rejected_by: null,
+        rejection_reason: null,
+      }
+      const { error: upErr } = await supabase.from('application_documents').update(verified).eq('id', docId)
       if (upErr) throw upErr
 
-      setApplicationDocuments((prev) =>
-        prev.map((d) => (d.id === docId ? { ...d, verified_at: new Date().toISOString(), verified_by: staffUserId } : d))
-      )
+      setApplicationDocuments((prev) => prev.map((d) => (d.id === docId ? { ...d, ...verified } : d)))
 
       await sendAdmissionNotification({
         type: 'document_verified',
@@ -1379,6 +1381,59 @@ export default function ViewApplication() {
       setError(e?.message || 'Failed to verify document')
     } finally {
       setVerifyingDocId(null)
+    }
+  }
+
+  const documentTitle = (doc) =>
+    String(doc?.document_label || '').trim() ||
+    t(`admissions.viewApplication.documentTypes.${doc?.document_type}`, { defaultValue: doc?.document_type || '' })
+
+  const openRejectDocument = (doc) => {
+    setRejectDoc(doc)
+    setRejectReason('')
+    setError('')
+  }
+
+  const handleRejectDocument = async () => {
+    const reason = rejectReason.trim()
+    if (!rejectDoc?.id || !reason) return
+    setRejectingDoc(true)
+    setError('')
+    try {
+      const staffUserId = await getStaffUserId()
+      const rejected = {
+        rejected_at: new Date().toISOString(),
+        rejected_by: staffUserId,
+        rejection_reason: reason,
+        verified_at: null,
+        verified_by: null,
+      }
+      const { error: upErr } = await supabase.from('application_documents').update(rejected).eq('id', rejectDoc.id)
+      if (upErr) throw upErr
+      setApplicationDocuments((prev) => prev.map((d) => (d.id === rejectDoc.id ? { ...d, ...rejected } : d)))
+
+      const docName = documentTitle(rejectDoc)
+      setRejectDoc(null)
+      try {
+        await sendAdmissionNotification({
+          type: 'document_rejected',
+          subject: t('admissions.viewApplication.detail.rejectEmailSubject', { document: docName }),
+          message: t('admissions.viewApplication.detail.rejectEmailBody', { url: `${window.location.origin}/login/applicant` }),
+          details: [
+            { label: t('admissions.viewApplication.detail.rejectEmailDocument'), value: docName },
+            { label: t('admissions.viewApplication.detail.rejectEmailReason'), value: reason },
+          ],
+          meta: { document_id: rejectDoc.id },
+        })
+        toast(t('admissions.viewApplication.detail.rejectSent'))
+      } catch (mailErr) {
+        setError(t('admissions.viewApplication.detail.rejectEmailFailed', { error: mailErr?.message || '' }))
+      }
+    } catch (e) {
+      console.error('Reject document failed:', e)
+      setError(e?.message || t('admissions.viewApplication.detail.rejectFailed'))
+    } finally {
+      setRejectingDoc(false)
     }
   }
 
@@ -2543,6 +2598,80 @@ export default function ViewApplication() {
       )}
 
       {/* Request more documents modal */}
+      {rejectDoc && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-2xl shadow-xl max-w-lg w-full p-6">
+            <div className="flex items-start justify-between gap-3 mb-4">
+              <div className="flex items-start gap-3 text-start">
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-red-50 text-red-600">
+                  <XCircle className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-bold text-gray-900">
+                    {t('admissions.viewApplication.detail.rejectTitle', { document: documentTitle(rejectDoc) })}
+                  </h3>
+                  <p className="text-sm text-gray-600 mt-1">{t('admissions.viewApplication.detail.rejectHint')}</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setRejectDoc(null)}
+                className="p-2 rounded-lg hover:bg-gray-100"
+                aria-label={t('common.close')}
+              >
+                <X className="w-5 h-5 text-gray-600" />
+              </button>
+            </div>
+
+            <div className="flex flex-wrap gap-2 mb-3">
+              {['unclear', 'wrongDocument', 'incomplete', 'expired', 'nameMismatch'].map((key) => {
+                const text = t(`admissions.viewApplication.detail.rejectReasons.${key}`)
+                const picked = rejectReason.trim() === text
+                return (
+                  <button
+                    key={key}
+                    type="button"
+                    onClick={() => setRejectReason(text)}
+                    className={`rounded-full border px-3 py-1 text-xs font-semibold transition-colors ${
+                      picked ? 'border-red-300 bg-red-50 text-red-800' : 'border-gray-200 bg-white text-gray-700 hover:bg-gray-50'
+                    }`}
+                  >
+                    {text}
+                  </button>
+                )
+              })}
+            </div>
+
+            <textarea
+              value={rejectReason}
+              onChange={(e) => setRejectReason(e.target.value)}
+              className="w-full min-h-[110px] px-4 py-3 border border-gray-300 rounded-lg text-start focus:ring-2 focus:ring-red-400 focus:border-transparent"
+              placeholder={t('admissions.viewApplication.detail.rejectPlaceholder')}
+            />
+            <p className="mt-2 text-xs text-gray-500">{t('admissions.viewApplication.detail.rejectNotice')}</p>
+
+            <div className="flex items-center justify-end gap-3 mt-5">
+              <button
+                type="button"
+                onClick={() => setRejectDoc(null)}
+                className="px-4 py-2 border border-gray-300 rounded-lg font-semibold text-gray-700 hover:bg-gray-50"
+              >
+                {t('common.cancel', 'Cancel')}
+              </button>
+              <button
+                type="button"
+                onClick={handleRejectDocument}
+                disabled={rejectingDoc || rejectReason.trim().length === 0}
+                className="inline-flex items-center gap-2 px-4 py-2 bg-red-600 text-white rounded-lg font-semibold hover:bg-red-700 disabled:opacity-50"
+              >
+                {rejectingDoc && <Loader2 className="w-4 h-4 animate-spin" />}
+                {t('admissions.viewApplication.detail.rejectSubmit')}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {showRequestDocsModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
           <div className="bg-white rounded-2xl shadow-xl max-w-lg w-full p-6">
@@ -3360,11 +3489,8 @@ export default function ViewApplication() {
                     {applicationDocuments.map((doc) => {
                       const url = docPublicUrl(doc.file_path)
                       const verified = !!doc.verified_at
-                      const typeLabel = t(`admissions.viewApplication.documentTypes.${doc.document_type}`, {
-                        defaultValue: doc.document_type,
-                      })
-                      const documentName = String(doc.document_label || '').trim()
-                      const title = documentName || typeLabel
+                      const rejected = !verified && !!doc.rejected_at
+                      const title = documentTitle(doc)
                       return (
                         <li key={doc.id} className="flex flex-col gap-3 py-4 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
                           <div className="min-w-0">
@@ -3376,6 +3502,11 @@ export default function ViewApplication() {
                                 <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 text-xs font-bold">
                                   <CheckCircle className="w-3.5 h-3.5" />
                                   {t('admissions.viewApplication.detail.verified', 'Verified')}
+                                </span>
+                              ) : rejected ? (
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-red-100 text-red-800 text-xs font-bold">
+                                  <XCircle className="w-3.5 h-3.5" />
+                                  {t('admissions.viewApplication.detail.rejected')}
                                 </span>
                               ) : (
                                 <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-100 text-amber-900 text-xs font-bold">
@@ -3390,6 +3521,13 @@ export default function ViewApplication() {
                             <div className="text-xs text-gray-500 mt-1">
                               {doc.uploaded_at ? new Date(doc.uploaded_at).toLocaleString(isArabicLayout ? 'ar' : undefined) : ''}
                             </div>
+                            {rejected && (
+                              <div className="mt-2 rounded-lg border border-red-100 bg-red-50 px-3 py-2 text-xs text-red-800">
+                                <span className="font-bold">{t('admissions.viewApplication.detail.rejectReasonLabel')}: </span>
+                                {doc.rejection_reason}
+                                <div className="mt-1 text-red-700/80">{t('admissions.viewApplication.detail.waitingNewUpload')}</div>
+                              </div>
+                            )}
                           </div>
                           <div className="flex shrink-0 items-center gap-2">
                             {url && (
@@ -3402,6 +3540,15 @@ export default function ViewApplication() {
                                 <ArrowDown className="w-4 h-4" />
                                 {t('admissions.viewApplication.detail.open', 'Open')}
                               </a>
+                            )}
+                            {!verified && !rejected && (
+                              <button
+                                type="button"
+                                onClick={() => openRejectDocument(doc)}
+                                className="px-3 py-2 border border-red-200 bg-white text-red-700 rounded-lg text-sm font-semibold hover:bg-red-50"
+                              >
+                                {t('admissions.viewApplication.detail.reject')}
+                              </button>
                             )}
                             {!verified && (
                               <button

@@ -43,8 +43,7 @@ const NAV = [
   {
     label: { ar: 'الشؤون المالية', en: 'Financial affairs' },
     items: [
-      { href: '/student/payments', label: { ar: 'الفواتير والرسوم', en: 'Invoices & fees' }, icon: '🧾' },
-      { href: '/student/payments', label: { ar: 'الدفع الإلكتروني', en: 'Online payment' }, icon: '💳' },
+      { href: '/student/payments', label: { ar: 'الرسوم والمدفوعات', en: 'Fees & payments' }, icon: '💳' },
     ],
   },
   {
