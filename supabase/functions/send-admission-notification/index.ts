@@ -208,6 +208,7 @@ serve(async (req) => {
     })
 
     const jwt = authHeader.replace('Bearer ', '')
+    const isServiceRole = jwt === serviceRoleKey
     const {
       data: { user: authUser },
       error: authErr,
@@ -344,6 +345,13 @@ serve(async (req) => {
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         })
       }
+    } else if (isServiceRole) {
+      if (type !== 'payment_verified') {
+        return new Response(JSON.stringify({ error: 'Forbidden' }), {
+          status: 403,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        })
+      }
     } else if (!isAdmin && !isCollegeStaff && !isAdmissionsUser) {
       return new Response(JSON.stringify({ error: 'Forbidden' }), {
         status: 403,
@@ -400,6 +408,7 @@ serve(async (req) => {
       if (
         !isPublicSubmitted &&
         !isApplicant &&
+        !isServiceRole &&
         !isAdmin &&
         !isAdmissionsUser &&
         Number(caller?.college_id) !== Number(cid)
@@ -508,6 +517,26 @@ serve(async (req) => {
         status: 200,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       })
+    }
+
+    if (type === 'payment_verified') {
+      if (!Number.isFinite(applicationId) || applicationId <= 0) {
+        return new Response(JSON.stringify({ error: 'Application is missing.' }), {
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        })
+      }
+      const { data: receiptApp } = await supabaseAdmin
+        .from('applications')
+        .select('email')
+        .eq('id', applicationId)
+        .maybeSingle()
+      if (!receiptApp || to.trim().toLowerCase() !== String(receiptApp.email || '').trim().toLowerCase()) {
+        return new Response(JSON.stringify({ error: 'Recipient does not match application' }), {
+          status: 403,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        })
+      }
     }
 
     const html = buildBrandedEmailHtml({

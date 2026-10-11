@@ -385,6 +385,10 @@ verify_jwt = false
 # Confirm runs when MyFatoorah sends the browser back. Create checks the applicant.
 verify_jwt = false
 
+[functions.applicant-forgot-password]
+# Applicant is signed out. The one-time code is the check.
+verify_jwt = false
+
 [analytics]
 enabled = true
 port = 54327

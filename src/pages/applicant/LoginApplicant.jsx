@@ -4,11 +4,12 @@ import { useTranslation } from 'react-i18next'
 import { useLanguage } from '../../contexts/LanguageContext'
 import { useAuth } from '../../contexts/AuthContext'
 import { resolvePortalAccountByEmail } from '../../utils/resolvePortalAccountByEmail'
+import { invokeApplicantForgotPassword } from '../../utils/invokeApplicantForgotPassword'
 import { Mail, Lock, Eye, EyeOff, ArrowLeft, AlertCircle, Loader2 } from 'lucide-react'
 import LanguageToggle from '../../components/LanguageToggle'
 
 export default function LoginApplicant() {
-  const { t } = useTranslation()
+  const { t, i18n } = useTranslation()
   const { isRTL } = useLanguage()
   const { signIn, user, userRole, loading: authLoading } = useAuth()
   const navigate = useNavigate()
@@ -21,6 +22,81 @@ export default function LoginApplicant() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [errorKind, setErrorKind] = useState('')
+  const [notice, setNotice] = useState('')
+  const [step, setStep] = useState('signin')
+  const [code, setCode] = useState('')
+  const [newPassword, setNewPassword] = useState('')
+  const [confirmPassword, setConfirmPassword] = useState('')
+
+  const forgotMessage = (err) => {
+    const key = {
+      no_account: 'applicantLogin.forgotNoAccount',
+      not_applicant: 'applicantLogin.forgotNotApplicant',
+      wait: 'applicantLogin.forgotWait',
+      too_many: 'applicantLogin.forgotTooMany',
+      invalid_code: 'applicantLogin.forgotInvalidCode',
+      expired: 'applicantLogin.forgotExpired',
+      send_failed: 'applicantLogin.forgotSendFailed',
+      smtp_missing: 'applicantLogin.forgotSmtpMissing',
+      invalid_email: 'applicantLogin.forgotInvalidEmail',
+      password_short: 'applicantLogin.passwordShort',
+    }[err?.code]
+    return key ? t(key) : err?.message || t('applicantLogin.failed')
+  }
+
+  const sendCode = async (e) => {
+    e?.preventDefault()
+    setError('')
+    setErrorKind('')
+    setNotice('')
+    setLoading(true)
+    try {
+      const em = email.trim().toLowerCase()
+      await invokeApplicantForgotPassword({ action: 'send', email: em, lang: i18n.language })
+      setEmail(em)
+      setStep('verify')
+      setNotice(t('applicantLogin.codeSent', { email: em }))
+    } catch (err) {
+      setError(forgotMessage(err))
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const saveNewPassword = async (e) => {
+    e.preventDefault()
+    setError('')
+    setErrorKind('')
+    setNotice('')
+    if (newPassword.length < 8) {
+      setError(t('applicantLogin.passwordShort', 'Password must be at least 8 characters.'))
+      return
+    }
+    if (newPassword !== confirmPassword) {
+      setError(t('applicantLogin.passwordMismatch', 'Passwords do not match.'))
+      return
+    }
+    setLoading(true)
+    try {
+      await invokeApplicantForgotPassword({
+        action: 'reset',
+        email: email.trim().toLowerCase(),
+        code,
+        newPassword,
+        lang: i18n.language,
+      })
+      setPassword('')
+      setCode('')
+      setNewPassword('')
+      setConfirmPassword('')
+      setStep('signin')
+      setNotice(t('applicantLogin.passwordUpdated', 'Password updated. Sign in with your new password.'))
+    } catch (err) {
+      setError(forgotMessage(err))
+    } finally {
+      setLoading(false)
+    }
+  }
 
   useEffect(() => {
     if (!authLoading && user && userRole === 'applicant') {
@@ -149,13 +225,27 @@ export default function LoginApplicant() {
               <div className="rounded-3xl bg-white shadow-xl ring-1 ring-slate-200 p-7 lg:p-8">
                 <div className={`flex items-start justify-between gap-4 ${isRTL ? 'flex-row-reverse' : ''}`}>
                   <div className={isRTL ? 'text-right' : ''}>
-                    <h2 className="text-2xl font-black text-slate-900">{t('applicantLogin.title', 'Applicant login')}</h2>
-                    <p className="mt-1 text-sm text-slate-600">{t('applicantLogin.subtitle', 'Sign in to your applicant account.')}</p>
+                    <h2 className="text-2xl font-black text-slate-900">
+                      {step === 'signin'
+                        ? t('applicantLogin.title', 'Applicant login')
+                        : t('applicantLogin.forgotTitle', 'Reset your password')}
+                    </h2>
+                    <p className="mt-1 text-sm text-slate-600">
+                      {step === 'signin'
+                        ? t('applicantLogin.subtitle', 'Sign in to your applicant account.')
+                        : t('applicantLogin.forgotHint', 'We will email a 6-digit code from enrolment@ibu.edu.gm.')}
+                    </p>
                   </div>
                   <div className="hidden sm:flex items-center rounded-full bg-slate-50 px-3 py-1 text-xs font-extrabold text-slate-700 ring-1 ring-slate-200">
                     {t('applicantLogin.rolePill')}
                   </div>
                 </div>
+
+                {notice && (
+                  <div className="mt-6 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
+                    {notice}
+                  </div>
+                )}
 
                 {error && (
                   <div className="mt-6 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
@@ -176,6 +266,7 @@ export default function LoginApplicant() {
                   </div>
                 )}
 
+                {step === 'signin' ? (
                 <form onSubmit={handleSubmit} className="mt-6 space-y-5">
                   <div>
                     <label className={`block text-sm font-bold text-slate-700 mb-2 ${isRTL ? 'text-right' : ''}`}>
@@ -227,6 +318,20 @@ export default function LoginApplicant() {
                         {showPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
                       </button>
                     </div>
+                    <div className={`mt-2 flex ${isRTL ? 'justify-start' : 'justify-end'}`}>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setError('')
+                          setErrorKind('')
+                          setNotice('')
+                          setStep('request')
+                        }}
+                        className="text-sm font-bold text-slate-700 hover:text-slate-900"
+                      >
+                        {t('applicantLogin.forgotPassword', 'Forgot password?')}
+                      </button>
+                    </div>
                   </div>
 
                   <button
@@ -251,6 +356,127 @@ export default function LoginApplicant() {
                     </Link>
                   </p>
                 </form>
+                ) : (
+                <form onSubmit={step === 'verify' ? saveNewPassword : sendCode} className="mt-6 space-y-5">
+                  <div>
+                    <label className={`block text-sm font-bold text-slate-700 mb-2 ${isRTL ? 'text-right' : ''}`}>
+                      {t('applicantLogin.email', 'Email address')}
+                    </label>
+                    <div className="relative">
+                      <div className={`absolute inset-y-0 ${isRTL ? 'right-0 pr-3' : 'left-0 pl-3'} flex items-center pointer-events-none`}>
+                        <Mail className="h-5 w-5 text-slate-400" />
+                      </div>
+                      <input
+                        type="email"
+                        value={email}
+                        onChange={(e) => setEmail(e.target.value)}
+                        required
+                        readOnly={step === 'verify'}
+                        autoComplete="email"
+                        className={`block w-full rounded-2xl border border-slate-200 bg-white py-3 text-slate-900 placeholder-slate-400 shadow-sm outline-none transition focus:border-slate-400 focus:ring-4 focus:ring-slate-100 ${
+                          step === 'verify' ? 'bg-slate-50' : ''
+                        } ${isRTL ? 'pr-10 pl-3 text-right' : 'pl-10 pr-3'}`}
+                        placeholder="you@email.com"
+                      />
+                    </div>
+                  </div>
+
+                  {step === 'verify' && (
+                    <>
+                      <div>
+                        <label className={`block text-sm font-bold text-slate-700 mb-2 ${isRTL ? 'text-right' : ''}`}>
+                          {t('applicantLogin.codeLabel', 'Code')}
+                        </label>
+                        <input
+                          inputMode="numeric"
+                          autoComplete="one-time-code"
+                          value={code}
+                          onChange={(e) => setCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                          required
+                          className="block w-full rounded-2xl border border-slate-200 bg-white py-3 text-center text-2xl font-black tracking-[0.4em] text-slate-900 shadow-sm outline-none transition focus:border-slate-400 focus:ring-4 focus:ring-slate-100"
+                          placeholder="000000"
+                        />
+                      </div>
+                      <div>
+                        <label className={`block text-sm font-bold text-slate-700 mb-2 ${isRTL ? 'text-right' : ''}`}>
+                          {t('applicantLogin.newPassword', 'New password')}
+                        </label>
+                        <input
+                          type={showPassword ? 'text' : 'password'}
+                          value={newPassword}
+                          onChange={(e) => setNewPassword(e.target.value)}
+                          required
+                          minLength={8}
+                          autoComplete="new-password"
+                          className={`block w-full rounded-2xl border border-slate-200 bg-white py-3 text-slate-900 shadow-sm outline-none transition focus:border-slate-400 focus:ring-4 focus:ring-slate-100 ${
+                            isRTL ? 'px-3 text-right' : 'px-3'
+                          }`}
+                        />
+                      </div>
+                      <div>
+                        <label className={`block text-sm font-bold text-slate-700 mb-2 ${isRTL ? 'text-right' : ''}`}>
+                          {t('applicantLogin.confirmPassword', 'Confirm password')}
+                        </label>
+                        <input
+                          type={showPassword ? 'text' : 'password'}
+                          value={confirmPassword}
+                          onChange={(e) => setConfirmPassword(e.target.value)}
+                          required
+                          minLength={8}
+                          autoComplete="new-password"
+                          className="block w-full rounded-2xl border border-slate-200 bg-white px-3 py-3 text-slate-900 shadow-sm outline-none transition focus:border-slate-400 focus:ring-4 focus:ring-slate-100"
+                        />
+                      </div>
+                    </>
+                  )}
+
+                  <button
+                    type="submit"
+                    disabled={loading}
+                    className="w-full rounded-2xl bg-slate-900 text-white py-3.5 font-extrabold shadow-lg shadow-slate-900/10 transition hover:bg-slate-800 disabled:opacity-60 disabled:cursor-not-allowed"
+                  >
+                    {loading ? (
+                      <span className={`flex items-center justify-center gap-2 ${isRTL ? 'flex-row-reverse' : ''}`}>
+                        <Loader2 className="w-5 h-5 animate-spin" />
+                        {step === 'verify'
+                          ? t('applicantLogin.savingPassword', 'Saving…')
+                          : t('applicantLogin.sendingCode', 'Sending code…')}
+                      </span>
+                    ) : step === 'verify' ? (
+                      t('applicantLogin.savePassword', 'Save password')
+                    ) : (
+                      t('applicantLogin.sendCode', 'Send code')
+                    )}
+                  </button>
+
+                  <div className={`flex items-center justify-between gap-3 text-sm ${isRTL ? 'flex-row-reverse' : ''}`}>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setStep('signin')
+                        setError('')
+                        setErrorKind('')
+                        setCode('')
+                        setNewPassword('')
+                        setConfirmPassword('')
+                      }}
+                      className="font-bold text-slate-700 hover:text-slate-900"
+                    >
+                      {t('applicantLogin.backToSignIn', 'Back to sign in')}
+                    </button>
+                    {step === 'verify' && (
+                      <button
+                        type="button"
+                        disabled={loading}
+                        onClick={sendCode}
+                        className="font-extrabold text-slate-900 hover:underline disabled:opacity-60"
+                      >
+                        {t('applicantLogin.resendCode', 'Resend code')}
+                      </button>
+                    )}
+                  </div>
+                </form>
+                )}
               </div>
 
               <p className="mt-6 text-center text-xs text-slate-500 lg:hidden">{t('applicantLogin.footer')}</p>

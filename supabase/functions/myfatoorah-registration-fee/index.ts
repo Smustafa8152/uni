@@ -1,5 +1,6 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+import { emailPaymentReceipt } from '../_shared/paymentReceiptEmail.ts'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -56,7 +57,7 @@ serve(async (req) => {
 
   const action = String(body.action || '')
   try {
-    if (action === 'confirm') return await confirmPayment(admin, body)
+    if (action === 'confirm') return await confirmPayment(admin, supabaseUrl, serviceKey, body)
     if (action !== 'methods' && action !== 'create') return json({ error: 'Unknown action.' }, 400)
 
     const loaded = await loadPayableApplication(req, admin, anonKey, supabaseUrl, body)
@@ -196,7 +197,7 @@ function isPaid(data: Record<string, unknown>) {
   })
 }
 
-async function confirmPayment(admin: Admin, body: Record<string, unknown>) {
+async function confirmPayment(admin: Admin, supabaseUrl: string, serviceKey: string, body: Record<string, unknown>) {
   const paymentId = String(body.paymentId || '').trim()
   const applicationId = Number(body.applicationId)
   if (!paymentId) {
@@ -290,6 +291,24 @@ async function confirmPayment(admin: Admin, body: Record<string, unknown>) {
     await recordPaidInvoice(admin, current, Number(payment.amount)).catch((err) => {
       console.error('registration invoice failed:', err?.message || err)
     })
+
+    const { data: mailed } = await admin
+      .from('applications')
+      .select('id, email, college_id, application_number, first_name, last_name, first_name_ar, majors!major_id(name_en, name_ar)')
+      .eq('id', current.id)
+      .maybeSingle()
+    if (mailed?.email) {
+      await emailPaymentReceipt(supabaseUrl, serviceKey, mailed, {
+        lang: payment.language,
+        kind: 'registration',
+        amount: Number(payment.amount),
+        currency: payment.currency || 'USD',
+        method: 'online_payment',
+        paidAt,
+        reference: paymentId,
+        receiptNo: mailed.application_number ? `RF-${mailed.application_number}` : '',
+      }).catch((err) => console.error('registration receipt email failed:', err?.message || err))
+    }
   }
 
   const { data: app } = await admin
