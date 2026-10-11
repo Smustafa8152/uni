@@ -4,13 +4,14 @@ import { useTranslation } from 'react-i18next'
 import { useLanguage } from '../../contexts/LanguageContext'
 import { useAuth } from '../../contexts/AuthContext'
 import { supabase } from '../../lib/supabase'
+import { postgrestQuoted } from '../../utils/emailLookup'
 import { getLocalizedName } from '../../utils/localizedName'
 import {
   applicantProgress,
   applicantStatusClass,
   coreDocumentsVerified,
   getApplicantReasonMeta,
-  getApplicantStatus,
+  resolveApplicantStatus,
 } from '../../utils/applicationStatusDisplay'
 import ApplicantNextStep, { applicantHasNextStep, ApplicantSessionLinks } from '../../components/applicant/ApplicantNextStep'
 import ApplicationFeeSummary from '../../components/applicant/ApplicationFeeSummary'
@@ -46,6 +47,8 @@ export default function ApplicantDashboard() {
             id,
             application_number,
             status_code,
+            payment_review,
+            registration_fee_paid_at,
             application_fee_status,
             application_fee_amount,
             application_fee_currency,
@@ -67,7 +70,7 @@ export default function ApplicantDashboard() {
             semesters (name_en, name_ar)
           `
           )
-          .or(`applicant_user_id.eq.${user.id},email.eq.${em}`)
+          .or(`applicant_user_id.eq.${user.id},email.ilike.${postgrestQuoted(em)}`)
           .order('created_at', { ascending: false })
 
         if (qErr) throw qErr
@@ -111,7 +114,7 @@ export default function ApplicantDashboard() {
   const others = active ? rows.filter((r) => r.id !== active.id) : []
 
   const showNext = Boolean(active && applicantHasNextStep(active.status_code))
-  const activeStatus = getApplicantStatus(active?.status_code)
+  const activeStatus = resolveApplicantStatus(active)
   const hintKey = `${activeStatus.labelKey}Hint`
   const statusHint = active && i18n.exists(hintKey) ? t(hintKey) : ''
 
@@ -389,10 +392,10 @@ export default function ApplicantDashboard() {
                       </div>
                       <span
                         className={`text-xs font-bold px-2.5 py-1 rounded-full border shrink-0 ${applicantStatusClass(
-                          getApplicantStatus(r.status_code)
+                          resolveApplicantStatus(r)
                         )}`}
                       >
-                        {t(getApplicantStatus(r.status_code).labelKey)}
+                        {t(resolveApplicantStatus(r).labelKey)}
                       </span>
                       <ChevronRight className={`w-5 h-5 text-[#6b7a99] shrink-0 ${isRTL ? 'rotate-180' : ''}`} />
                     </Link>

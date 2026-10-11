@@ -303,11 +303,11 @@ export default function Applications() {
       const fee = readApplicationFeeSettings(data?.onboarding_settings)
       setApplicationFee({ enabled: fee.enabled, amount: String(fee.amount) })
     } catch (e) {
-      setProgramDefaultsError(e?.message || 'Failed to load application defaults')
+      setProgramDefaultsError(e?.message || t('admissions.applicationsPage.defaultProgramLoadFailed'))
     } finally {
       setProgramDefaultsLoading(false)
     }
-  }, [userRole])
+  }, [userRole, t])
 
   const fetchSettingsLists = useCallback(async () => {
     if (userRole !== 'admin') return
@@ -384,7 +384,7 @@ export default function Applications() {
       // Ensure minimum required fields when enabled
       if (payload.application_form_defaults.enabled) {
         if (!payload.application_form_defaults.college_id || !payload.application_form_defaults.major_id) {
-          throw new Error('Select at least College and Major when enabling defaults.')
+          throw new Error(t('admissions.applicationsPage.defaultProgramNeedProgram'))
         }
       }
 
@@ -410,11 +410,11 @@ export default function Applications() {
       setProgramDefaultsSaved(true)
       setTimeout(() => setProgramDefaultsSaved(false), 2000)
     } catch (e) {
-      setProgramDefaultsError(e?.message || 'Failed to save defaults')
+      setProgramDefaultsError(e?.message || t('admissions.applicationsPage.defaultProgramSaveFailed'))
     } finally {
       setProgramDefaultsLoading(false)
     }
-  }, [userRole, programDefaults, settingsMeta])
+  }, [userRole, programDefaults, settingsMeta, t])
 
   const saveActiveDegreeLevels = useCallback(async () => {
     if (userRole !== 'admin') return
@@ -1099,7 +1099,7 @@ export default function Applications() {
       setExportMessage(
         t('admissions.applicationsPage.exportFailed', {
           defaultValue: 'Export failed: {{message}}',
-          message: e?.message || 'Unknown error',
+          message: e?.message || t('common.unknown'),
         }),
       )
       setTimeout(() => setExportMessage(''), 6000)
@@ -1660,9 +1660,9 @@ export default function Applications() {
           <div className={`flex flex-col gap-4 ${alignStart}`}>
             <div className="flex items-start justify-between gap-3">
               <div className="min-w-0">
-                <h2 className="text-lg font-bold text-gray-900">Default program for new applications</h2>
-                <p className="text-sm text-gray-600">
-                  When enabled, the applicant application form auto-fills College/Major/Semester for all new applications.
+                <h2 className="text-lg font-bold text-gray-900">{t('admissions.applicationsPage.defaultProgramTitle')}</h2>
+                <p className="text-sm text-gray-600 mt-1">
+                  {t('admissions.applicationsPage.defaultProgramHint')}
                 </p>
               </div>
               <button
@@ -1671,7 +1671,7 @@ export default function Applications() {
                 disabled={programDefaultsLoading}
                 className="shrink-0 bg-primary-gradient text-white px-5 py-2.5 rounded-xl font-semibold shadow-sm hover:shadow-md transition-all disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                {programDefaultsLoading ? 'Saving…' : 'Save'}
+                {programDefaultsLoading ? t('admissions.applicationsPage.defaultProgramSaving') : t('admissions.applicationsPage.defaultProgramSave')}
               </button>
             </div>
 
@@ -1683,7 +1683,7 @@ export default function Applications() {
                     : 'bg-green-50 border-green-200 text-green-700'
                 }`}
               >
-                {programDefaultsError || 'Saved.'}
+                {programDefaultsError || t('admissions.applicationsPage.defaultProgramSaved')}
               </div>
             )}
 
@@ -1699,7 +1699,7 @@ export default function Applications() {
                     }))
                   }
                 />
-                <span className="text-sm font-medium text-gray-800">Enable</span>
+                <span className="text-sm font-medium text-gray-800">{t('admissions.applicationsPage.defaultProgramEnable')}</span>
               </label>
 
               <label className="flex items-center gap-2 md:col-span-1">
@@ -1713,19 +1713,19 @@ export default function Applications() {
                     }))
                   }
                 />
-                <span className="text-sm font-medium text-gray-800">Lock fields</span>
+                <span className="text-sm font-medium text-gray-800">{t('admissions.applicationsPage.defaultProgramLock')}</span>
               </label>
 
               <div className="md:col-span-2 text-sm text-gray-600">
                 {programDefaults.enabled
-                  ? 'Applicants will see those fields pre-filled (and locked if enabled).'
-                  : 'Disabled: applicants choose their college/major/semester normally.'}
+                  ? t('admissions.applicationsPage.defaultProgramOnHint')
+                  : t('admissions.applicationsPage.defaultProgramOffHint')}
               </div>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">College</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">{t('admissions.applicationsPage.defaultProgramCollege')}</label>
                 <select
                   value={programDefaults.college_id}
                   onChange={(e) =>
@@ -1739,7 +1739,7 @@ export default function Applications() {
                   className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-primary-500 focus:border-transparent"
                   dir={isArabicLayout ? 'rtl' : 'ltr'}
                 >
-                  <option value="">Select college…</option>
+                  <option value="">{t('admissions.applicationsPage.defaultProgramSelectCollege')}</option>
                   {settingsColleges.map((c) => (
                     <option key={c.id} value={c.id}>
                       {getLocalizedName(c, isArabicLayout) || c.name_en} ({c.abbreviation || c.code})
@@ -1749,7 +1749,7 @@ export default function Applications() {
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Major</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">{t('admissions.applicationsPage.defaultProgramMajor')}</label>
                 <select
                   value={programDefaults.major_id}
                   onChange={(e) => setProgramDefaults((p) => ({ ...p, major_id: e.target.value }))}
@@ -1757,7 +1757,7 @@ export default function Applications() {
                   className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-primary-500 focus:border-transparent disabled:bg-gray-100 disabled:text-gray-600"
                   dir={isArabicLayout ? 'rtl' : 'ltr'}
                 >
-                  <option value="">Select major…</option>
+                  <option value="">{t('admissions.applicationsPage.defaultProgramSelectMajor')}</option>
                   {settingsMajors.map((m) => (
                     <option key={m.id} value={m.id}>
                       {getLocalizedName(m, isArabicLayout) || m.name_en} ({m.code})
@@ -1767,7 +1767,7 @@ export default function Applications() {
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Semester (optional)</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">{t('admissions.applicationsPage.defaultProgramSemester')}</label>
                 <select
                   value={programDefaults.semester_id}
                   onChange={(e) => setProgramDefaults((p) => ({ ...p, semester_id: e.target.value }))}
@@ -1775,7 +1775,7 @@ export default function Applications() {
                   className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-primary-500 focus:border-transparent disabled:bg-gray-100 disabled:text-gray-600"
                   dir={isArabicLayout ? 'rtl' : 'ltr'}
                 >
-                  <option value="">(none)</option>
+                  <option value="">{t('admissions.applicationsPage.defaultProgramNone')}</option>
                   {settingsSemesters.map((s) => (
                     <option key={s.id} value={s.id}>
                       {getLocalizedName(s, isArabicLayout) || s.name_en} ({s.code})
@@ -1785,7 +1785,7 @@ export default function Applications() {
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Academic Year (optional)</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">{t('admissions.applicationsPage.defaultProgramYear')}</label>
                 <select
                   value={programDefaults.academic_year_id}
                   onChange={(e) => setProgramDefaults((p) => ({ ...p, academic_year_id: e.target.value }))}
@@ -1793,7 +1793,7 @@ export default function Applications() {
                   className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-primary-500 focus:border-transparent disabled:bg-gray-100 disabled:text-gray-600"
                   dir={isArabicLayout ? 'rtl' : 'ltr'}
                 >
-                  <option value="">(none)</option>
+                  <option value="">{t('admissions.applicationsPage.defaultProgramNone')}</option>
                   {settingsAcademicYears.map((ay) => (
                     <option key={ay.id} value={ay.id}>
                       {getLocalizedName(ay, isArabicLayout) || ay.name_en} ({ay.code})
@@ -2386,7 +2386,7 @@ export default function Applications() {
                   <Calendar className="w-4 h-4 shrink-0" />
                   <span>
                     {t('admissions.applicationsPage.applied')}{' '}
-                    {new Date(application.created_at).toLocaleDateString(isArabicLayout ? 'ar' : undefined)}
+                    {new Date(application.created_at).toLocaleDateString(isArabicLayout ? 'ar-u-nu-latn' : undefined)}
                   </span>
                 </div>
               </div>
@@ -2448,7 +2448,7 @@ export default function Applications() {
                   type="button"
                   onClick={() => !bulkNotifySending && setBulkNotifyOpen(false)}
                   className="p-2 rounded-lg hover:bg-white/10"
-                  aria-label="Close"
+                  aria-label={t('common.close')}
                 >
                   <X className="w-5 h-5" />
                 </button>
@@ -2581,7 +2581,7 @@ export default function Applications() {
                   type="button"
                   onClick={() => !exporting && setExportOpen(false)}
                   className="p-2 rounded-lg hover:bg-white/10 text-white/90"
-                  aria-label="Close"
+                  aria-label={t('common.close')}
                 >
                   <X className="w-5 h-5" />
                 </button>
@@ -2845,7 +2845,7 @@ export default function Applications() {
                 type="button"
                 onClick={() => !assignSaving && setAssignOpen(false)}
                 className="p-2 rounded-lg hover:bg-gray-100 text-gray-500"
-                aria-label="Close"
+                aria-label={t('common.close')}
               >
                 <X className="w-5 h-5" />
               </button>

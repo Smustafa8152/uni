@@ -1,7 +1,7 @@
 import { Link } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { ExternalLink, GraduationCap, Video } from 'lucide-react'
-import { getApplicantReasonMeta, getApplicantStatus } from '../../utils/applicationStatusDisplay'
+import { getApplicantReasonMeta, getApplicantStatus, resolveApplicantStatus } from '../../utils/applicationStatusDisplay'
 
 const NEW_APPLICATION = new Set(['DCRJ', 'ENCA', 'ENCU', 'ACWD'])
 
@@ -25,7 +25,7 @@ export default function ApplicantNextStep({ application, isRTL, portal = true, o
   if (!application || !applicantHasNextStep(application.status_code)) return null
 
   const code = String(application.status_code || '').toUpperCase()
-  const info = getApplicantStatus(code)
+  const info = resolveApplicantStatus(application)
   const hintKey = `${info.labelKey}Hint`
   const hint = i18n.exists(hintKey) ? t(hintKey) : ''
   const needsAction = info.view === 'action' || Boolean(info.action)

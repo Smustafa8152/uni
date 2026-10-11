@@ -386,7 +386,6 @@ export default function RegisterApplication({ portal = false }) {
   const location = useLocation()
   const { user, userRole, loading: authLoading, signIn, refreshUserRole } = useAuth()
 
-  const needsAccount = !portal && !(user && userRole === 'applicant')
   const [showPassword, setShowPassword] = useState(false)
   const prefilledFromLastApplication = useRef(false)
 
@@ -426,6 +425,12 @@ export default function RegisterApplication({ portal = false }) {
     Object.fromEntries(ALL_DOCUMENT_SPECS.map((s) => [s.key, null]))
   )
   const [formData, setFormData] = useState(() => (portal ? { ...INITIAL_FORM } : formFromDraft(readApplyDraft())))
+  const sessionEmail = String(user?.email || '').trim().toLowerCase()
+  const formEmail = String(formData.email || '').trim().toLowerCase()
+  const signedInForThisEmail = Boolean(
+    !portal && user?.id && userRole === 'applicant' && sessionEmail && formEmail && sessionEmail === formEmail,
+  )
+  const needsAccount = !portal && !signedInForThisEmail
   const [activeDegreeLevels, setActiveDegreeLevels] = useState(() => [...APPLICATION_DEGREE_LEVELS])
   const [applicationFee, setApplicationFee] = useState({ enabled: false, amount: 20 })
   const [feeCheckout, setFeeCheckout] = useState(null)
@@ -600,11 +605,11 @@ export default function RegisterApplication({ portal = false }) {
   useEffect(() => {
     if (!portal || !user?.id || !user?.email || forcedProgram == null || prefilledFromLastApplication.current) return
     let alive = true
-    const em = user.email.trim().replace(/"/g, '')
+    const em = user.email.trim()
     supabase
       .from('applications')
       .select('*')
-      .or(`applicant_user_id.eq.${user.id},email.ilike."${em}"`)
+      .ilike('email', em)
       .order('created_at', { ascending: false })
       .limit(1)
       .then(({ data, error: qErr }) => {
@@ -1024,9 +1029,15 @@ export default function RegisterApplication({ portal = false }) {
   }
 
   const ensureApplicantSession = async () => {
-    if (user?.id && userRole === 'applicant') return user.id
-
     const em = formData.email.trim().toLowerCase()
+    const sessionEmail = String(user?.email || '').trim().toLowerCase()
+    if (user?.id && userRole === 'applicant' && sessionEmail === em) return user.id
+
+    // A leftover applicant session must not own an application filed under a different email.
+    if (user?.id && sessionEmail && sessionEmail !== em) {
+      await supabase.auth.signOut({ scope: 'local' })
+    }
+
     const password = formData.password
     const displayName = [formData.first_name, formData.last_name].filter(Boolean).join(' ').trim() || undefined
 
@@ -1142,10 +1153,7 @@ export default function RegisterApplication({ portal = false }) {
         navigate(`/apply/payment-result?application=${feeCheckout.id}`)
         return
       }
-      let applicantUserId = portal && user?.id ? user.id : null
-      if (needsAccount || (!portal && user?.id && userRole === 'applicant')) {
-        applicantUserId = await ensureApplicantSession()
-      }
+      const applicantUserId = portal ? user?.id || null : await ensureApplicantSession()
 
       const gpaParsed = parseDecimalField(formData.gpa, { scale: 2, min: 0, max: 4 }).value
       const certificateName =
@@ -1199,7 +1207,7 @@ export default function RegisterApplication({ portal = false }) {
           id_expiry_date: formData.id_expiry_date || null,
 
           // Contact
-          email: formData.email.trim(),
+          email: (portal ? user?.email : formData.email)?.trim() || formData.email.trim(),
           phone: formatStoredPhone(formData.phone),
           home_phone: formData.home_phone.trim() || null,
           country: formData.country.trim() || null,

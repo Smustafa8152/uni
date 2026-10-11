@@ -9,12 +9,15 @@ import { getLocalizedName } from '../../utils/localizedName'
 import { resolveOnboardingFeeAmount } from '../../utils/resolveOnboardingFeeAmount'
 import { resolveRegistrationFeeAmount } from '../../utils/resolveRegistrationFeeAmount'
 import { getPaymentsEnabled } from '../../utils/getPaymentsEnabled'
-import ApplicationFeeSummary from '../../components/applicant/ApplicationFeeSummary'
+import ApplicationPaymentsCard from '../../components/payment/ApplicationPaymentsCard'
+import BankTransferProofs from '../../components/payment/BankTransferProofs'
 import { getNationalityLabel, normalizeNationalityCode } from '../../utils/nationalities'
-import { getApplicantStatus } from '../../utils/applicationStatusDisplay'
+import { ACCEPTANCE_STATUS_CODES, getApplicantStatus, resolveApplicantStatus } from '../../utils/applicationStatusDisplay'
+import AdmissionChecklist from '../../components/admissions/AdmissionChecklist'
+import { confirmBankTransfer, listBankTransfers } from '../../utils/bankTransferProof'
 import { emailForActionStatus } from '../../utils/admissionMessageTemplates'
 import NationalitySelect from '../../components/common/NationalitySelect'
-import { ArrowLeft, CheckCircle, XCircle, Clock, Mail, Phone, MapPin, Calendar, GraduationCap, FileText, User, AlertCircle, BookOpen, Edit, Save, X, ArrowRight, Info, Sparkles, Shield, ArrowDown, KeyRound, Eye, EyeOff, Loader2, Copy, MessageSquare, Video, History } from 'lucide-react'
+import { ArrowLeft, CheckCircle, XCircle, Clock, Mail, Phone, MapPin, Calendar, GraduationCap, FileText, User, AlertCircle, BookOpen, Edit, Save, X, ArrowRight, Info, Sparkles, Shield, ArrowDown, KeyRound, Eye, EyeOff, Loader2, Copy, MessageSquare, Video, History, Wallet } from 'lucide-react'
 import { Button, toast } from '../../components/ui'
 import { invokeAdminPasswordReset } from '../../utils/invokeAdminPasswordReset'
 import ApplicationMessagesPanel from '../../components/admissions/ApplicationMessagesPanel'
@@ -882,6 +885,8 @@ export default function ViewApplication() {
   const [tuitionTotalAmount, setTuitionTotalAmount] = useState(0)
   const [sendingOffer, setSendingOffer] = useState(false)
 
+  const [bankProofWaiting, setBankProofWaiting] = useState(false)
+  const [reviewBusy, setReviewBusy] = useState('')
   const [showReceiveFeeModal, setShowReceiveFeeModal] = useState(false)
   const [receivingFee, setReceivingFee] = useState(false)
   const [receiveFeeAmount, setReceiveFeeAmount] = useState('')
@@ -910,6 +915,95 @@ export default function ViewApplication() {
     // We only collect the registration fee after document verification step
     return code === 'RVDV' || code === 'RVRC' || code === 'RVIN'
   }, [paymentsEnabled, application?.id, application?.status_code, application?.registration_fee_paid_at, coreDocVerified.allOk])
+
+  const reviewReady = Boolean(
+    application?.details_verified_at && application?.documents_verified_at && application?.registration_fee_paid_at,
+  )
+
+  useEffect(() => {
+    if (!application?.id) return
+    let cancelled = false
+    listBankTransfers(supabase, application.id)
+      .then((rows) => {
+        if (!cancelled) setBankProofWaiting(rows.some((row) => row.status === 'submitted'))
+      })
+      .catch(() => {
+        if (!cancelled) setBankProofWaiting(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [application?.id, application?.payment_review, application?.registration_fee_paid_at, application?.application_fee_status])
+
+  const markReviewStep = async (field, byField) => {
+    if (!applicationId) return
+    setReviewBusy(field === 'details_verified_at' ? 'details' : 'documents')
+    setError('')
+    try {
+      const now = new Date().toISOString()
+      const { error: updateError } = await supabase
+        .from('applications')
+        .update({ [field]: now, [byField]: staffUserId })
+        .eq('id', applicationId)
+      if (updateError) throw updateError
+      setApplication((prev) => (prev ? { ...prev, [field]: now, [byField]: staffUserId } : prev))
+    } catch (err) {
+      setError(err?.message || t('admissions.viewApplication.reviewSteps.locked'))
+    } finally {
+      setReviewBusy('')
+    }
+  }
+
+  const verifyDetails = () => markReviewStep('details_verified_at', 'details_verified_by')
+
+  const verifyDocuments = () => {
+    if (!offerLetterDocumentsReady) {
+      const next = new URLSearchParams(searchParams)
+      next.set('tab', 'documents')
+      setSearchParams(next, { replace: true })
+      setError(t('admissions.viewApplication.reviewSteps.needDocuments'))
+      return
+    }
+    markReviewStep('documents_verified_at', 'documents_verified_by')
+  }
+
+  const verifyPaymentReceipt = async () => {
+    if (!application?.id || application.registration_fee_paid_at) return
+    setReviewBusy('payment')
+    setError('')
+    try {
+      const rows = await listBankTransfers(supabase, application.id)
+      const proof = rows.find((row) => row.status === 'submitted')
+      if (!proof) {
+        setError(t('admissions.viewApplication.reviewSteps.waitingPayment'))
+        return
+      }
+      await confirmBankTransfer(supabase, { proof, application, staffUserId })
+      setBankProofWaiting(rows.some((row) => row.id !== proof.id && row.status === 'submitted'))
+      await fetchApplication()
+    } catch (err) {
+      setError(err?.message || t('admissions.viewApplication.reviewSteps.locked'))
+    } finally {
+      setReviewBusy('')
+    }
+  }
+
+  const resolveOpenDocumentRequests = async () => {
+    if (!applicationId) return
+    const now = new Date().toISOString()
+    const { error: resolveErr } = await supabase
+      .from('application_document_requests')
+      .update({ status: 'resolved', resolved_at: now })
+      .eq('application_id', applicationId)
+      .eq('status', 'open')
+    if (resolveErr) {
+      console.error('Failed to close document requests:', resolveErr)
+      return
+    }
+    setDocumentRequests((prev) =>
+      prev.map((row) => (row.status === 'open' ? { ...row, status: 'resolved', resolved_at: now } : row)),
+    )
+  }
 
   const openReceiveFeeModal = async () => {
     setError('')
@@ -966,6 +1060,7 @@ export default function ViewApplication() {
               }
             : prev
         )
+        if (nextStatus !== 'RVRI') await resolveOpenDocumentRequests()
         setShowReceiveFeeModal(false)
         return
       }
@@ -1010,6 +1105,7 @@ export default function ViewApplication() {
             }
           : prev
       )
+      if (nextStatus !== 'RVRI') await resolveOpenDocumentRequests()
 
       const paymentEmail = emailForActionStatus('APPN', isArabicLayout)
       if (paymentEmail) {
@@ -1157,7 +1253,8 @@ export default function ViewApplication() {
             name_en,
             name_ar,
             code,
-            degree_level
+            degree_level,
+            registration_fee
           ),
           semesters (
             id,
@@ -1199,7 +1296,26 @@ export default function ViewApplication() {
             .order('created_at', { ascending: false }),
         ])
         setApplicationDocuments(docs || [])
-        setDocumentRequests(reqs || [])
+        const loadedRequests = reqs || []
+        const stillAsking = String(data?.status_code || '').toUpperCase() === 'RVRI'
+        const staleOpen = !stillAsking && loadedRequests.some((row) => row.status === 'open')
+        if (staleOpen) {
+          const now = new Date().toISOString()
+          const { error: resolveErr } = await supabase
+            .from('application_document_requests')
+            .update({ status: 'resolved', resolved_at: now })
+            .eq('application_id', applicationId)
+            .eq('status', 'open')
+          setDocumentRequests(
+            resolveErr
+              ? loadedRequests
+              : loadedRequests.map((row) =>
+                  row.status === 'open' ? { ...row, status: 'resolved', resolved_at: now } : row,
+                ),
+          )
+        } else {
+          setDocumentRequests(loadedRequests)
+        }
       } catch (e) {
         console.warn('Failed to fetch documents/requests:', e?.message || e)
       } finally {
@@ -1499,6 +1615,11 @@ export default function ViewApplication() {
   }
 
   const handleSendOfferLetter = async () => {
+    if (!reviewReady) {
+      setError(t('admissions.viewApplication.reviewSteps.locked'))
+      setShowOfferModal(false)
+      return
+    }
     if (!applicationId || !application) return
     setSendingOffer(true)
     setError('')
@@ -1529,6 +1650,7 @@ export default function ViewApplication() {
         .eq('id', applicationId)
       if (updErr) throw updErr
       statusChanged = true
+      await resolveOpenDocumentRequests()
 
       await supabase.from('status_change_audit_log').insert({
         entity_type: 'application',
@@ -1627,6 +1749,10 @@ export default function ViewApplication() {
   }
 
   const handleStatusChange = async () => {
+    if (ACCEPTANCE_STATUS_CODES.has(selectedStatus) && !reviewReady) {
+      setError(t('admissions.viewApplication.reviewSteps.locked'))
+      return
+    }
     if (!selectedStatus) {
       setError(t('admissions.viewApplication.errors.selectStatus'))
       return
@@ -1687,6 +1813,8 @@ export default function ViewApplication() {
         .eq('id', applicationId)
 
       if (updateError) throw updateError
+
+      if (selectedStatus !== 'RVRI') await resolveOpenDocumentRequests()
 
       // Action statuses always email the matching template. Other decisions keep their own notice.
       const actionEmail = emailForActionStatus(selectedStatus, isArabicLayout, statusNotes)
@@ -1865,8 +1993,11 @@ export default function ViewApplication() {
     return status ? (isArabicLayout ? status.name_ar : status.name_en) : statusCode
   }
 
-  const applicantSeesLine = (statusCode) =>
-    t('track.applicantSees', { label: t(getApplicantStatus(statusCode).labelKey) })
+  const applicantSeesLine = (statusCode) => {
+    const same = String(statusCode || '').toUpperCase() === String(application?.status_code || '').toUpperCase()
+    const info = same ? resolveApplicantStatus(application) : getApplicantStatus(statusCode)
+    return t('track.applicantSees', { label: t(info.labelKey) })
+  }
 
   // Edit mode functions
   const fetchEditMajors = async () => {
@@ -2155,6 +2286,7 @@ export default function ViewApplication() {
   const unverifiedDocuments = applicationDocuments.filter((doc) => !doc.verified_at).length
   const pageTabs = [
     { id: 'overview', icon: User, label: t('admissions.viewApplication.page.tabs.overview') },
+    { id: 'payments', icon: Wallet, label: t('admissions.viewApplication.page.tabs.payments') },
     {
       id: 'documents',
       icon: Shield,
@@ -2241,7 +2373,8 @@ export default function ViewApplication() {
               variant="quiet"
               icon={Mail}
               className={heroButtonClass}
-              disabled={updating || sendingOffer}
+              disabled={updating || sendingOffer || !reviewReady}
+              title={reviewReady ? undefined : t('admissions.viewApplication.reviewSteps.locked')}
               onClick={() => {
                 setError('')
                 // Precompute onboarding fee (10% of total) from finance configuration / major catalog
@@ -2278,6 +2411,19 @@ export default function ViewApplication() {
           ))}
         </dl>
       </div>
+
+      <AdmissionChecklist
+        isRTL={isArabicLayout}
+        detailsDone={Boolean(application?.details_verified_at)}
+        documentsDone={Boolean(application?.documents_verified_at)}
+        documentsReady={offerLetterDocumentsReady}
+        paymentDone={Boolean(application?.registration_fee_paid_at)}
+        paymentCanConfirm={bankProofWaiting && !application?.registration_fee_paid_at}
+        busyKey={reviewBusy}
+        onVerifyDetails={verifyDetails}
+        onVerifyDocuments={verifyDocuments}
+        onVerifyPayment={verifyPaymentReceipt}
+      />
 
       {error && (
         <div className="bg-red-50 border border-red-200 rounded-lg p-4 text-red-700">
@@ -2420,6 +2566,11 @@ export default function ViewApplication() {
             </div>
 
             <div className="space-y-3 px-5 pb-2 pt-3">
+              {ACCEPTANCE_STATUS_CODES.has(selectedStatus) && !reviewReady && (
+                <div className="rounded-2xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+                  {t('admissions.viewApplication.reviewSteps.locked')}
+                </div>
+              )}
               {error && (
                 <div className="flex items-center gap-2 rounded-2xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
                   <AlertCircle className="h-4 w-4 shrink-0" />
@@ -2512,7 +2663,12 @@ export default function ViewApplication() {
               <button
                 type="button"
                 onClick={handleStatusChange}
-                disabled={updating || !selectedStatus || (requiresReason(selectedStatus) && !selectedReason)}
+                disabled={
+                  updating
+                  || !selectedStatus
+                  || (requiresReason(selectedStatus) && !selectedReason)
+                  || (ACCEPTANCE_STATUS_CODES.has(selectedStatus) && !reviewReady)
+                }
                 className="flex w-full items-center justify-center gap-2 rounded-2xl bg-primary-gradient px-5 py-3.5 text-sm font-semibold text-white shadow-sm hover:shadow-md disabled:opacity-40"
               >
                 {updating ? (
@@ -2807,7 +2963,11 @@ export default function ViewApplication() {
       </div>
 
       <div role="tabpanel" className={activeTab === 'overview' ? 'space-y-5' : 'hidden'}>
-          <ApplicationFeeSummary application={application} />
+          <ApplicationPaymentsCard
+            application={application}
+            isRTL={isArabicLayout}
+            detailsTo={(kind) => `/admissions/applications/${application.id}/payment?kind=${kind}`}
+          />
           {/* Personal Information */}
           <div className="rounded-2xl border border-[#dde3ef] bg-white p-5 sm:p-6">
             <div className={`flex items-center gap-2 mb-6 ${isArabicLayout ? 'justify-start' : ''}`}>
@@ -3476,6 +3636,24 @@ export default function ViewApplication() {
             </div>
           </div>
 
+      </div>
+
+      <div role="tabpanel" className={activeTab === 'payments' ? 'space-y-5' : 'hidden'}>
+        <ApplicationPaymentsCard
+          application={application}
+          isRTL={isArabicLayout}
+          detailsTo={(kind) => `/admissions/applications/${application.id}/payment?kind=${kind}`}
+        />
+        <div className="rounded-2xl border border-[#dde3ef] bg-white p-5 sm:p-6">
+          <BankTransferProofs
+            application={application}
+            staffUserId={staffUserId}
+            canConfirm
+            showEmpty
+            isRTL={isArabicLayout}
+            onConfirmed={fetchApplication}
+          />
+        </div>
       </div>
 
       <div role="tabpanel" className={activeTab === 'documents' ? 'space-y-5' : 'hidden'}>

@@ -10,7 +10,7 @@ export const APPLICANT_STATUS = {
   APSB: { phase: 'received', ...IN_REVIEW },
   APIV: { phase: 'received', view: 'action', action: 'documents', labelKey: 'track.applicant.correctApplication', tone: 'action' },
   APPN: { phase: 'documents', view: 'action', action: 'payment', labelKey: 'track.applicant.paymentDue', tone: 'action' },
-  APPC: { phase: 'documents', ...IN_REVIEW },
+  APPC: { phase: 'documents', view: 'in_review', labelKey: 'track.applicant.paymentConfirmed', tone: 'review' },
 
   RVQU: { phase: 'review', ...IN_REVIEW },
   RVIN: { phase: 'review', ...IN_REVIEW },
@@ -64,6 +64,27 @@ export function getApplicantStatus(code) {
   const key = String(code || '').toUpperCase()
   return APPLICANT_STATUS[key] || { phase: 'review', ...IN_REVIEW }
 }
+
+/** Bank transfer stays unpaid until staff confirm it. The applicant sees that review, not a new status code. */
+export function resolveApplicantStatus(application) {
+  const code = String(application?.status_code || '').toUpperCase()
+  const base = getApplicantStatus(code)
+  const reviewing = String(application?.payment_review || '') === 'in_review'
+  const registrationWaiting = reviewing && !application?.registration_fee_paid_at && code === 'APPN'
+  const applicationFeeWaiting = reviewing && String(application?.application_fee_status || '') === 'pending' && code === 'APFP'
+  if (registrationWaiting || applicationFeeWaiting) {
+    return {
+      ...base,
+      view: 'in_review',
+      action: null,
+      labelKey: 'track.applicant.paymentInReview',
+      tone: 'review',
+    }
+  }
+  return base
+}
+
+export const ACCEPTANCE_STATUS_CODES = new Set(['DCCA', 'DCFA'])
 
 const REQUIRED_VERIFIED_TYPES = ['id_photo', 'transcript']
 
