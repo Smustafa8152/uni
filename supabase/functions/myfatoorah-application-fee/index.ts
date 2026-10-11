@@ -1,5 +1,6 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+import { emailPaymentReceipt } from '../_shared/paymentReceiptEmail.ts'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -286,6 +287,24 @@ async function confirmPayment(
         application: { id: updated.id, application_number: updated.application_number },
       }),
     }).catch((err) => console.error('submitted email failed:', err?.message || err))
+
+    const { data: mailed } = await admin
+      .from('applications')
+      .select('id, email, college_id, application_number, first_name, last_name, first_name_ar, application_fee_amount, application_fee_currency, majors!major_id(name_en, name_ar)')
+      .eq('id', updated.id)
+      .maybeSingle()
+    if (mailed?.email) {
+      await emailPaymentReceipt(supabaseUrl, serviceKey, mailed, {
+        lang: payment.language,
+        kind: 'application',
+        amount: Number(mailed.application_fee_amount),
+        currency: mailed.application_fee_currency || 'USD',
+        method: 'online_payment',
+        paidAt: new Date().toISOString(),
+        reference: paymentId,
+        receiptNo: mailed.application_number ? `AF-${mailed.application_number}` : '',
+      }).catch((err) => console.error('application receipt email failed:', err?.message || err))
+    }
 
     await admin.from('status_change_audit_log').insert({
       entity_type: 'application',

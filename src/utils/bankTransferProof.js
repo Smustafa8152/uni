@@ -1,4 +1,5 @@
 import { SUPABASE_STORAGE_BUCKET } from '../lib/supabase'
+import { sendPaymentReceiptEmail } from './paymentReceiptEmail'
 
 export async function listBankTransfers(supabase, applicationId) {
   const id = Number(applicationId)
@@ -117,4 +118,17 @@ export async function confirmBankTransfer(supabase, { proof, application, staffU
     })
     .eq('id', proof.id)
   if (proofError) throw proofError
+
+  await sendPaymentReceiptEmail(supabase, {
+    application,
+    kind: proof.fee_kind === 'registration' ? 'registration' : 'application',
+    amount: proof.amount,
+    currency: proof.currency || 'USD',
+    method: 'bank_transfer',
+    paidAt: now,
+    reference: proof.transfer_reference || proof.notes || '',
+    receiptNo: application.application_number
+      ? `${proof.fee_kind === 'registration' ? 'RF' : 'AF'}-${application.application_number}`
+      : '',
+  }).catch((err) => console.warn('Payment receipt email failed:', err?.message || err))
 }

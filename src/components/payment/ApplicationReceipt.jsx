@@ -50,6 +50,7 @@ export default function ApplicationReceipt({ application, payment, isRTL = false
       dir={isRTL ? 'rtl' : 'ltr'}
     >
       <header className="border-b border-[#dde3ef] pb-4 text-center">
+        <img src="/assets/IBU Logo.png" alt={t('payments.receipt.university')} className="mx-auto mb-3 h-16 w-auto object-contain" />
         <p className="text-xs font-bold uppercase tracking-wider text-[#c8a84b]">{t('payments.receipt.university')}</p>
         <h2 className="mt-1 text-xl font-black text-[#1a3a6b]">{t('payments.receipt.title')}</h2>
         <p className="mt-1 text-sm text-slate-500">{t(paymentKindTitleKey(payment.kind))}</p>
