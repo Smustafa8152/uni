@@ -14,6 +14,7 @@ import BankTransferProofs from '../../components/payment/BankTransferProofs'
 import { getNationalityLabel, normalizeNationalityCode } from '../../utils/nationalities'
 import { ACCEPTANCE_STATUS_CODES, getApplicantStatus, resolveApplicantStatus } from '../../utils/applicationStatusDisplay'
 import AdmissionChecklist from '../../components/admissions/AdmissionChecklist'
+import SectionVerifyButton from '../../components/admissions/SectionVerifyButton'
 import { confirmBankTransfer, listBankTransfers } from '../../utils/bankTransferProof'
 import { emailForActionStatus } from '../../utils/admissionMessageTemplates'
 import NationalitySelect from '../../components/common/NationalitySelect'
@@ -916,10 +917,6 @@ export default function ViewApplication() {
     return code === 'RVDV' || code === 'RVRC' || code === 'RVIN'
   }, [paymentsEnabled, application?.id, application?.status_code, application?.registration_fee_paid_at, coreDocVerified.allOk])
 
-  const reviewReady = Boolean(
-    application?.details_verified_at && application?.documents_verified_at && application?.registration_fee_paid_at,
-  )
-
   useEffect(() => {
     if (!application?.id) return
     let cancelled = false
@@ -954,7 +951,92 @@ export default function ViewApplication() {
     }
   }
 
-  const verifyDetails = () => markReviewStep('details_verified_at', 'details_verified_by')
+  const sectionMap = () => {
+    const raw = application?.section_verified
+    return raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : {}
+  }
+
+  const visibleSectionKeys = () => {
+    if (!application) return []
+    const keys = ['personal', 'contact', 'academic']
+    if (application.emergency_contact_name) keys.push('emergency')
+    const hasForm = Boolean(
+      application.majors?.degree_level ||
+      secondChoiceCollege ||
+      secondChoiceMajor ||
+      application.study_type ||
+      application.is_former_student != null ||
+      application.high_school_country ||
+      application.highest_education_level ||
+      application.specialization ||
+      application.language_of_study ||
+      application.language_certificate_name ||
+      application.title ||
+      application.race ||
+      application.id_type ||
+      application.id_number ||
+      application.id_issue_country ||
+      application.id_issue_date ||
+      application.id_expiry_date ||
+      application.home_phone ||
+      application.referral_source,
+    )
+    if (hasForm) keys.push('form')
+    if (application.toefl_score || application.ielts_score || application.sat_score || application.gmat_score || application.gre_score) {
+      keys.push('scores')
+    }
+    if (application.is_transfer_student) keys.push('transfer')
+    if (
+      application.personal_statement ||
+      application.scholarship_request ||
+      application.scholarship_type ||
+      application.scholarship_details
+    ) {
+      keys.push('additional')
+    }
+    return keys
+  }
+
+  const detailsCardsVerified = visibleSectionKeys().every((key) => sectionMap()[key]?.at)
+
+  const reviewReady = Boolean(
+    detailsCardsVerified && application?.documents_verified_at && application?.registration_fee_paid_at,
+  )
+
+  const sectionVerified = (key) => Boolean(sectionMap()[key]?.at)
+
+  const toggleSectionVerified = async (key) => {
+    if (!applicationId) return
+    setReviewBusy(key)
+    setError('')
+    try {
+      const map = { ...sectionMap() }
+      if (sectionVerified(key)) delete map[key]
+      else map[key] = { at: new Date().toISOString(), by: staffUserId }
+      const allCards = visibleSectionKeys().every((section) => map[section]?.at)
+      const patch = {
+        section_verified: map,
+        details_verified_at: allCards ? application?.details_verified_at || new Date().toISOString() : null,
+        details_verified_by: allCards ? application?.details_verified_by || staffUserId : null,
+      }
+      const { error: updateError } = await supabase.from('applications').update(patch).eq('id', applicationId)
+      if (updateError) throw updateError
+      setApplication((prev) => (prev ? { ...prev, ...patch } : prev))
+    } catch (err) {
+      setError(err?.message || t('admissions.viewApplication.reviewSteps.locked'))
+    } finally {
+      setReviewBusy('')
+    }
+  }
+
+  const verifyButton = (key) =>
+    isEditMode ? null : (
+      <SectionVerifyButton
+        verified={sectionVerified(key)}
+        busy={reviewBusy === key}
+        onClick={() => toggleSectionVerified(key)}
+      />
+    )
 
   const verifyDocuments = () => {
     if (!offerLetterDocumentsReady) {
@@ -2286,7 +2368,6 @@ export default function ViewApplication() {
   const unverifiedDocuments = applicationDocuments.filter((doc) => !doc.verified_at).length
   const pageTabs = [
     { id: 'overview', icon: User, label: t('admissions.viewApplication.page.tabs.overview') },
-    { id: 'payments', icon: Wallet, label: t('admissions.viewApplication.page.tabs.payments') },
     {
       id: 'documents',
       icon: Shield,
@@ -2294,6 +2375,7 @@ export default function ViewApplication() {
       count: unverifiedDocuments || applicationDocuments.length,
       attention: unverifiedDocuments > 0,
     },
+    { id: 'payments', icon: Wallet, label: t('admissions.viewApplication.page.tabs.payments') },
     { id: 'messages', icon: MessageSquare, label: t('admissions.viewApplication.page.tabs.messages') },
     { id: 'interview', icon: Video, label: t('admissions.viewApplication.page.tabs.interview') },
     { id: 'activity', icon: History, label: t('admissions.viewApplication.page.tabs.activity'), count: activityLog.length },
@@ -2414,13 +2496,12 @@ export default function ViewApplication() {
 
       <AdmissionChecklist
         isRTL={isArabicLayout}
-        detailsDone={Boolean(application?.details_verified_at)}
+        detailsDone={detailsCardsVerified}
         documentsDone={Boolean(application?.documents_verified_at)}
         documentsReady={offerLetterDocumentsReady}
         paymentDone={Boolean(application?.registration_fee_paid_at)}
         paymentCanConfirm={bankProofWaiting && !application?.registration_fee_paid_at}
         busyKey={reviewBusy}
-        onVerifyDetails={verifyDetails}
         onVerifyDocuments={verifyDocuments}
         onVerifyPayment={verifyPaymentReceipt}
       />
@@ -2986,6 +3067,7 @@ export default function ViewApplication() {
                   </h2>
                 </>
               )}
+              {verifyButton('personal')}
             </div>
             <div className="grid grid-cols-1 gap-x-6 gap-y-4 sm:grid-cols-2 lg:grid-cols-3">
               <div>
@@ -3086,6 +3168,7 @@ export default function ViewApplication() {
                   </h2>
                 </>
               )}
+              {verifyButton('contact')}
             </div>
             <div className="grid grid-cols-1 gap-x-6 gap-y-4 sm:grid-cols-2 lg:grid-cols-3">
               <div>
@@ -3148,12 +3231,13 @@ export default function ViewApplication() {
                 ) : (
                   <>
                     <AlertCircle className="w-5 h-5 text-[#c8a84b] shrink-0" />
-                    <h2 className={`text-base font-extrabold text-[#1a3a6b] ${alignStart}`}>
-                      {t('admissions.viewApplication.detail.emergencyContact')}
-                    </h2>
-                  </>
-                )}
-              </div>
+                  <h2 className={`text-base font-extrabold text-[#1a3a6b] ${alignStart}`}>
+                    {t('admissions.viewApplication.detail.emergencyContact')}
+                  </h2>
+                </>
+              )}
+              {verifyButton('emergency')}
+            </div>
               <div className="grid grid-cols-1 gap-x-6 gap-y-4 sm:grid-cols-2 lg:grid-cols-3">
                 <div>
                   <label className={`block text-xs font-semibold text-slate-500 mb-1 ${alignStart}`}>
@@ -3207,6 +3291,7 @@ export default function ViewApplication() {
                   </h2>
                 </>
               )}
+              {verifyButton('academic')}
             </div>
             <div className="grid grid-cols-1 gap-x-6 gap-y-4 sm:grid-cols-2 lg:grid-cols-3">
               <div>
@@ -3334,6 +3419,7 @@ export default function ViewApplication() {
                   <h2 className={`text-base font-extrabold text-[#1a3a6b] ${alignStart}`}>
                     {t('admissions.viewApplication.detail.applicationDetails', 'Application form details')}
                   </h2>
+                  {verifyButton('form')}
                 </div>
                 <div className="grid grid-cols-1 gap-x-6 gap-y-4 sm:grid-cols-2 lg:grid-cols-3">
                   {rows.map(([label, value]) => (
@@ -3361,12 +3447,13 @@ export default function ViewApplication() {
                 ) : (
                   <>
                     <FileText className="w-5 h-5 text-[#c8a84b] shrink-0" />
-                    <h2 className={`text-base font-extrabold text-[#1a3a6b] ${alignStart}`}>
-                      {t('admissions.viewApplication.detail.testScores')}
-                    </h2>
-                  </>
-                )}
-              </div>
+                  <h2 className={`text-base font-extrabold text-[#1a3a6b] ${alignStart}`}>
+                    {t('admissions.viewApplication.detail.testScores')}
+                  </h2>
+                </>
+              )}
+              {verifyButton('scores')}
+            </div>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                 {application.toefl_score && (
                   <div>
@@ -3426,12 +3513,13 @@ export default function ViewApplication() {
                 ) : (
                   <>
                     <BookOpen className="w-5 h-5 text-[#c8a84b] shrink-0" />
-                    <h2 className={`text-base font-extrabold text-[#1a3a6b] ${alignStart}`}>
-                      {t('admissions.viewApplication.detail.transferInfo')}
-                    </h2>
-                  </>
-                )}
-              </div>
+                  <h2 className={`text-base font-extrabold text-[#1a3a6b] ${alignStart}`}>
+                    {t('admissions.viewApplication.detail.transferInfo')}
+                  </h2>
+                </>
+              )}
+              {verifyButton('transfer')}
+            </div>
               <div className="grid grid-cols-1 gap-x-6 gap-y-4 sm:grid-cols-2 lg:grid-cols-3">
                 <div>
                   <label className={`block text-xs font-semibold text-slate-500 mb-1 ${alignStart}`}>
@@ -3483,6 +3571,7 @@ export default function ViewApplication() {
                     </h2>
                   </>
                 )}
+                {verifyButton('additional')}
               </div>
               {application.personal_statement && (
                 <div className="mb-6">

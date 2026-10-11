@@ -1,7 +1,7 @@
 import { CheckCircle2, Loader2 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
-function Step({ done, title, action, busy, disabled, hint }) {
+function Step({ done, title, action, busy, disabled, hint, statusOnly }) {
   return (
     <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-[#dde3ef] bg-[#f7f9fd] px-4 py-3">
       <div className="min-w-0 text-start">
@@ -13,7 +13,7 @@ function Step({ done, title, action, busy, disabled, hint }) {
           <CheckCircle2 className="h-4 w-4" />
           {action}
         </span>
-      ) : (
+      ) : statusOnly ? null : (
         <button
           type="button"
           onClick={action?.onClick}
@@ -36,7 +36,6 @@ export default function AdmissionChecklist({
   paymentDone,
   paymentCanConfirm,
   busyKey,
-  onVerifyDetails,
   onVerifyDocuments,
   onVerifyPayment,
 }) {
@@ -48,10 +47,15 @@ export default function AdmissionChecklist({
       <p className="mt-1 text-sm text-slate-600">{t('admissions.viewApplication.reviewSteps.hint')}</p>
       <div className="mt-4 space-y-3">
         <Step
+          statusOnly
           done={detailsDone}
-          title={t('admissions.viewApplication.reviewSteps.details')}
-          action={detailsDone ? t('admissions.viewApplication.reviewSteps.done') : { label: t('admissions.viewApplication.reviewSteps.details'), onClick: onVerifyDetails }}
-          busy={busyKey === 'details'}
+          title={
+            detailsDone
+              ? t('admissions.viewApplication.reviewSteps.detailsVerified')
+              : t('admissions.viewApplication.reviewSteps.details')
+          }
+          hint={detailsDone ? '' : t('admissions.viewApplication.reviewSteps.detailsPending')}
+          action={t('admissions.viewApplication.reviewSteps.done')}
         />
         <Step
           done={documentsDone}
