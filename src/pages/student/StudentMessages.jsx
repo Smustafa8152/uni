@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next'
 import { useLanguage } from '../../contexts/LanguageContext'
 import { useAuth } from '../../contexts/AuthContext'
 import { supabase } from '../../lib/supabase'
+import { postgrestQuoted } from '../../utils/emailLookup'
 import { getLocalizedName } from '../../utils/localizedName'
 import ApplicationMessagesPanel from '../../components/admissions/ApplicationMessagesPanel'
 import { Loader2, MessageSquare, Video, GraduationCap } from 'lucide-react'
@@ -63,7 +64,7 @@ export default function StudentMessages() {
           .order('created_at', { ascending: false })
 
         if (user.id && em) {
-          q = q.or(`applicant_user_id.eq.${user.id},email.eq.${em}`)
+          q = q.or(`applicant_user_id.eq.${user.id},email.ilike.${postgrestQuoted(em)}`)
         } else if (user.id) {
           q = q.eq('applicant_user_id', user.id)
         } else {

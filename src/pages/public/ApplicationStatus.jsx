@@ -6,11 +6,15 @@ import { FlagAr, FlagEn } from '../../components/LanguageFlags'
 import { useAuth } from '../../contexts/AuthContext'
 import { supabase, SUPABASE_STORAGE_BUCKET } from '../../lib/supabase'
 import { getLocalizedName } from '../../utils/localizedName'
-import { APPLICANT_PHASES, applicantProgress, applicantStatusClass, coreDocumentsVerified, getApplicantReasonMeta, getApplicantStatus } from '../../utils/applicationStatusDisplay'
+import { APPLICANT_PHASES, applicantProgress, applicantStatusClass, coreDocumentsVerified, getApplicantReasonMeta, getApplicantStatus, resolveApplicantStatus } from '../../utils/applicationStatusDisplay'
 import ApplicantNextStep, { applicantHasNextStep, ApplicantSessionLinks } from '../../components/applicant/ApplicantNextStep'
-import ApplicationFeeSummary from '../../components/applicant/ApplicationFeeSummary'
+import ApplicationPaymentsCard from '../../components/payment/ApplicationPaymentsCard'
+import BankTransferProofs from '../../components/payment/BankTransferProofs'
+import ApplicationReceipt from '../../components/payment/ApplicationReceipt'
+import { listApplicationPayments } from '../../utils/applicationPayments'
 import { canLoginWithoutSemesterPm10Milestone } from '../../utils/financePermissions'
 import PaymentModal from '../../components/payment/PaymentModal'
+import { confirmRegistrationFeePayment } from '../../utils/registrationFee'
 import { getPaymentsEnabled } from '../../utils/getPaymentsEnabled'
 import ApplicationMessagesPanel from '../../components/admissions/ApplicationMessagesPanel'
 import {
@@ -71,6 +75,8 @@ export default function ApplicationStatus() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [showPaymentModal, setShowPaymentModal] = useState(false)
+  const [proofTick, setProofTick] = useState(0)
+  const [paymentNotice, setPaymentNotice] = useState('')
   const [selectedInvoiceForPayment, setSelectedInvoiceForPayment] = useState(null)
   const [paymentsEnabled, setPaymentsEnabled] = useState(true)
   const [studentInvoices, setStudentInvoices] = useState([])
@@ -132,10 +138,47 @@ export default function ApplicationStatus() {
   useEffect(() => {
     if (!application) return
     const pay = new URLSearchParams(location.search).get('pay')
-    if (pay === '1' && String(application.status_code || '').toUpperCase() === 'APPN') {
+    if (pay === '1' && String(application.status_code || '').toUpperCase() === 'APPN' && application.payment_review !== 'in_review') {
       setShowPaymentModal(true)
     }
   }, [application, location.search])
+
+  useEffect(() => {
+    if (!application?.id) return
+    const params = new URLSearchParams(location.search)
+    const paymentId = params.get('paymentId') || params.get('paymentid') || ''
+    const failed = params.get('failed') === '1'
+    if (!paymentId && !failed) return
+    let cancelled = false
+    const clearQuery = () => {
+      params.delete('paymentId')
+      params.delete('paymentid')
+      params.delete('failed')
+      const search = params.toString()
+      navigate({ pathname: location.pathname, search: search ? `?${search}` : '', hash: location.hash }, { replace: true })
+    }
+    if (failed && !paymentId) {
+      setPaymentNotice('failed')
+      clearQuery()
+      return
+    }
+    setPaymentNotice('checking')
+    confirmRegistrationFeePayment(supabase, { paymentId, applicationId: application.id })
+      .then((result) => {
+        if (cancelled) return
+        setPaymentNotice(result?.paid ? 'paid' : 'failed')
+        if (result?.paid) fetchApplication()
+      })
+      .catch(() => {
+        if (!cancelled) setPaymentNotice('failed')
+      })
+      .finally(() => {
+        if (!cancelled) clearQuery()
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [application?.id, location.search, location.pathname, location.hash, navigate])
 
   useEffect(() => {
     if (!application || location.hash !== '#status-documents-panel') return
@@ -342,7 +385,7 @@ export default function ApplicationStatus() {
         .from('applications')
         .select(`
           *,
-          majors!major_id (name_en, name_ar, code),
+          majors!major_id (name_en, name_ar, code, registration_fee),
           semesters (name_en, name_ar, code),
           colleges!college_id (name_en, name_ar, code)
         `)
@@ -373,7 +416,7 @@ export default function ApplicationStatus() {
     }
   }
 
-  const applicantStatus = getApplicantStatus(application?.status_code)
+  const applicantStatus = resolveApplicantStatus(application)
   const statusLabel = t(applicantStatus.labelKey)
   const statusClass = applicantStatusClass(applicantStatus)
 
@@ -417,10 +460,11 @@ export default function ApplicationStatus() {
 
   const rejectedDocs = useMemo(() => applicationDocuments.filter(isRejected), [applicationDocuments])
 
-  const openStaffRequests = useMemo(
-    () => (portalMode ? documentRequests.filter((r) => r.status === 'open') : []),
-    [portalMode, documentRequests]
-  )
+  const openStaffRequests = useMemo(() => {
+    if (!portalMode) return []
+    if (String(application?.status_code || '').toUpperCase() !== 'RVRI') return []
+    return documentRequests.filter((r) => r.status === 'open')
+  }, [portalMode, documentRequests, application?.status_code])
 
   const additionalDocs = useMemo(
     () => applicationDocuments.filter((d) => d.document_type === 'additional'),
@@ -535,6 +579,7 @@ export default function ApplicationStatus() {
     String(application?.status_code || '').toUpperCase() === 'APPN' &&
     allRequiredCoreVerified &&
     !application?.registration_fee_paid_at &&
+    application?.payment_review !== 'in_review' &&
     !showPaymentModal
   const programName = getLocalizedName(application.majors, isRTL) || application.majors?.name_en || 'N/A'
   const dateLocale = isRTL ? 'ar-u-nu-latn' : 'en-CA'
@@ -574,6 +619,7 @@ export default function ApplicationStatus() {
 
   const handlePaymentSuccess = async () => {
     await fetchApplication()
+    setProofTick((tick) => tick + 1)
     setShowPaymentModal(false)
     if (id) await fetchApplicationInvoices(parseInt(id, 10))
     if (application?.email) await fetchStudentAndInvoices(application.email)
@@ -638,6 +684,24 @@ export default function ApplicationStatus() {
       />
 
       <div className="max-w-6xl mx-auto w-full min-w-0 text-start">
+        {paymentNotice === 'checking' && (
+          <div className="mb-4 flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700">
+            <Loader2 className="h-4 w-4 animate-spin" />
+            <span>{t('payments.gatewayChecking')}</span>
+          </div>
+        )}
+        {paymentNotice === 'paid' && (
+          <div className="mb-4 flex items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-800">
+            <CheckCircle className="h-4 w-4" />
+            <span>{t('payments.gatewayPaid')}</span>
+          </div>
+        )}
+        {paymentNotice === 'failed' && (
+          <div className="mb-4 flex items-center gap-2 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800">
+            <XCircle className="h-4 w-4" />
+            <span>{t('payments.gatewayFailed')}</span>
+          </div>
+        )}
         {!portalMode && (
           <div className="flex items-center justify-between gap-4 mb-6">
             <button
@@ -704,7 +768,17 @@ export default function ApplicationStatus() {
                 {statusLabel}
               </span>
             </header>
-            <ApplicationFeeSummary application={application} className="mx-5 mt-6 sm:mx-7" />
+            <div className="mx-5 mt-6 space-y-4 sm:mx-7">
+              <ApplicationPaymentsCard
+                application={application}
+                isRTL={isRTL}
+                detailsTo={(kind) => `${studentMode ? '/student/applications' : '/portal/applications'}/${application.id}/receipt?kind=${kind}`}
+              />
+              {listApplicationPayments(application).filter((row) => row.paid).map((row) => (
+                <ApplicationReceipt key={row.kind} application={application} payment={row} isRTL={isRTL} id={`application-receipt-${row.kind}`} />
+              ))}
+              <BankTransferProofs application={application} refreshKey={proofTick} isRTL={isRTL} />
+            </div>
             {(applicantHasNextStep(application.status_code) || application.interview_meeting_url || application.exam_location_or_link || application.interview_at || application.exam_at) && (
               <div className="space-y-3 px-5 sm:px-7 pt-6">
                 {applicantHasNextStep(application.status_code) && (

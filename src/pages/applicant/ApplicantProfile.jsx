@@ -5,6 +5,7 @@ import { useLanguage } from '../../contexts/LanguageContext'
 import { useAuth } from '../../contexts/AuthContext'
 import { supabase, SUPABASE_STORAGE_BUCKET } from '../../lib/supabase'
 import { syncApplicantProfile } from '../../utils/syncApplicantProfile'
+import { postgrestQuoted } from '../../utils/emailLookup'
 import { normalizeNationalityCode } from '../../utils/nationalities'
 import NationalitySelect from '../../components/common/NationalitySelect'
 import { Loader2, Save, Camera } from 'lucide-react'
@@ -126,11 +127,11 @@ export default function ApplicantProfile() {
       const needsApplication = Object.values(saved).some((value) => !cleanText(value))
       let nextForm = saved
       if (needsApplication && user.email) {
-        const em = user.email.trim().replace(/"/g, '')
+        const em = user.email.trim()
         const { data: apps, error: aErr } = await supabase
           .from('applications')
           .select('first_name, middle_name, last_name, date_of_birth, gender, nationality, phone, id_number, street_address')
-          .or(`applicant_user_id.eq.${user.id},email.ilike."${em}"`)
+          .or(`applicant_user_id.eq.${user.id},email.ilike.${postgrestQuoted(em)}`)
           .order('created_at', { ascending: false })
           .limit(1)
         if (aErr) throw aErr

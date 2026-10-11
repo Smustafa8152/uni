@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next'
 import { useLanguage } from '../../contexts/LanguageContext'
 import { useAuth } from '../../contexts/AuthContext'
 import { supabase } from '../../lib/supabase'
+import { postgrestQuoted } from '../../utils/emailLookup'
 import { Loader2 } from 'lucide-react'
 
 export default function ApplicantOfferLetterIndex() {
@@ -28,7 +29,7 @@ export default function ApplicantOfferLetterIndex() {
         const { data, error: qErr } = await supabase
           .from('applications')
           .select('id, status_code, created_at, applicant_user_id, email')
-          .or(`applicant_user_id.eq.${user.id},email.eq.${em}`)
+          .or(`applicant_user_id.eq.${user.id},email.ilike.${postgrestQuoted(em)}`)
           .in('status_code', ['DCCA', 'DCFA'])
           .order('created_at', { ascending: false })
           .limit(1)

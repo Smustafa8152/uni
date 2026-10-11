@@ -9,6 +9,57 @@ const corsHeaders = {
   'Access-Control-Max-Age': '86400',
 }
 
+const STAFF_ROLES = ['admin', 'user', 'instructor']
+
+function isDuplicateAuthUserError(err: { message?: string } | null): boolean {
+  if (!err?.message) return false
+  const message = err.message.toLowerCase()
+  return message.includes('already') || message.includes('registered') || message.includes('exists') || message.includes('duplicate')
+}
+
+/** Auth list filter misses some addresses (notably emails with +), so page through users too. */
+async function findAuthIdByEmail(
+  supabaseAdmin: ReturnType<typeof createClient>,
+  supabaseUrl: string,
+  serviceRoleKey: string,
+  email: string,
+): Promise<string | null> {
+  const lookup = await fetch(
+    `${supabaseUrl}/auth/v1/admin/users?filter=${encodeURIComponent(email)}`,
+    {
+      headers: {
+        Authorization: `Bearer ${serviceRoleKey}`,
+        apikey: serviceRoleKey,
+      },
+    },
+  )
+  let filterAnswered = false
+  if (lookup.ok) {
+    filterAnswered = true
+    const payload = await lookup.json()
+    const users = Array.isArray(payload) ? payload : payload?.users || []
+    const match = users.find((row: { email?: string; id?: string }) =>
+      String(row.email || '').trim().toLowerCase() === email
+    )
+    if (match?.id) return match.id
+  }
+
+  // A successful filter is enough, except for plus-addresses, which the filter can miss.
+  if (filterAnswered && !email.includes('+')) return null
+
+  let page = 1
+  const perPage = 200
+  for (let i = 0; i < 50; i++) {
+    const { data, error } = await supabaseAdmin.auth.admin.listUsers({ page, perPage })
+    if (error) return null
+    const found = data.users.find((user) => user.email?.trim().toLowerCase() === email)
+    if (found?.id) return found.id
+    if (data.users.length < perPage) break
+    page++
+  }
+  return null
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { status: 204, headers: corsHeaders })
@@ -99,7 +150,7 @@ serve(async (req) => {
     if (hasApplication) {
       const { data: app, error: appErr } = await supabaseAdmin
         .from('applications')
-        .select('id, email, applicant_user_id, college_id')
+        .select('id, email, first_name, last_name, applicant_user_id, college_id')
         .eq('id', Number(applicationId))
         .single()
 
@@ -148,7 +199,7 @@ serve(async (req) => {
           })
         }
 
-        if (userRow?.role && ['admin', 'user', 'instructor'].includes(userRow.role)) {
+        if (userRow?.role && STAFF_ROLES.includes(userRow.role)) {
           return new Response(JSON.stringify({ error: 'This email belongs to a staff account and cannot be reset from an application.' }), {
             status: 403,
             headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -158,52 +209,90 @@ serve(async (req) => {
       }
 
       if (!authId && email) {
-        const lookup = await fetch(
-          `${supabaseUrl}/auth/v1/admin/users?filter=${encodeURIComponent(email)}`,
-          {
-            headers: {
-              Authorization: `Bearer ${serviceRoleKey}`,
-              apikey: serviceRoleKey,
-            },
-          },
-        )
-        if (lookup.ok) {
-          const payload = await lookup.json()
-          const users = Array.isArray(payload) ? payload : payload?.users || []
-          const match = users.find((row: { email?: string; id?: string }) =>
-            String(row.email || '').trim().toLowerCase() === email
-          )
-          if (match?.id) authId = match.id
+        authId = await findAuthIdByEmail(supabaseAdmin, supabaseUrl, serviceRoleKey, email)
+      }
+
+      const displayName = [app.first_name, app.last_name].filter(Boolean).join(' ').trim() || email
+      let createdAccount = false
+      if (!authId && email) {
+        const { data: created, error: createErr } = await supabaseAdmin.auth.admin.createUser({
+          email,
+          password: newPassword,
+          email_confirm: true,
+          user_metadata: { role: 'applicant', name: displayName },
+        })
+        if (created?.user?.id) {
+          authId = created.user.id
+          createdAccount = true
+        } else if (isDuplicateAuthUserError(createErr)) {
+          authId = await findAuthIdByEmail(supabaseAdmin, supabaseUrl, serviceRoleKey, email)
+        } else {
+          return new Response(JSON.stringify({ error: createErr?.message || 'Could not create the applicant login.' }), {
+            status: 400,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          })
         }
       }
 
       if (!authId) {
         return new Response(
-          JSON.stringify({ error: 'No applicant login was found for this email. The applicant must have an account before the password can be reset.' }),
+          JSON.stringify({ error: 'No applicant login was found for this email, and a new login could not be created.' }),
           { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
         )
       }
 
       const { data: linkedRow } = await supabaseAdmin
         .from('users')
-        .select('role')
+        .select('id, role')
         .eq('openId', authId)
         .maybeSingle()
-      if (linkedRow?.role && ['admin', 'user', 'instructor'].includes(linkedRow.role)) {
+      if (linkedRow?.role && STAFF_ROLES.includes(linkedRow.role)) {
         return new Response(JSON.stringify({ error: 'This login belongs to a staff account and cannot be reset from an application.' }), {
           status: 403,
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         })
       }
 
-      const { error: updErr } = await supabaseAdmin.auth.admin.updateUserById(authId, {
-        password: newPassword,
-      })
-      if (updErr) {
-        return new Response(JSON.stringify({ error: updErr.message }), {
-          status: 400,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      if (!createdAccount) {
+        const { error: updErr } = await supabaseAdmin.auth.admin.updateUserById(authId, {
+          password: newPassword,
         })
+        if (updErr) {
+          return new Response(JSON.stringify({ error: updErr.message }), {
+            status: 400,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          })
+        }
+      }
+
+      if (!linkedRow) {
+        const { error: insErr } = await supabaseAdmin.from('users').insert({
+          openId: authId,
+          email,
+          name: displayName,
+          role: 'applicant',
+          college_id: null,
+          loginMethod: 'email',
+        })
+        if (insErr) {
+          return new Response(JSON.stringify({ error: insErr.message }), {
+            status: 400,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          })
+        }
+      }
+
+      if (app.applicant_user_id !== authId) {
+        const { error: linkErr } = await supabaseAdmin
+          .from('applications')
+          .update({ applicant_user_id: authId })
+          .eq('id', app.id)
+        if (linkErr) {
+          return new Response(JSON.stringify({ error: linkErr.message }), {
+            status: 400,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          })
+        }
       }
 
       return new Response(JSON.stringify({ success: true }), {

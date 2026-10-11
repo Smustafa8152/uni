@@ -72,6 +72,7 @@ import ExaminationConflicts from './pages/examinations/ExaminationConflicts'
 import Applications from './pages/admissions/Applications'
 import CreateApplication from './pages/admissions/CreateApplication'
 import ViewApplication from './pages/admissions/ViewApplication'
+import ApplicationPaymentDetails from './pages/public/ApplicationPaymentDetails'
 import StaffCommunication from './pages/admissions/StaffCommunication'
 import UniversitySettings from './pages/admin/UniversitySettings'
 import AdminCurriculumMap from './pages/admin/AdminCurriculumMap'
@@ -214,6 +215,7 @@ function App() {
             <Route path="profile" element={<ApplicantProfile />} />
             <Route path="messages" element={<ApplicantMessages />} />
             <Route path="applications/:id" element={<ApplicationStatus />} />
+            <Route path="applications/:id/receipt" element={<ApplicationPaymentDetails audience="applicant" />} />
             <Route path="applications/:id/offer-letter" element={<ApplicantOfferLetter />} />
             <Route path="offer-letter" element={<ApplicantOfferLetterIndex />} />
           </Route>
@@ -408,6 +410,16 @@ function App() {
               <ProtectedRoute>
                 <RoleBasedLayout>
                   <CreateApplication />
+                </RoleBasedLayout>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/admissions/applications/:id/payment"
+            element={
+              <ProtectedRoute>
+                <RoleBasedLayout>
+                  <ApplicationPaymentDetails audience="staff" />
                 </RoleBasedLayout>
               </ProtectedRoute>
             }
@@ -1057,6 +1069,16 @@ function App() {
               <ProtectedRoute allowedRoles={['student']}>
                 <RoleBasedLayout>
                   <ApplicationStatus />
+                </RoleBasedLayout>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/student/applications/:id/receipt"
+            element={
+              <ProtectedRoute allowedRoles={['student']}>
+                <RoleBasedLayout>
+                  <ApplicationPaymentDetails audience="student" />
                 </RoleBasedLayout>
               </ProtectedRoute>
             }

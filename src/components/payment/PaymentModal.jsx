@@ -2,17 +2,27 @@ import { useState, useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
 import { supabase } from '../../lib/supabase'
 import { X, CreditCard, Loader2, CheckCircle, AlertCircle } from 'lucide-react'
+import { useLanguage } from '../../contexts/LanguageContext'
 import { calculateFinancialMilestone } from '../../utils/financePermissions'
 import { resolveRegistrationFeeAmount } from '../../utils/resolveRegistrationFeeAmount'
 import { createApplicationRegistrationInvoice } from '../../utils/createApplicationRegistrationInvoice'
+import { listRegistrationFeeMethods, startRegistrationFeeCheckout } from '../../utils/registrationFee'
+import BankTransferPanel, { PaymentChannelChoice } from './BankTransferPanel'
 
 export default function PaymentModal({ isOpen, onClose, application, invoice, student, onPaymentSuccess, purpose = 'registration' }) {
   const { t } = useTranslation()
+  const { language, isRTL } = useLanguage()
+  const useGateway = Boolean(application && !invoice && purpose !== 'tuition')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [success, setSuccess] = useState(false)
   const [paymentMethod, setPaymentMethod] = useState('online')
   const [amount, setAmount] = useState(0)
+  const [methods, setMethods] = useState([])
+  const [methodsLoading, setMethodsLoading] = useState(false)
+  const [payingId, setPayingId] = useState(null)
+  const [channel, setChannel] = useState(null)
+  const [bankSent, setBankSent] = useState(false)
   const [paymentDetails, setPaymentDetails] = useState({
     cardNumber: '',
     expiryDate: '',
@@ -22,6 +32,8 @@ export default function PaymentModal({ isOpen, onClose, application, invoice, st
 
   useEffect(() => {
     if (isOpen) {
+      setChannel(null)
+      setBankSent(false)
       if (invoice) {
         // Payment for an invoice
         setAmount(parseFloat(invoice.pending_amount || invoice.total_amount || 0))
@@ -36,6 +48,59 @@ export default function PaymentModal({ isOpen, onClose, application, invoice, st
       }
     }
   }, [isOpen, application, invoice, purpose])
+
+  useEffect(() => {
+    if (!isOpen || !useGateway || channel !== 'online' || !application?.id) return
+    let cancelled = false
+    setMethodsLoading(true)
+    setError('')
+    setMethods([])
+    listRegistrationFeeMethods(supabase, { applicationId: application.id })
+      .then((result) => {
+        if (cancelled) return
+        if (result?.alreadyPaid) {
+          if (onPaymentSuccess) onPaymentSuccess(null, null)
+          onClose()
+          return
+        }
+        if (result?.amount) setAmount(Number(result.amount))
+        setMethods(result?.methods || [])
+      })
+      .catch((err) => {
+        if (!cancelled) setError(err?.message || t('payments.gatewayFailed'))
+      })
+      .finally(() => {
+        if (!cancelled) setMethodsLoading(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [isOpen, useGateway, channel, application?.id, t])
+
+  const payWithGateway = async (methodId) => {
+    if (!application?.id) return
+    setPayingId(methodId)
+    setError('')
+    try {
+      const returnPath = window.location.pathname.startsWith('/student/')
+        ? `/student/applications/${application.id}`
+        : `/portal/applications/${application.id}`
+      const result = await startRegistrationFeeCheckout(supabase, {
+        applicationId: application.id,
+        paymentMethodId: methodId,
+        language,
+        returnPath,
+      })
+      if (result?.alreadyPaid) {
+        if (onPaymentSuccess) onPaymentSuccess(null, null)
+        onClose()
+        setPayingId(null)
+      }
+    } catch (err) {
+      setError(err?.message || t('payments.gatewayFailed'))
+      setPayingId(null)
+    }
+  }
 
   const fetchRegistrationFee = async () => {
     try {
@@ -440,6 +505,101 @@ export default function PaymentModal({ isOpen, onClose, application, invoice, st
             )}
           </div>
 
+          {useGateway ? (
+            <div className="space-y-4" dir={isRTL ? 'rtl' : 'ltr'}>
+              {bankSent ? (
+                <div className="space-y-4">
+                  <p className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-800">{t('payments.bank.submitted')}</p>
+                  <div className="flex justify-end">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (onPaymentSuccess) onPaymentSuccess(null, null)
+                        onClose()
+                      }}
+                      className="rounded-xl bg-[#1a3a6b] px-6 py-3 text-sm font-semibold text-white"
+                    >
+                      {t('common.close', 'Close')}
+                    </button>
+                  </div>
+                </div>
+              ) : channel == null ? (
+                <div className="space-y-3">
+                  <p className="text-sm font-medium text-gray-700">{t('payments.bank.choose')}</p>
+                  <PaymentChannelChoice isRTL={isRTL} onOnline={() => setChannel('online')} onBank={() => setChannel('bank')} />
+                </div>
+              ) : channel === 'bank' ? (
+                <div className="space-y-3">
+                  <button type="button" onClick={() => setChannel(null)} className="text-sm font-semibold text-[#1a3a6b]">
+                    {t('payments.bank.back')}
+                  </button>
+                  <BankTransferPanel
+                    applicationId={application.id}
+                    feeKind="registration"
+                    amount={amount}
+                    isRTL={isRTL}
+                    onSubmitted={() => setBankSent(true)}
+                  />
+                </div>
+              ) : (
+              <div className="space-y-4">
+              <button type="button" onClick={() => setChannel(null)} className="text-sm font-semibold text-[#1a3a6b]">
+                {t('payments.bank.back')}
+              </button>
+              <div>
+                <p className="text-sm font-medium text-gray-700">{t('payments.paymentMethod')}</p>
+                <p className="mt-1 text-sm text-gray-500">{t('payments.gatewayContinue')}</p>
+              </div>
+              {methodsLoading ? (
+                <div className="flex items-center justify-center gap-2 py-8 text-sm text-gray-500">
+                  <Loader2 className="h-5 w-5 animate-spin" />
+                  <span>{t('payments.gatewayLoading')}</span>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 gap-3">
+                  {methods.map((method) => {
+                    const name = isRTL && method.nameAr ? method.nameAr : method.nameEn || method.nameAr
+                    const busy = payingId === method.id
+                    return (
+                      <button
+                        key={method.id}
+                        type="button"
+                        disabled={payingId != null}
+                        onClick={() => payWithGateway(method.id)}
+                        className="flex items-center gap-3 rounded-xl border border-gray-200 bg-white px-4 py-3 text-start transition hover:border-primary-500 hover:bg-primary-50 disabled:opacity-60"
+                      >
+                        {method.imageUrl ? (
+                          <img src={method.imageUrl} alt="" className="h-10 w-16 object-contain" />
+                        ) : (
+                          <span className="flex h-10 w-16 items-center justify-center rounded-lg bg-gray-100 text-xs font-bold text-gray-500">
+                            {method.code || '—'}
+                          </span>
+                        )}
+                        <span className="min-w-0 flex-1 font-semibold text-gray-900">{name}</span>
+                        {busy ? <Loader2 className="h-4 w-4 animate-spin text-primary-600" /> : null}
+                      </button>
+                    )
+                  })}
+                </div>
+              )}
+              {error && (
+                <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-800">{error}</div>
+              )}
+              <div className="flex justify-end">
+                <button
+                  type="button"
+                  onClick={onClose}
+                  className="rounded-xl border border-gray-300 px-6 py-3 hover:bg-gray-50"
+                  disabled={payingId != null}
+                >
+                  {t('common.cancel')}
+                </button>
+              </div>
+              </div>
+              )}
+            </div>
+          ) : (
+          <>
           {/* Payment Method Selection */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-3">{t('payments.paymentMethod')}</label>
@@ -624,6 +784,8 @@ export default function PaymentModal({ isOpen, onClose, application, invoice, st
                 </button>
               </div>
             </div>
+          )}
+          </>
           )}
         </div>
       </div>

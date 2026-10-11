@@ -58,11 +58,11 @@ export const AuthProvider = ({ children }) => {
         let res = await supabase
           .from('users')
           .select('role, college_id, menu_permissions')
-          .eq('email', candidate)
+          .ilike('email', candidate)
           .maybeSingle()
         // Older DBs before menu_permissions migration
         if (res.error && /menu_permissions/i.test(res.error.message || '')) {
-          res = await supabase.from('users').select('role, college_id').eq('email', candidate).maybeSingle()
+          res = await supabase.from('users').select('role, college_id').ilike('email', candidate).maybeSingle()
           if (res.data) res = { ...res, data: { ...res.data, menu_permissions: null } }
         }
         if (res.data) {
@@ -385,7 +385,7 @@ export const AuthProvider = ({ children }) => {
         let userData = null
         let userError = null
         for (const candidate of getEmailLookupCandidates(sessionEmail)) {
-          const res = await supabase.from('users').select('role, college_id').eq('email', candidate).maybeSingle()
+          const res = await supabase.from('users').select('role, college_id').ilike('email', candidate).maybeSingle()
           if (res.data) {
             userData = res.data
             userError = null
