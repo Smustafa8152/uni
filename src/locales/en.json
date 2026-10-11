@@ -2333,15 +2333,17 @@
       },
       "reviewSteps": {
         "title": "Before the offer letter",
-        "hint": "Verify the details, the documents, and the payment receipt before confirming the application or sending the offer letter.",
+        "hint": "Verify each information card, the documents, and the payment receipt before confirming the application or sending the offer letter.",
         "details": "Verify details",
+        "detailsVerified": "Details verified",
+        "detailsPending": "Verify each information card.",
         "documents": "Verify documents",
         "payment": "Verify payment receipt",
         "done": "Done",
         "needDocuments": "Verify each document on the Documents tab first.",
         "waitingPayment": "Waiting for the applicant to pay.",
         "paymentWaitingReview": "A bank transfer is waiting. Confirming it marks the payment as received.",
-        "locked": "Finish these three checks before confirming the application or sending the offer letter."
+        "locked": "Verify each information card, the documents, and the payment receipt before confirming the application or sending the offer letter."
       },
       "sessionEnded": "Your sign-in has ended, so nothing was changed. Sign out, sign in again, then send the offer letter."
     },
