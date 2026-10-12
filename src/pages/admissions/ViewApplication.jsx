@@ -3414,11 +3414,22 @@ export default function ViewApplication() {
 
             return (
               <div className="rounded-2xl border border-[#dde3ef] bg-white p-5 sm:p-6">
-                <div className={`flex items-center gap-2 mb-6 ${isArabicLayout ? 'justify-start flex-row-reverse' : ''}`}>
-                  <FileText className="w-5 h-5 text-[#c8a84b] shrink-0" />
-                  <h2 className={`text-base font-extrabold text-[#1a3a6b] ${alignStart}`}>
-                    {t('admissions.viewApplication.detail.applicationDetails', 'Application form details')}
-                  </h2>
+                <div className={`flex items-center gap-2 mb-6 ${isArabicLayout ? 'justify-start' : ''}`}>
+                  {isArabicLayout ? (
+                    <>
+                      <h2 className={`text-base font-extrabold text-[#1a3a6b] ${alignStart}`}>
+                        {t('admissions.viewApplication.detail.applicationDetails', 'Application form details')}
+                      </h2>
+                      <FileText className="w-5 h-5 text-[#c8a84b] shrink-0" />
+                    </>
+                  ) : (
+                    <>
+                      <FileText className="w-5 h-5 text-[#c8a84b] shrink-0" />
+                      <h2 className={`text-base font-extrabold text-[#1a3a6b] ${alignStart}`}>
+                        {t('admissions.viewApplication.detail.applicationDetails', 'Application form details')}
+                      </h2>
+                    </>
+                  )}
                   {verifyButton('form')}
                 </div>
                 <div className="grid grid-cols-1 gap-x-6 gap-y-4 sm:grid-cols-2 lg:grid-cols-3">
