@@ -11,6 +11,15 @@ const corsHeaders = {
 
 const STAFF_ROLES = ['admin', 'user', 'instructor']
 
+/** College staff stay inside their college. University-wide staff (no college) cover every application. */
+function isOutsideCallerCollege(
+  caller: { role?: string; college_id?: number | null },
+  targetCollegeId: number | null,
+): boolean {
+  if (caller.role !== 'user' || caller.college_id == null) return false
+  return Number(targetCollegeId) !== Number(caller.college_id)
+}
+
 function isDuplicateAuthUserError(err: { message?: string } | null): boolean {
   if (!err?.message) return false
   const message = err.message.toLowerCase()
@@ -161,7 +170,7 @@ serve(async (req) => {
         })
       }
 
-      if (callerRow.role === 'user' && app.college_id !== callerRow.college_id) {
+      if (isOutsideCallerCollege(callerRow, app.college_id)) {
         return new Response(JSON.stringify({ error: 'Not allowed for this college' }), {
           status: 403,
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -336,7 +345,7 @@ serve(async (req) => {
       targetUserId = ins.user_id
     }
 
-    if (callerRow.role === 'user' && collegeId !== callerRow.college_id) {
+    if (isOutsideCallerCollege(callerRow, collegeId)) {
       return new Response(JSON.stringify({ error: 'Not allowed for this college' }), {
         status: 403,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },

@@ -1,12 +1,30 @@
+import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { Receipt } from 'lucide-react'
 import { formatMoney } from '../../utils/programFees'
+import { APPLICATION_FEE_DEFAULT } from '../../utils/applicationFee'
+import { getApplicationFormDefaults } from '../../utils/getApplicationFormDefaults'
 import { listApplicationPayments, paymentKindTitleKey } from '../../utils/applicationPayments'
 
 export default function ApplicationPaymentsCard({ application, isRTL = false, detailsTo }) {
   const { t } = useTranslation()
-  const rows = listApplicationPayments(application)
+  const [askedFee, setAskedFee] = useState(APPLICATION_FEE_DEFAULT)
+
+  useEffect(() => {
+    let cancelled = false
+    getApplicationFormDefaults()
+      .then((cfg) => {
+        const amount = Number(cfg?.application_fee?.amount)
+        if (!cancelled && Number.isFinite(amount) && amount > 0) setAskedFee(amount)
+      })
+      .catch(() => {})
+    return () => {
+      cancelled = true
+    }
+  }, [application?.id])
+
+  const rows = listApplicationPayments(application, askedFee)
   if (rows.length === 0) return null
 
   return (

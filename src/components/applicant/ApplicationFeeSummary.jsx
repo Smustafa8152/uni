@@ -1,5 +1,5 @@
 import { useTranslation } from 'react-i18next'
-import { formatApplicationFee } from '../../utils/applicationFee'
+import { APPLICATION_FEE_CURRENCY, formatApplicationFee } from '../../utils/applicationFee'
 
 /** Paid or unpaid application fee. Hidden when the fee was not required. */
 export default function ApplicationFeeSummary({ application, className = '' }) {
@@ -7,7 +7,7 @@ export default function ApplicationFeeSummary({ application, className = '' }) {
   const status = String(application?.application_fee_status || '')
   if (status !== 'pending' && status !== 'paid') return null
 
-  const amount = formatApplicationFee(application.application_fee_amount, application.application_fee_currency || 'USD')
+  const amount = formatApplicationFee(application.application_fee_amount, APPLICATION_FEE_CURRENCY)
   const paid = status === 'paid'
   const paidOn = application.application_fee_paid_at
     ? new Date(application.application_fee_paid_at).toLocaleString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })

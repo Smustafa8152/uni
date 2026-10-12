@@ -116,7 +116,7 @@ async function listMethods(
   }
   const amount = Number(app.application_fee_amount)
   if (!Number.isFinite(amount) || amount <= 0) return json({ error: 'The application fee amount is not set.' }, 400)
-  const currency = String(app.application_fee_currency || 'USD')
+  const currency = String(app.application_fee_currency || 'GMD')
 
   const data = await myfatoorah('/v2/InitiatePayment', { InvoiceAmount: amount, CurrencyIso: currency })
   const methods = (Array.isArray(data?.PaymentMethods) ? data.PaymentMethods : []).map((row: Record<string, unknown>) => ({
@@ -158,7 +158,7 @@ async function createInvoice(
   const returnUrl = `${origin}/apply/payment-result?application=${app.id}`
   const language = String(body.language || '').toLowerCase().startsWith('ar') ? 'ar' : 'en'
   const name = [app.first_name, app.last_name].filter(Boolean).join(' ').trim() || 'Applicant'
-  const currency = String(app.application_fee_currency || 'USD')
+  const currency = String(app.application_fee_currency || 'GMD')
 
   const data = await myfatoorah('/v2/ExecutePayment', {
     PaymentMethodId: paymentMethodId,
@@ -298,7 +298,7 @@ async function confirmPayment(
         lang: payment.language,
         kind: 'application',
         amount: Number(mailed.application_fee_amount),
-        currency: mailed.application_fee_currency || 'USD',
+        currency: mailed.application_fee_currency || 'GMD',
         method: 'online_payment',
         paidAt: new Date().toISOString(),
         reference: paymentId,

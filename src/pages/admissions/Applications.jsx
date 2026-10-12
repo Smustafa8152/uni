@@ -169,7 +169,12 @@ export default function Applications() {
   const [degreeLevelsSaving, setDegreeLevelsSaving] = useState(false)
   const [degreeLevelsError, setDegreeLevelsError] = useState('')
   const [degreeLevelsSaved, setDegreeLevelsSaved] = useState(false)
-  const [applicationFee, setApplicationFee] = useState({ enabled: false, amount: String(APPLICATION_FEE_DEFAULT) })
+  const [applicationFee, setApplicationFee] = useState({
+    enabled: false,
+    amount: String(APPLICATION_FEE_DEFAULT),
+    myfatoorah: true,
+    bankTransfer: true,
+  })
   const [applicationFeeSaving, setApplicationFeeSaving] = useState(false)
   const [applicationFeeError, setApplicationFeeError] = useState('')
   const [applicationFeeSaved, setApplicationFeeSaved] = useState(false)
@@ -277,7 +282,7 @@ export default function Applications() {
   }, [selectedCollegeId, userRole, authCollegeId, authLoading, universityWide])
 
   const fetchProgramDefaults = useCallback(async () => {
-    if (userRole !== 'admin') return
+    if (userRole !== 'admin' && userRole !== 'user') return
     setProgramDefaultsLoading(true)
     setProgramDefaultsError('')
     try {
@@ -301,7 +306,12 @@ export default function Applications() {
       })
       setActiveDegreeLevels(resolveActiveDegreeLevels(raw.active_degree_levels))
       const fee = readApplicationFeeSettings(data?.onboarding_settings)
-      setApplicationFee({ enabled: fee.enabled, amount: String(fee.amount) })
+      setApplicationFee({
+        enabled: fee.enabled,
+        amount: String(fee.amount),
+        myfatoorah: fee.methods.myfatoorah,
+        bankTransfer: fee.methods.bank_transfer,
+      })
     } catch (e) {
       setProgramDefaultsError(e?.message || t('admissions.applicationsPage.defaultProgramLoadFailed'))
     } finally {
@@ -470,10 +480,15 @@ export default function Applications() {
   }, [userRole, activeDegreeLevels, settingsMeta, t])
 
   const saveApplicationFee = useCallback(async () => {
-    if (userRole !== 'admin') return
+    if (userRole !== 'admin' && userRole !== 'user') return
     const amount = Math.round(Number(applicationFee.amount) * 100) / 100
     if (!Number.isFinite(amount) || amount <= 0) {
       setApplicationFeeError(t('admissions.applicationsPage.applicationFeeInvalid'))
+      setApplicationFeeSaved(false)
+      return
+    }
+    if (!applicationFee.myfatoorah && !applicationFee.bankTransfer) {
+      setApplicationFeeError(t('admissions.applicationsPage.applicationFeeMethodRequired'))
       setApplicationFeeSaved(false)
       return
     }
@@ -486,7 +501,17 @@ export default function Applications() {
         : {}
       const payload = {
         ...currentOnboarding,
-        application_fee: { enabled: Boolean(applicationFee.enabled), amount },
+        application_fee: {
+          ...(currentOnboarding.application_fee && typeof currentOnboarding.application_fee === 'object'
+            ? currentOnboarding.application_fee
+            : {}),
+          enabled: Boolean(applicationFee.enabled),
+          amount,
+          methods: {
+            myfatoorah: Boolean(applicationFee.myfatoorah),
+            bank_transfer: Boolean(applicationFee.bankTransfer),
+          },
+        },
       }
       let res
       if (settingsMeta.id) {
@@ -507,7 +532,12 @@ export default function Applications() {
       }
       if (res.error) throw res.error
       setSettingsMeta({ id: res.data?.id ?? settingsMeta.id ?? null, onboarding_settings: res.data?.onboarding_settings ?? payload })
-      setApplicationFee({ enabled: Boolean(applicationFee.enabled), amount: String(amount) })
+      setApplicationFee({
+        enabled: Boolean(applicationFee.enabled),
+        amount: String(amount),
+        myfatoorah: Boolean(applicationFee.myfatoorah),
+        bankTransfer: Boolean(applicationFee.bankTransfer),
+      })
       setApplicationFeeSaved(true)
       setTimeout(() => setApplicationFeeSaved(false), 2000)
     } catch (e) {
@@ -1591,13 +1621,14 @@ export default function Applications() {
         </div>
       )}
 
-      {userRole === 'admin' && (
+      {(userRole === 'admin' || userRole === 'user') && (
         <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6">
           <div className={`flex flex-col gap-4 ${alignStart}`}>
             <div className="flex items-start justify-between gap-3">
               <div className="min-w-0">
                 <h2 className="text-lg font-bold text-gray-900">{t('admissions.applicationsPage.applicationFeeTitle')}</h2>
                 <p className="text-sm text-gray-600 mt-1">{t('admissions.applicationsPage.applicationFeeHint')}</p>
+                <p className="text-sm text-gray-600 mt-1">{t('admissions.applicationsPage.applicationFeeMethodHint')}</p>
               </div>
               <button
                 type="button"
@@ -1649,6 +1680,30 @@ export default function Applications() {
                   }}
                   className="w-36 rounded-xl border border-gray-200 px-3 py-2.5"
                 />
+              </label>
+              <label className="flex items-center gap-2 rounded-xl border border-gray-200 px-4 py-3 text-sm font-medium text-gray-900">
+                <input
+                  type="checkbox"
+                  checked={applicationFee.myfatoorah}
+                  onChange={(e) => {
+                    setApplicationFeeError('')
+                    setApplicationFeeSaved(false)
+                    setApplicationFee((prev) => ({ ...prev, myfatoorah: e.target.checked }))
+                  }}
+                />
+                <span>{t('admissions.applicationsPage.applicationFeeMyfatoorah')}</span>
+              </label>
+              <label className="flex items-center gap-2 rounded-xl border border-gray-200 px-4 py-3 text-sm font-medium text-gray-900">
+                <input
+                  type="checkbox"
+                  checked={applicationFee.bankTransfer}
+                  onChange={(e) => {
+                    setApplicationFeeError('')
+                    setApplicationFeeSaved(false)
+                    setApplicationFee((prev) => ({ ...prev, bankTransfer: e.target.checked }))
+                  }}
+                />
+                <span>{t('admissions.applicationsPage.applicationFeeBank')}</span>
               </label>
             </div>
           </div>
