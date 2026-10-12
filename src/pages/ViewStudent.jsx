@@ -1,5 +1,5 @@
-import { useState, useEffect } from 'react'
-import { useNavigate, useParams } from 'react-router-dom'
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { useLanguage } from '../contexts/LanguageContext'
 import { supabase, SUPABASE_STORAGE_BUCKET } from '../lib/supabase'
@@ -10,45 +10,46 @@ import CreatePortalAccountModal from '../components/admin/CreatePortalAccountMod
 import { getLocalizedName } from '../utils/localizedName'
 import { getNationalityLabel } from '../utils/nationalities'
 import { getStudentSemesterMilestone, checkFinancePermission, getMilestoneInfo } from '../utils/financePermissions'
+import { getCurrencyCodeFromFinancialSettings } from '../utils/getCollegeSettings'
+import { finalGradePoints, isFinishedSemester } from '../utils/registrationRules'
+import { getApplicantStatus } from '../utils/applicationStatusDisplay'
+import { Badge, Button, ConfirmDialog, EmptyState, Panel, Skeleton, toast as showToast } from '../components/ui'
 import {
+  AlertTriangle,
   ArrowLeft,
-  Edit,
-  GraduationCap,
-  Building2,
-  Mail,
-  Phone,
-  MapPin,
-  User,
+  ArrowRight,
   BookOpen,
-  Calendar,
-  FileText,
-  Heart,
-  AlertCircle,
+  CalendarCheck,
   CheckCircle,
+  ChevronRight,
+  Copy,
   CreditCard,
-  Award,
-  Stethoscope,
-  Paperclip,
+  Edit,
   ExternalLink,
-  MoreVertical,
+  FileText,
+  GraduationCap,
   KeyRound,
-  UserX,
+  LayoutDashboard,
+  Mail,
+  MessageCircle,
+  MoreVertical,
+  Paperclip,
+  Phone,
+  Plus,
+  User,
   UserCheck,
   UserPlus,
+  UserX,
 } from 'lucide-react'
 
 const TABS = [
-  { id: 'overview', labelKey: 'viewStudent.tabs.overview', icon: GraduationCap },
-  { id: 'personal', labelKey: 'viewStudent.tabs.personal', icon: User },
-  { id: 'contact', labelKey: 'viewStudent.tabs.contact', icon: Mail },
-  { id: 'academic', labelKey: 'viewStudent.tabs.academic', icon: BookOpen },
-  { id: 'previous', labelKey: 'viewStudent.tabs.previousEducation', icon: Award },
-  { id: 'identity', labelKey: 'viewStudent.tabs.identity', icon: FileText },
-  { id: 'documents', labelKey: 'viewStudent.tabs.documents', icon: Paperclip },
-  { id: 'requests', labelKey: 'viewStudent.tabs.requests', icon: FileText },
-  { id: 'payments', labelKey: 'viewStudent.tabs.payments', icon: CreditCard },
-  { id: 'emergency', labelKey: 'viewStudent.tabs.emergency', icon: Heart },
-  { id: 'other', labelKey: 'viewStudent.tabs.other', icon: Stethoscope },
+  { id: 'overview', labelKey: 'viewStudent.profile.tabs.overview', icon: LayoutDashboard },
+  { id: 'courses', labelKey: 'viewStudent.profile.tabs.courses', icon: BookOpen },
+  { id: 'attendance', labelKey: 'viewStudent.profile.tabs.attendance', icon: CalendarCheck },
+  { id: 'payments', labelKey: 'viewStudent.profile.tabs.payments', icon: CreditCard },
+  { id: 'application', labelKey: 'viewStudent.profile.tabs.application', icon: FileText },
+  { id: 'documents', labelKey: 'viewStudent.profile.tabs.documents', icon: Paperclip },
+  { id: 'profile', labelKey: 'viewStudent.profile.tabs.profile', icon: User },
 ]
 
 const STUDENT_DOCUMENT_LABELS = {
@@ -64,6 +65,16 @@ const STUDENT_DOCUMENT_LABELS = {
   scholarship_recommendation: 'viewStudent.documents.scholarshipRecommendation',
 }
 
+/** Counted as attended, the same rule the student sees in "My attendance". */
+const ATTENDED = new Set(['present', 'late', 'excused'])
+/** Below this rate a course is flagged on the profile. */
+const LOW_ATTENDANCE = 75
+const CLOSED_REQUEST = new Set(['closed', 'completed', 'resolved', 'rejected', 'cancelled', 'canceled'])
+const VOID_INVOICE = new Set(['cancelled', 'canceled', 'void', 'voided', 'draft', 'refunded'])
+
+const fieldClass =
+  'h-10 rounded-xl border border-[#dde3ef] bg-white px-3 text-sm text-slate-800 outline-none transition-colors focus:border-[#1a3a6b] disabled:bg-slate-50'
+
 function getInitials(student, isRTL) {
   if (!student) return '?'
   const nameForInitials = isRTL ? (student.name_ar || student.name_en) : (student.name_en || student.name_ar)
@@ -73,6 +84,64 @@ function getInitials(student, isRTL) {
   const name = (nameForInitials || '').trim()
   if (name.length >= 2) return name.slice(0, 2).toUpperCase()
   return (first || name.charAt(0) || '?').toUpperCase()
+}
+
+const num = (value) => {
+  const n = typeof value === 'number' ? value : parseFloat(String(value ?? '0'))
+  return Number.isFinite(n) ? n : 0
+}
+
+/**
+ * Invoices that carry money: a semester invoice split into portions has a summary parent
+ * and one child per portion, so only the children count. Cancelled and draft rows never count.
+ */
+function payableInvoices(rows) {
+  const parents = new Set((rows || []).map((r) => r.parent_invoice_id).filter(Boolean))
+  return (rows || []).filter((r) => !parents.has(r.id) && !VOID_INVOICE.has(String(r.status || '').toLowerCase()))
+}
+
+/** Attendance counts for a set of attendance rows. rate is null when nothing was recorded. */
+function attendanceSummary(rows) {
+  const s = { present: 0, late: 0, excused: 0, absent: 0, total: 0, rate: null }
+  for (const r of rows || []) {
+    const status = String(r.status || '').toLowerCase()
+    if (status in s) s[status] += 1
+    s.total += 1
+  }
+  if (s.total > 0) s.rate = Math.round(((rows || []).filter((r) => ATTENDED.has(String(r.status || '').toLowerCase())).length / s.total) * 100)
+  return s
+}
+
+function Field({ label, value, dir }) {
+  return (
+    <div className="min-w-0">
+      <dt className="text-xs font-semibold text-slate-500">{label}</dt>
+      <dd className="mt-0.5 break-words text-sm font-semibold text-slate-800" dir={dir}>
+        {value === null || value === undefined || value === '' ? '—' : value}
+      </dd>
+    </div>
+  )
+}
+
+function FieldGrid({ title, items }) {
+  return (
+    <Panel title={title}>
+      <dl className="grid grid-cols-1 gap-x-6 gap-y-4 sm:grid-cols-2 lg:grid-cols-3">
+        {items.map(([label, value, dir]) => (
+          <Field key={label} label={label} value={value} dir={dir} />
+        ))}
+      </dl>
+    </Panel>
+  )
+}
+
+function Meter({ value, max, tone = 'navy' }) {
+  const pct = max > 0 ? Math.min(100, Math.round((value / max) * 100)) : 0
+  return (
+    <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-[#dde3ef]" aria-hidden="true">
+      <div className={`h-full rounded-full ${tone === 'gold' ? 'bg-[#c8a84b]' : tone === 'warn' ? 'bg-amber-500' : 'bg-[#1a3a6b]'}`} style={{ width: `${pct}%` }} />
+    </div>
+  )
 }
 
 export default function ViewStudent() {
@@ -86,7 +155,15 @@ export default function ViewStudent() {
   const [student, setStudent] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
-  const [activeTab, setActiveTab] = useState('overview')
+  const [searchParams, setSearchParams] = useSearchParams()
+  const requestedTab = searchParams.get('tab')
+  const activeTab = TABS.some((tab) => tab.id === requestedTab) ? requestedTab : 'overview'
+  const setActiveTab = (tabId) => {
+    const next = new URLSearchParams(searchParams)
+    if (tabId === 'overview') next.delete('tab')
+    else next.set('tab', tabId)
+    setSearchParams(next, { replace: true })
+  }
   const [enrollmentEligibility, setEnrollmentEligibility] = useState(null)
   const [activeSemester, setActiveSemester] = useState(null)
   const [studentDocuments, setStudentDocuments] = useState([])
@@ -576,21 +653,236 @@ export default function ViewStudent() {
     }
   }
 
+
+  // ---- the student's record across the system (courses, attendance, lessons, money, application) ----
+  const [record, setRecord] = useState({ loading: true })
+  const [confirmStatus, setConfirmStatus] = useState(null)
+
+  const loadRecord = useCallback(async () => {
+    if (!student?.id) return
+    const sid = student.id
+    const safe = (p) => p.then((r) => (r.error ? { data: null, error: r.error } : r)).catch((error) => ({ data: null, error }))
+    const [enr, att, inv, pay, prog, plan, settings, apps] = await Promise.all([
+      safe(
+        supabase
+          .from('enrollments')
+          .select(
+            `id, status, grade, numeric_grade, grade_points, semester_id, class_id, enrollment_date,
+             semesters ( id, name_en, name_ar, code, start_date, end_date, status ),
+             classes ( id, code, section, subject_id, subjects ( id, code, name_en, name_ar, credit_hours ), instructors ( id, name_en, name_ar ) ),
+             grade_components ( status, gpa_points, letter_grade, numeric_grade )`
+          )
+          .eq('student_id', sid)
+      ),
+      safe(supabase.from('attendance').select('id, status, date, class_id, session_id').eq('student_id', sid).order('date', { ascending: false }).limit(1000)),
+      safe(
+        supabase
+          .from('invoices')
+          .select('id, invoice_number, invoice_type, status, total_amount, paid_amount, pending_amount, due_date, invoice_date, parent_invoice_id, semester_id')
+          .eq('student_id', sid)
+      ),
+      safe(
+        supabase
+          .from('payments')
+          .select('id, payment_number, payment_date, payment_method, amount, status, invoices ( invoice_number )')
+          .eq('student_id', sid)
+          .order('payment_date', { ascending: false })
+          .limit(50)
+      ),
+      safe(supabase.from('class_lesson_progress').select('lesson_id, class_id, status, progress_percent, last_activity_at').eq('student_id', sid)),
+      safe(
+        supabase
+          .from('student_major_sheets')
+          .select('is_active, major_sheets ( id, total_credits_required )')
+          .eq('student_id', sid)
+          .eq('is_active', true)
+          .maybeSingle()
+      ),
+      safe(supabase.from('university_settings').select('financial_settings').order('updated_at', { ascending: false }).limit(1).maybeSingle()),
+      student.email
+        ? safe(
+            supabase
+              .from('applications')
+              .select('id, application_number, status_code, created_at, college_id, major_id, semester_id')
+              .ilike('email', student.email.trim())
+              .order('created_at', { ascending: false })
+              .limit(1)
+          )
+        : Promise.resolve({ data: [] }),
+    ])
+
+    // Required hours: the assigned degree plan, else the active plan of the major.
+    let planRow = Array.isArray(plan.data?.major_sheets) ? plan.data.major_sheets[0] : plan.data?.major_sheets
+    if (!planRow && student.major_id) {
+      const byMajor = await safe(
+        supabase.from('major_sheets').select('id, total_credits_required').eq('major_id', student.major_id).eq('is_active', true).order('created_at', { ascending: false }).limit(1).maybeSingle()
+      )
+      planRow = byMajor.data || null
+    }
+
+    // Lessons of the classes the student is registered in now.
+    const enrolledClassIds = [...new Set((enr.data || []).filter((r) => r.status === 'enrolled').map((r) => r.class_id).filter(Boolean))]
+    let lessons = []
+    if (enrolledClassIds.length) {
+      const res = await safe(supabase.from('class_lessons').select('id, class_id, status').in('class_id', enrolledClassIds))
+      lessons = res.data || []
+    }
+
+    // Applications point at majors and colleges twice (first and second choice), so names are read separately.
+    let application = (apps.data || [])[0] || null
+    if (application) {
+      const named = async (table, rowId) =>
+        rowId ? (await safe(supabase.from(table).select('name_en, name_ar').eq('id', rowId).maybeSingle())).data || null : null
+      const [majors, colleges, semesters] = await Promise.all([
+        named('majors', application.major_id),
+        named('colleges', application.college_id),
+        named('semesters', application.semester_id),
+      ])
+      application = { ...application, majors, colleges, semesters }
+    }
+    const codes = [student.current_status_code, application?.status_code].filter(Boolean)
+    let statusNames = {}
+    if (codes.length) {
+      const res = await safe(supabase.from('student_status_codes').select('code, name_en, name_ar').in('code', codes))
+      statusNames = Object.fromEntries((res.data || []).map((r) => [r.code, r]))
+    }
+
+    setRecord({
+      loading: false,
+      enrollments: enr.data || [],
+      attendance: att.data || [],
+      invoices: inv.data || [],
+      payments: pay.data || [],
+      progress: prog.data || [],
+      lessons,
+      planCredits: num(planRow?.total_credits_required) || null,
+      currency: getCurrencyCodeFromFinancialSettings(settings.data?.financial_settings) || null,
+      application,
+      statusNames,
+      failed: [enr, att, inv, pay].filter((r) => r.error).length,
+    })
+  }, [student])
+
+  useEffect(() => {
+    loadRecord()
+  }, [loadRecord])
+
+  /** Everything the cards and tabs show, worked out once from the loaded record. */
+  const facts = useMemo(() => {
+    if (record.loading) return null
+    const rows = (record.enrollments || []).map((row) => {
+      const credits = num(row.classes?.subjects?.credit_hours)
+      const points = finalGradePoints(row)
+      const component = Array.isArray(row.grade_components) ? row.grade_components[0] : row.grade_components
+      return { ...row, credits, points, letter: component?.letter_grade || row.grade || null }
+    })
+
+    // Cumulative GPA over courses with a final grade (an F counts as 0 points).
+    let qualityPoints = 0
+    let gradedCredits = 0
+    let earnedCredits = 0
+    let gradedCourses = 0
+    for (const r of rows) {
+      if (r.points == null) continue
+      gradedCourses += 1
+      if (r.credits > 0) {
+        qualityPoints += r.points * r.credits
+        gradedCredits += r.credits
+      }
+      if (r.points > 0) earnedCredits += r.credits
+    }
+    const gpa = gradedCredits > 0 ? qualityPoints / gradedCredits : null
+
+    // Semesters, newest first, each with its own GPA.
+    const groups = new Map()
+    for (const r of rows) {
+      const key = r.semester_id || 'none'
+      if (!groups.has(key)) groups.set(key, { key, semester: r.semesters || null, rows: [] })
+      groups.get(key).rows.push(r)
+    }
+    const semesters = [...groups.values()]
+      .map((g) => {
+        let qp = 0
+        let cr = 0
+        for (const r of g.rows) if (r.points != null && r.credits > 0) {
+          qp += r.points * r.credits
+          cr += r.credits
+        }
+        return { ...g, gpa: cr > 0 ? qp / cr : null, credits: g.rows.reduce((s, r) => s + r.credits, 0) }
+      })
+      .sort((a, b) => String(b.semester?.start_date || '').localeCompare(String(a.semester?.start_date || '')))
+
+    // Current semester: the latest one that is still running and has registered courses.
+    const current =
+      semesters.find((g) => g.semester && !isFinishedSemester(g.semester) && g.rows.some((r) => r.status === 'enrolled')) || null
+    const currentRows = current ? current.rows.filter((r) => r.status === 'enrolled') : []
+    const currentClassIds = new Set(currentRows.map((r) => r.class_id))
+
+    // Attendance, per class and for the current semester.
+    const attendanceByClass = new Map()
+    for (const a of record.attendance || []) {
+      if (!attendanceByClass.has(a.class_id)) attendanceByClass.set(a.class_id, [])
+      attendanceByClass.get(a.class_id).push(a)
+    }
+    const attendanceRows = current ? (record.attendance || []).filter((a) => currentClassIds.has(a.class_id)) : record.attendance || []
+    const attendance = attendanceSummary(attendanceRows)
+
+    // Lessons released to the student, and how many they finished.
+    const doneLessons = new Set((record.progress || []).filter((p) => String(p.status) === 'completed').map((p) => p.lesson_id))
+    const lessonsByClass = new Map()
+    for (const l of record.lessons || []) {
+      if (String(l.status || '').toLowerCase() === 'draft') continue
+      const entry = lessonsByClass.get(l.class_id) || { total: 0, done: 0 }
+      entry.total += 1
+      if (doneLessons.has(l.id)) entry.done += 1
+      lessonsByClass.set(l.class_id, entry)
+    }
+
+    // Money.
+    const payable = payableInvoices(record.invoices)
+    const today = new Date().toISOString().slice(0, 10)
+    const billed = payable.reduce((s, r) => s + num(r.total_amount), 0)
+    const paid = payable.reduce((s, r) => s + num(r.paid_amount), 0)
+    const due = payable.reduce((s, r) => s + num(r.pending_amount), 0)
+    const overdue = payable.filter((r) => num(r.pending_amount) > 0 && r.due_date && r.due_date < today)
+
+    return {
+      rows,
+      gpa,
+      gradedCourses,
+      earnedCredits,
+      semesters,
+      current,
+      currentRows,
+      attendance,
+      attendanceByClass,
+      lessonsByClass,
+      money: { invoices: payable.length, billed, paid, due, overdue },
+    }
+  }, [record])
+
   if (loading) {
     return (
-      <div className="flex items-center justify-center min-h-[60vh]">
-        <div className="animate-spin rounded-full h-12 w-12 border-2 border-primary-500 border-t-transparent" />
+      <div className="space-y-5">
+        <Skeleton className="h-6 w-40" />
+        <Skeleton className="h-40 w-full rounded-2xl" />
+        <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+          {[0, 1, 2, 3].map((i) => (
+            <Skeleton key={i} className="h-24 rounded-2xl" />
+          ))}
+        </div>
       </div>
     )
   }
 
   if (error && !student) {
     return (
-      <div className="space-y-6">
-        <button onClick={() => navigate(-1)} className="flex items-center gap-2 text-gray-600 hover:text-gray-900">
-          <ArrowLeft className="w-5 h-5" /> <span>{t('common.back')}</span>
+      <div className="space-y-5">
+        <button type="button" onClick={() => navigate('/students')} className="inline-flex items-center gap-1.5 text-sm font-semibold text-slate-500 hover:text-[#1a3a6b]">
+          {isArabicLayout ? <ArrowRight className="h-4 w-4" /> : <ArrowLeft className="h-4 w-4" />}
+          {t('viewStudent.profile.allStudents')}
         </button>
-        <div className="bg-red-50 border border-red-200 rounded-xl p-4 text-red-700">{error}</div>
+        <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-red-700">{error}</div>
       </div>
     )
   }
@@ -646,33 +938,127 @@ export default function ViewStudent() {
     return map[n] || String(value).replace(/_/g, ' ')
   }
 
+  // ---- presentation helpers ----
+  const lang = isArabicLayout ? 'ar' : 'en'
+  const fmtDate = (value) => {
+    if (!value) return '—'
+    const d = new Date(value)
+    if (Number.isNaN(d.getTime())) return String(value)
+    return d.toLocaleDateString(lang === 'ar' ? 'ar-u-nu-latn' : 'en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
+  }
+  const fmtMoney = (value) => {
+    const amount = num(value).toLocaleString(lang === 'ar' ? 'ar-u-nu-latn' : 'en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+    return record.currency ? `${amount} ${record.currency}` : amount
+  }
+  const nameOf = (row) => (row ? getLocalizedName(row, isArabicLayout) || row.name_en || row.name_ar || '' : '')
+  const statusName = (code) => {
+    const row = record.statusNames?.[code]
+    return row ? (isArabicLayout ? row.name_ar || row.name_en : row.name_en || row.name_ar) : code
+  }
+  const phoneNumber = student?.mobile_phone || student?.phone || ''
+  const whatsappDigits = String(phoneNumber).replace(/\D/g, '')
+  const copyStudentNumber = () => {
+    try {
+      navigator.clipboard.writeText(String(student?.student_id || '')).then(() => showToast(t('viewStudent.profile.numberCopied')), () => {})
+    } catch (_) {
+      /* clipboard not available */
+    }
+  }
+
+  const docsInReview = studentDocuments.filter((d) => {
+    const expired = d.expiry_date ? new Date(d.expiry_date) < new Date(new Date().toDateString()) : false
+    return expired || !(d.status === 'verified' || d.verified_at)
+  }).length
+  const openRequests = studentRequests.filter((r) => !CLOSED_REQUEST.has(String(r.status || '').toLowerCase())).length
+  const lowAttendance = facts
+    ? facts.currentRows.filter((r) => {
+        const s = attendanceSummary(facts.attendanceByClass.get(r.class_id))
+        return s.total >= 3 && s.rate != null && s.rate < LOW_ATTENDANCE
+      })
+    : []
+
+  /** What staff should look at first. Each line says what is wrong and where to fix it. */
+  const attention = []
+  if (enrollmentEligibility && !enrollmentEligibility.allowed) {
+    attention.push({ tone: 'err', text: `${t('viewStudent.profile.attention.cannotRegister')} ${enrollmentEligibility.reasons.join(' · ')}`, tab: 'payments' })
+  }
+  if (facts?.money.overdue.length) {
+    attention.push({ tone: 'err', text: t('viewStudent.profile.attention.overdue', { count: facts.money.overdue.length, amount: fmtMoney(facts.money.overdue.reduce((s, r) => s + num(r.pending_amount), 0)) }), tab: 'payments' })
+  } else if (facts?.money.due > 0) {
+    attention.push({ tone: 'warn', text: t('viewStudent.profile.attention.balance', { amount: fmtMoney(facts.money.due) }), tab: 'payments' })
+  }
+  for (const r of lowAttendance) {
+    const s = attendanceSummary(facts.attendanceByClass.get(r.class_id))
+    attention.push({ tone: 'warn', text: t('viewStudent.profile.attention.lowAttendance', { code: r.classes?.subjects?.code || r.classes?.code, rate: s.rate }), tab: 'attendance' })
+  }
+  if (docsInReview > 0) attention.push({ tone: 'warn', text: t('viewStudent.profile.attention.documents', { count: docsInReview }), tab: 'documents' })
+  if (openRequests > 0) attention.push({ tone: 'info', text: t('viewStudent.profile.attention.requests', { count: openRequests }), tab: 'documents' })
+  if (student && !student.user_id && student.status !== 'inactive') attention.push({ tone: 'info', text: t('viewStudent.profile.attention.noLogin'), tab: null })
+
+  const toneClass = { err: 'border-red-200 bg-red-50 text-red-800', warn: 'border-amber-200 bg-amber-50 text-amber-900', info: 'border-[#dde3ef] bg-[#eef2f9] text-[#1a3a6b]' }
+
+  const gradeTone = (r) => (r.points == null ? 'neutral' : r.points > 0 ? 'ok' : 'err')
+  const courseTitle = (r) => (
+    <span className="min-w-0">
+      <span className="font-bold text-[#1a3a6b]" dir="ltr">
+        {r.classes?.subjects?.code || r.classes?.code}
+      </span>{' '}
+      <span className="text-slate-800">{nameOf(r.classes?.subjects)}</span>
+    </span>
+  )
+
+  const kpis = facts
+    ? [
+        {
+          label: t('viewStudent.profile.kpi.gpa'),
+          value: facts.gpa != null ? facts.gpa.toFixed(2) : '—',
+          hint: facts.gpa != null ? t('viewStudent.profile.kpi.gpaFrom', { count: facts.gradedCourses }) : t('viewStudent.profile.kpi.noGrades'),
+        },
+        {
+          label: t('viewStudent.profile.kpi.credits'),
+          value: record.planCredits ? `${facts.earnedCredits} / ${record.planCredits}` : String(facts.earnedCredits),
+          hint: record.planCredits ? t('viewStudent.profile.kpi.creditsLeft', { count: Math.max(0, record.planCredits - facts.earnedCredits) }) : t('viewStudent.profile.kpi.noPlan'),
+          meter: record.planCredits ? [facts.earnedCredits, record.planCredits] : null,
+        },
+        {
+          label: t('viewStudent.profile.kpi.attendance'),
+          value: facts.attendance.rate != null ? `${facts.attendance.rate}%` : '—',
+          hint: facts.attendance.total ? t('viewStudent.profile.kpi.sessions', { count: facts.attendance.total }) : t('viewStudent.profile.kpi.noSessions'),
+          meter: facts.attendance.rate != null ? [facts.attendance.rate, 100] : null,
+          tone: facts.attendance.rate != null && facts.attendance.rate < LOW_ATTENDANCE ? 'warn' : 'navy',
+        },
+        {
+          label: t('viewStudent.profile.kpi.balance'),
+          value: facts.money.invoices ? fmtMoney(facts.money.due) : '—',
+          hint: facts.money.invoices ? t('viewStudent.profile.kpi.paidOf', { paid: fmtMoney(facts.money.paid), billed: fmtMoney(facts.money.billed) }) : t('viewStudent.profile.kpi.noInvoices'),
+          meter: facts.money.billed > 0 ? [facts.money.paid, facts.money.billed] : null,
+          tone: 'gold',
+        },
+      ]
+    : []
+
+  const application = record.application
+  const applicantSees = application ? t(getApplicantStatus(application.status_code).labelKey) : ''
+
   return (
-    <div className="space-y-0">
-      {/* Back + Edit */}
-      <div className={`flex items-center justify-between mb-4 ${isRTL ? 'flex-row-reverse' : ''}`}>
-        <button onClick={() => navigate(-1)} className="flex items-center gap-2 text-gray-600 hover:text-gray-900">
-          <ArrowLeft className="w-5 h-5" /> <span>{t('common.back')}</span>
+    <div className="space-y-5">
+      {/* Back and actions */}
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <button type="button" onClick={() => navigate('/students')} className="inline-flex items-center gap-1.5 text-sm font-semibold text-slate-500 hover:text-[#1a3a6b]">
+          {isArabicLayout ? <ArrowRight className="h-4 w-4" /> : <ArrowLeft className="h-4 w-4" />}
+          {t('viewStudent.profile.allStudents')}
         </button>
-        <div className={`flex items-center gap-2 ${isRTL ? 'flex-row-reverse' : ''}`}>
-          {canManageThisStudent && (
+        <div className="flex items-center gap-2">
+          {canManageThisStudent ? (
             <div className="relative">
-              <button
-                type="button"
-                onClick={() => setAdminMenuOpen((v) => !v)}
-                className="flex items-center gap-2 px-3 py-2 rounded-xl border border-gray-200 text-gray-700 hover:bg-gray-50"
-                title={t('instructors.moreActions')}
-              >
-                <MoreVertical className="w-4 h-4" />
-              </button>
-              {adminMenuOpen && (
+              <Button variant="quiet" icon={MoreVertical} onClick={() => setAdminMenuOpen((v) => !v)} aria-label={t('instructors.moreActions')}>
+                <span className="hidden sm:inline">{t('instructors.moreActions')}</span>
+              </Button>
+              {adminMenuOpen ? (
                 <>
                   <div className="fixed inset-0 z-10" onClick={() => setAdminMenuOpen(false)} />
-                  <div
-                    className={`absolute top-full mt-1 z-20 w-56 rounded-xl border border-gray-200 bg-white py-1 shadow-lg ${
-                      isArabicLayout ? 'left-0' : 'right-0'
-                    }`}
-                  >
-                    {student?.status !== 'inactive' && (
+                  <div className="absolute end-0 top-full z-20 mt-1 w-60 rounded-xl border border-[#dde3ef] bg-white py-1 shadow-lg">
+                    {student?.status !== 'inactive' ? (
                       <>
                         {student?.user_id ? (
                           <button
@@ -682,9 +1068,7 @@ export default function ViewStudent() {
                               setPwdError('')
                               setAdminMenuOpen(false)
                             }}
-                            className={`flex w-full items-center gap-2 px-3 py-2 text-sm text-gray-700 hover:bg-gray-100 ${
-                              isArabicLayout ? 'flex-row-reverse' : ''
-                            }`}
+                            className="flex w-full items-center gap-2 px-3 py-2 text-start text-sm text-slate-700 hover:bg-slate-50"
                           >
                             <KeyRound className="h-4 w-4 shrink-0" />
                             {t('students.resetPassword')}
@@ -693,18 +1077,14 @@ export default function ViewStudent() {
                           <button
                             type="button"
                             onClick={() => {
+                              setAdminMenuOpen(false)
                               if (!student?.email?.trim()) {
-                                setToast(`ERR::${t('adminAccount.noEmailForAccount')}`)
-                                setAdminMenuOpen(false)
-                                setTimeout(() => setToast(''), 6000)
+                                showToast(t('adminAccount.noEmailForAccount'), 'err')
                                 return
                               }
                               setLinkPortalModalOpen(true)
-                              setAdminMenuOpen(false)
                             }}
-                            className={`flex w-full items-center gap-2 px-3 py-2 text-sm text-gray-700 hover:bg-gray-100 ${
-                              isArabicLayout ? 'flex-row-reverse' : ''
-                            }`}
+                            className="flex w-full items-center gap-2 px-3 py-2 text-start text-sm text-slate-700 hover:bg-slate-50"
                           >
                             <UserPlus className="h-4 w-4 shrink-0" />
                             {t('students.createPortalLogin')}
@@ -713,32 +1093,23 @@ export default function ViewStudent() {
                         <button
                           type="button"
                           onClick={() => {
-                            if (window.confirm(t('students.confirmDeactivate'))) {
-                              setStudentStatus('inactive')
-                            }
                             setAdminMenuOpen(false)
+                            setConfirmStatus('inactive')
                           }}
-                          className={`flex w-full items-center gap-2 px-3 py-2 text-sm text-amber-800 hover:bg-amber-50 ${
-                            isArabicLayout ? 'flex-row-reverse' : ''
-                          }`}
+                          className="flex w-full items-center gap-2 px-3 py-2 text-start text-sm text-amber-800 hover:bg-amber-50"
                         >
                           <UserX className="h-4 w-4 shrink-0" />
                           {t('students.deactivate')}
                         </button>
                       </>
-                    )}
-                    {student?.status === 'inactive' && (
+                    ) : (
                       <button
                         type="button"
                         onClick={() => {
-                          if (window.confirm(t('students.confirmReactivate'))) {
-                            setStudentStatus('active')
-                          }
                           setAdminMenuOpen(false)
+                          setConfirmStatus('active')
                         }}
-                        className={`flex w-full items-center gap-2 px-3 py-2 text-sm text-emerald-800 hover:bg-emerald-50 ${
-                          isArabicLayout ? 'flex-row-reverse' : ''
-                        }`}
+                        className="flex w-full items-center gap-2 px-3 py-2 text-start text-sm text-emerald-800 hover:bg-emerald-50"
                       >
                         <UserCheck className="h-4 w-4 shrink-0" />
                         {t('students.reactivate')}
@@ -746,570 +1117,677 @@ export default function ViewStudent() {
                     )}
                   </div>
                 </>
-              )}
+              ) : null}
             </div>
-          )}
-          <button
-            onClick={() => navigate(`/students/${id}/edit`)}
-            className="flex items-center gap-2 bg-primary-600 text-white px-4 py-2 rounded-xl hover:bg-primary-700 shadow-md"
-          >
-            <Edit className="w-4 h-4" /> <span>{t('common.edit')}</span>
-          </button>
+          ) : null}
+          <Button icon={Edit} onClick={() => navigate(`/students/${id}/edit`)}>
+            {t('common.edit')}
+          </Button>
         </div>
       </div>
 
-      {toast && (
+      {toast ? (
         <div
-          className={`mb-4 rounded-xl border px-4 py-3 text-sm ${
-            toast.startsWith('ERR::')
-              ? 'border-red-200 bg-red-50 text-red-900'
-              : 'border-emerald-200 bg-emerald-50 text-emerald-900'
+          className={`rounded-xl border px-4 py-3 text-sm ${
+            toast.startsWith('ERR::') ? 'border-red-200 bg-red-50 text-red-900' : 'border-emerald-200 bg-emerald-50 text-emerald-900'
           }`}
         >
           {toast.startsWith('ERR::') ? toast.slice(5) : toast}
         </div>
-      )}
+      ) : null}
 
-      {/* Profile header: compact avatar + name + major (no banner) */}
-      <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6 mb-6">
-        <div
-          dir={isArabicLayout ? 'rtl' : 'ltr'}
-          className="flex flex-col sm:flex-row sm:items-center gap-4"
-        >
-          <div className="w-20 h-20 rounded-xl bg-gradient-to-br from-primary-500 to-primary-700 flex items-center justify-center text-xl font-bold text-white shadow-md flex-shrink-0">
+      {/* Who the student is */}
+      <div className="rounded-2xl border border-[#dde3ef] bg-white p-5 sm:p-6">
+        <div className="flex flex-col gap-5 sm:flex-row sm:items-start">
+          <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-2xl bg-[#1a3a6b] text-xl font-extrabold text-white sm:h-20 sm:w-20 sm:text-2xl">
             {getInitials(student, isRTL)}
           </div>
-          <div className={`min-w-0 ${isArabicLayout ? 'text-right' : 'text-left'}`}>
-            {secondaryDisplayName && (
-              <p className={`text-base text-gray-600 ${isArabicLayout ? 'font-arabic' : ''}`}>{secondaryDisplayName}</p>
-            )}
-            <h1 className="text-xl sm:text-2xl font-bold text-gray-900 mt-0.5">{primaryDisplayName}</h1>
-            <p className="mt-1 text-primary-600 font-medium border-b-2 border-amber-400 pb-0.5 inline-block">
+          <div className="min-w-0 flex-1">
+            <div className="flex flex-wrap items-center gap-2">
+              <Badge tone={student?.status === 'active' ? 'ok' : 'neutral'}>{translateStudentStatusValue(student?.status)}</Badge>
+              {student?.current_status_code ? <Badge tone="info">{statusName(student.current_status_code)}</Badge> : null}
+            </div>
+            <h1 className="mt-2 break-words text-2xl font-extrabold tracking-tight text-[#1a3a6b] sm:text-[28px]">{primaryDisplayName}</h1>
+            {secondaryDisplayName && secondaryDisplayName.trim() !== String(primaryDisplayName || '').trim() ? <p className="text-sm text-slate-500">{secondaryDisplayName}</p> : null}
+            <p className="mt-1.5 text-sm font-semibold text-slate-700">
               {majorName}
+              <span className="text-slate-400"> · </span>
+              {collegeName}
             </p>
+            <div className="mt-3 flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={copyStudentNumber}
+                title={t('viewStudent.profile.copyNumber')}
+                className="inline-flex items-center gap-1.5 rounded-lg bg-[#eef2f9] px-2.5 py-1.5 font-mono text-sm font-bold text-[#1a3a6b] hover:bg-[#dde3ef]"
+              >
+                <span dir="ltr">{student?.student_id || '—'}</span>
+                <Copy className="h-3.5 w-3.5" aria-hidden="true" />
+              </button>
+              {student?.email ? (
+                <a href={`mailto:${student.email}`} className="inline-flex min-w-0 items-center gap-1.5 rounded-lg border border-[#dde3ef] px-2.5 py-1.5 text-sm text-slate-700 hover:bg-slate-50">
+                  <Mail className="h-4 w-4 shrink-0 text-slate-400" />
+                  <span dir="ltr" className="truncate">
+                    {student.email}
+                  </span>
+                </a>
+              ) : null}
+              {phoneNumber ? (
+                <a href={`tel:${phoneNumber}`} className="inline-flex items-center gap-1.5 rounded-lg border border-[#dde3ef] px-2.5 py-1.5 text-sm text-slate-700 hover:bg-slate-50">
+                  <Phone className="h-4 w-4 shrink-0 text-slate-400" />
+                  <span dir="ltr">{phoneNumber}</span>
+                </a>
+              ) : null}
+              {whatsappDigits.length >= 8 ? (
+                <a
+                  href={`https://wa.me/${whatsappDigits}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-200 px-2.5 py-1.5 text-sm font-semibold text-emerald-700 hover:bg-emerald-50"
+                >
+                  <MessageCircle className="h-4 w-4" />
+                  WhatsApp
+                </a>
+              ) : null}
+            </div>
           </div>
+          <dl className="grid shrink-0 grid-cols-2 gap-x-6 gap-y-3 border-t border-[#dde3ef] pt-4 sm:block sm:space-y-3 sm:border-0 sm:pt-0 sm:text-end">
+            <Field label={t('viewStudent.profile.enrolledSince')} value={fmtDate(student?.enrollment_date)} />
+            <Field label={t('viewStudent.studyType')} value={translateStudyType(student?.study_type)} />
+          </dl>
         </div>
       </div>
 
-      {/* Contact & affiliation card */}
-      <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6 max-w-4xl mx-auto">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 max-w-2xl mx-auto">
-            <div className="space-y-4">
-              <div className="flex items-center gap-3 text-gray-700">
-                <Building2 className="w-5 h-5 text-primary-500 flex-shrink-0" />
-                <div>
-                  <p className="text-xs font-medium text-gray-500 uppercase">{t('viewStudent.college')}</p>
-                  <p className="font-medium">{collegeName}</p>
+      {/* The four numbers that tell how the student is doing */}
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+        {record.loading
+          ? [0, 1, 2, 3].map((i) => <Skeleton key={i} className="h-[104px] rounded-2xl" />)
+          : kpis.map((k) => (
+              <div key={k.label} className="rounded-2xl border border-[#dde3ef] bg-white p-4">
+                <div className="text-xs font-semibold text-slate-500">{k.label}</div>
+                <div className="mt-1 text-xl font-extrabold tabular-nums text-[#1a3a6b] sm:text-2xl" dir="ltr" style={{ textAlign: 'start' }}>
+                  {k.value}
                 </div>
+                {k.meter ? <Meter value={k.meter[0]} max={k.meter[1]} tone={k.tone} /> : null}
+                <div className="mt-1.5 text-xs text-slate-500">{k.hint}</div>
               </div>
-              <div className="flex items-center gap-3 text-gray-700">
-                <Mail className="w-5 h-5 text-primary-500 flex-shrink-0" />
-                <div>
-                  <p className="text-xs font-medium text-gray-500 uppercase">{t('viewStudent.email')}</p>
-                  <p className="font-medium break-all">{student?.email || '—'}</p>
-                </div>
-              </div>
-              <div className="flex items-center gap-3 text-gray-700">
-                <MapPin className="w-5 h-5 text-primary-500 flex-shrink-0" />
-                <div>
-                  <p className="text-xs font-medium text-gray-500 uppercase">{t('viewStudent.address')}</p>
-                  <p className="font-medium">{student?.address || student?.city || '—'}</p>
-                </div>
-              </div>
-            </div>
-            <div className="space-y-4">
-              <div className="flex items-center gap-3 text-gray-700">
-                <BookOpen className="w-5 h-5 text-primary-500 flex-shrink-0" />
-                <div>
-                  <p className="text-xs font-medium text-gray-500 uppercase">{t('viewStudent.major')}</p>
-                  <p className="font-medium">{majorName}</p>
-                </div>
-              </div>
-              <div className="flex items-center gap-3 text-gray-700">
-                <Phone className="w-5 h-5 text-primary-500 flex-shrink-0" />
-                <div>
-                  <p className="text-xs font-medium text-gray-500 uppercase">{t('viewStudent.phone')}</p>
-                  <p className="font-medium">{student?.phone || student?.mobile_phone || '—'}</p>
-                </div>
-              </div>
-              <div className="flex items-center gap-3 text-gray-700">
-                <Calendar className="w-5 h-5 text-primary-500 flex-shrink-0" />
-                <div>
-                  <p className="text-xs font-medium text-gray-500 uppercase">{t('viewStudent.enrollmentDate')}</p>
-                  <p className="font-medium">{student?.enrollment_date || '—'}</p>
-                </div>
-              </div>
-            </div>
-          </div>
-          <div className="mt-4 pt-4 border-t border-gray-100 flex items-center justify-between flex-wrap gap-2">
-            <span className="text-sm text-gray-500">{t('viewStudent.studentId')}: <strong className="text-gray-800">{student?.student_id || '—'}</strong></span>
-            <span className={`inline-flex items-center px-3 py-1 rounded-full text-sm font-medium ${student?.status === 'active' ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-700'}`}>
-              {student?.status === 'active' ? t('common.active') : (student?.status || '—')}
-            </span>
-          </div>
-        </div>
+            ))}
+      </div>
 
-        {/* Spacer / divider between contact card and tabs */}
-        <div className="mt-8 pt-6 border-t border-gray-200">
-          <p className="text-xs font-medium text-gray-400 uppercase tracking-wider mb-4">{t('viewStudent.tabsLabel', 'Profile sections')}</p>
+      {/* What needs attention */}
+      {!record.loading && attention.length > 0 ? (
+        <div className="space-y-2">
+          {attention.map((a, i) => (
+            <div key={i} className={`flex flex-wrap items-center justify-between gap-2 rounded-xl border px-4 py-2.5 text-sm ${toneClass[a.tone]}`}>
+              <span className="flex min-w-0 items-start gap-2">
+                <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
+                <span>{a.text}</span>
+              </span>
+              {a.tab ? (
+                <button type="button" onClick={() => setActiveTab(a.tab)} className="inline-flex items-center gap-1 text-xs font-bold underline-offset-2 hover:underline">
+                  {t('viewStudent.profile.open')}
+                  <ChevronRight className="h-3.5 w-3.5 rtl:rotate-180" />
+                </button>
+              ) : canManageThisStudent ? (
+                <button type="button" onClick={() => setLinkPortalModalOpen(true)} className="inline-flex items-center gap-1 text-xs font-bold underline-offset-2 hover:underline">
+                  {t('students.createPortalLogin')}
+                </button>
+              ) : null}
+            </div>
+          ))}
         </div>
+      ) : null}
+      {!record.loading && record.failed > 0 ? <p className="text-xs text-amber-800">{t('viewStudent.profile.partial')}</p> : null}
 
-        {/* Tabs */}
-        <div className="flex flex-wrap gap-1 border-b border-gray-200 overflow-x-auto">
+      {/* Tabs */}
+      <div className="overflow-x-auto rounded-2xl border border-[#dde3ef] bg-white p-1.5" role="tablist">
+        <div className="flex min-w-max gap-1">
           {TABS.map((tab) => {
+            const selected = activeTab === tab.id
             const TabIcon = tab.icon
             return (
-            <button
-              key={tab.id}
-              onClick={() => setActiveTab(tab.id)}
-              className={`flex items-center gap-2 px-4 py-3 text-sm font-medium rounded-t-lg transition-colors ${
-                activeTab === tab.id
-                  ? 'bg-primary-600 text-white'
-                  : 'text-gray-600 hover:bg-gray-100'
-              }`}
-            >
-              <TabIcon className="w-4 h-4" />
-              {t(tab.labelKey)}
-            </button>
-          )})}
+              <button
+                key={tab.id}
+                type="button"
+                role="tab"
+                aria-selected={selected}
+                onClick={(e) => {
+                  setActiveTab(tab.id)
+                  e.currentTarget.scrollIntoView({ inline: 'nearest', block: 'nearest' })
+                }}
+                className={`inline-flex items-center gap-2 rounded-xl px-3.5 py-2 text-sm font-bold transition-colors ${
+                  selected ? 'bg-[#1a3a6b] text-white' : 'text-slate-600 hover:bg-[#eef2f9] hover:text-[#1a3a6b]'
+                }`}
+              >
+                <TabIcon className="h-4 w-4" aria-hidden="true" />
+                {t(tab.labelKey)}
+              </button>
+            )
+          })}
         </div>
+      </div>
 
-        {/* Tab content */}
-        <div className="mt-6 bg-white rounded-2xl shadow-sm border border-gray-200 p-6">
-          {activeTab === 'overview' && (
-            <>
-              <h2 className="text-lg font-bold text-gray-900 mb-4 flex items-center gap-2">
-                <span className="w-1 h-6 bg-amber-400 rounded-full" />
-                {t('viewStudent.academicOverview')}
-              </h2>
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
-                <div className="bg-primary-100 text-primary-800 rounded-lg px-3 py-2.5 text-center border border-primary-200">
-                  <p className="text-base font-semibold">{student?.gpa != null ? Number(student.gpa).toFixed(2) : (student?.high_school_gpa != null ? Number(student.high_school_gpa).toFixed(2) : '—')}</p>
-                  <p className="text-xs text-primary-600 mt-0.5">{t('viewStudent.gpa')}</p>
+      {/* Overview */}
+      {activeTab === 'overview' ? (
+        <div className="grid items-start gap-5 lg:grid-cols-3">
+          <div className="space-y-5 lg:col-span-2">
+            <Panel
+              flush
+              title={facts?.current ? `${t('viewStudent.profile.thisSemester')} · ${nameOf(facts.current.semester)}` : t('viewStudent.profile.thisSemester')}
+              aside={
+                <Button size="sm" variant="quiet" icon={Plus} onClick={() => navigate(`/enrollments/create?student=${id}`)}>
+                  {t('viewStudent.profile.registerCourses')}
+                </Button>
+              }
+            >
+              {record.loading ? (
+                <div className="space-y-2 p-4">
+                  <Skeleton className="h-12" />
+                  <Skeleton className="h-12" />
                 </div>
-                <div className="bg-primary-100 text-primary-800 rounded-lg px-3 py-2.5 text-center border border-primary-200">
-                  <p className="text-base font-semibold">{student?.total_credits_earned ?? student?.credit_hours ?? '—'}</p>
-                  <p className="text-xs text-primary-600 mt-0.5">{t('viewStudent.credits')}</p>
-                </div>
-                <div className="bg-amber-50 text-amber-900 rounded-lg px-3 py-2.5 text-center border border-amber-200">
-                  <p className="text-base font-semibold">{translateStudyType(student?.study_type)}</p>
-                  <p className="text-xs text-amber-700 mt-0.5">{t('viewStudent.studyType')}</p>
-                </div>
-                <div className="bg-primary-100 text-primary-800 rounded-lg px-3 py-2.5 text-center border border-primary-200">
-                  <p className="text-base font-semibold">{student?.enrollment_date || '—'}</p>
-                  <p className="text-xs text-primary-600 mt-0.5">{t('viewStudent.enrolled')}</p>
-                </div>
-              </div>
-              {enrollmentEligibility != null && (
-                <div className={`rounded-xl p-4 ${enrollmentEligibility.allowed ? 'bg-green-50 border border-green-200' : 'bg-amber-50 border border-amber-200'}`}>
-                  <h3 className="font-semibold text-gray-900 mb-2 flex items-center gap-2">
-                    {enrollmentEligibility.allowed ? <CheckCircle className="w-5 h-5 text-green-600" /> : <AlertCircle className="w-5 h-5 text-amber-600" />}
-                    {t('viewStudent.enrollmentEligibility')}
-                  </h3>
-                  {!enrollmentEligibility.allowed && enrollmentEligibility.reasons?.length > 0 && (
-                    <ul className="text-sm text-amber-800 list-disc list-inside space-y-1">
-                      {enrollmentEligibility.reasons.map((r, i) => <li key={i}>{r}</li>)}
-                    </ul>
-                  )}
-                  {enrollmentEligibility.warnings?.length > 0 && (
-                    <ul className="text-sm text-amber-700 mt-2 list-disc list-inside">
-                      {enrollmentEligibility.warnings.map((w, i) => <li key={i}>{w}</li>)}
-                    </ul>
-                  )}
-                  {enrollmentEligibility.allowed && enrollmentEligibility.reasons?.length === 0 && (
-                    <p className="text-sm text-green-800">{t('viewStudent.eligibleToEnroll')}</p>
-                  )}
-                </div>
-              )}
-            </>
-          )}
-
-          {activeTab === 'personal' && (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-              {[
-                ['firstName', (isRTL ? [student?.first_name_ar, student?.first_name] : [student?.first_name, student?.first_name_ar]).filter(Boolean).join(' / ') || '—'],
-                ['lastName', (isRTL ? [student?.last_name_ar, student?.last_name] : [student?.last_name, student?.last_name_ar]).filter(Boolean).join(' / ') || '—'],
-                ['dateOfBirth', student?.date_of_birth || '—'],
-                ['gender', student?.gender || '—'],
-                ['nationality', getNationalityLabel(student?.nationality, isRTL) || '—'],
-                ['religion', student?.religion || '—'],
-                ['maritalStatus', student?.marital_status || '—'],
-                ['bloodType', student?.blood_type || '—'],
-                ['international', student?.is_international ? t('common.yes') : t('common.no')],
-              ].map(([key, value]) => (
-                <div key={key} className="rounded-xl bg-gray-50 p-4 border border-gray-100">
-                  <p className="text-xs font-medium text-gray-500 uppercase">{t(`viewStudent.${key}`)}</p>
-                  <p className="mt-1 font-medium text-gray-900">{value}</p>
-                </div>
-              ))}
-            </div>
-          )}
-
-          {activeTab === 'contact' && (
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              {[
-                ['email', student?.email],
-                ['phone', student?.phone],
-                ['mobilePhone', student?.mobile_phone],
-                ['address', student?.address],
-                ['city', student?.city],
-                ['state', student?.state],
-                ['country', student?.country],
-                ['postalCode', student?.postal_code],
-              ].map(([key, value]) => (
-                <div key={key} className="rounded-xl bg-gray-50 p-4 border border-gray-100">
-                  <p className="text-xs font-medium text-gray-500 uppercase">{t(`viewStudent.${key}`)}</p>
-                  <p className="mt-1 font-medium text-gray-900">{value || '—'}</p>
-                </div>
-              ))}
-            </div>
-          )}
-
-          {activeTab === 'academic' && (
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              {[
-                ['major', majorName],
-                ['college', collegeName],
-                ['studyType', translateStudyType(student?.study_type)],
-                ['studyLoad', translateStudyLoad(student?.study_load || '—')],
-                ['studyApproach', translateStudyApproach(student?.study_approach || '—')],
-                ['creditHours', student?.credit_hours ?? '—'],
-                ['enrollmentDate', student?.enrollment_date],
-                ['status', translateStudentStatusValue(student?.status)],
-              ].map(([key, value]) => (
-                <div key={key} className="rounded-xl bg-gray-50 p-4 border border-gray-100">
-                  <p className="text-xs font-medium text-gray-500 uppercase">{t(`viewStudent.${key}`)}</p>
-                  <p className="mt-1 font-medium text-gray-900">{value || '—'}</p>
-                </div>
-              ))}
-            </div>
-          )}
-
-          {activeTab === 'previous' && (
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              {[
-                ['highSchoolName', student?.high_school_name],
-                ['highSchoolCountry', student?.high_school_country],
-                ['graduationYear', student?.graduation_year],
-                ['highSchoolGpa', student?.high_school_gpa != null ? Number(student.high_school_gpa).toFixed(2) : null],
-              ].map(([key, value]) => (
-                <div key={key} className="rounded-xl bg-gray-50 p-4 border border-gray-100">
-                  <p className="text-xs font-medium text-gray-500 uppercase">{t(`viewStudent.${key}`)}</p>
-                  <p className="mt-1 font-medium text-gray-900">{value ?? '—'}</p>
-                </div>
-              ))}
-            </div>
-          )}
-
-          {activeTab === 'identity' && (
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              {[
-                ['nationalId', student?.national_id],
-                ['passportNumber', student?.passport_number],
-                ['passportExpiry', student?.passport_expiry],
-                ['visaNumber', student?.visa_number],
-                ['visaExpiry', student?.visa_expiry],
-                ['residencePermitNumber', student?.residence_permit_number],
-                ['residencePermitExpiry', student?.residence_permit_expiry],
-              ].map(([key, value]) => (
-                <div key={key} className="rounded-xl bg-gray-50 p-4 border border-gray-100">
-                  <p className="text-xs font-medium text-gray-500 uppercase">{t(`viewStudent.${key}`)}</p>
-                  <p className="mt-1 font-medium text-gray-900">{value || '—'}</p>
-                </div>
-              ))}
-            </div>
-          )}
-
-          {activeTab === 'documents' && (
-            <div className="space-y-4">
-              <p className="text-sm text-gray-600">
-                {t('viewStudent.documentsIntro', 'Documents submitted with the application (ID photo, transcript, etc.) are listed below.')}
-              </p>
-              {studentDocuments.length === 0 ? (
-                <p className="text-gray-500 italic">{t('viewStudent.noDocuments', 'No documents on file.')}</p>
+              ) : facts.currentRows.length === 0 ? (
+                <EmptyState icon={BookOpen} title={t('viewStudent.profile.noCurrentTitle')} hint={t('viewStudent.profile.noCurrentHint')} />
               ) : (
-                <ul className="space-y-3">
-                  {studentDocuments.map((doc) => {
-                    const { data: urlData } = supabase.storage.from(SUPABASE_STORAGE_BUCKET).getPublicUrl(doc.file_path)
-                    const label = STUDENT_DOCUMENT_LABELS[doc.document_type]
-                    const expired = doc.expiry_date ? new Date(doc.expiry_date) < new Date(new Date().toDateString()) : false
-                    const status = expired ? 'expired' : (doc.status || (doc.verified_at ? 'verified' : 'in_review'))
-                    const badge =
-                      status === 'verified'
-                        ? { bg: 'bg-emerald-50', text: 'text-emerald-700', label: t('common.verified', 'Verified') }
-                        : status === 'expired'
-                          ? { bg: 'bg-red-50', text: 'text-red-700', label: t('common.expired', 'Expired') }
-                          : { bg: 'bg-blue-50', text: 'text-blue-700', label: t('common.inReview', 'In review') }
-                  return (
-                    <li key={doc.id} className="flex items-center justify-between rounded-xl bg-gray-50 p-4 border border-gray-100">
-                      <div className="flex items-center gap-3">
-                        <FileText className="w-5 h-5 text-gray-500 flex-shrink-0" />
-                        <div>
-                          <p className="font-medium text-gray-900">{t(label || doc.document_type)}</p>
-                          {doc.file_name && <p className="text-sm text-gray-500">{doc.file_name}</p>}
-                          <div className="flex items-center gap-2 mt-1">
-                            <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold ${badge.bg} ${badge.text}`}>
-                              {badge.label}
-                            </span>
-                            {doc.expiry_date && (
-                              <span className="text-[11px] text-gray-400">
-                                {t('viewStudent.documentsExpiry', 'Expiry')}: {new Date(doc.expiry_date).toLocaleDateString()}
-                              </span>
-                            )}
+                <ul className="divide-y divide-[#dde3ef]">
+                  {facts.currentRows.map((r) => {
+                    const att = attendanceSummary(facts.attendanceByClass.get(r.class_id))
+                    const les = facts.lessonsByClass.get(r.class_id)
+                    return (
+                      <li key={r.id} className="grid gap-3 px-4 py-3 sm:grid-cols-[minmax(0,1fr)_9rem_9rem] sm:items-center">
+                        <div className="min-w-0 text-sm">
+                          {courseTitle(r)}
+                          <div className="mt-0.5 text-xs text-slate-500">
+                            {t('enrollments.section')} {r.classes?.section || '—'}
+                            {r.classes?.instructors ? ` · ${nameOf(r.classes.instructors)}` : ''} · {t('viewStudent.profile.creditsShort', { count: r.credits })}
                           </div>
-                          {doc.uploaded_at && (
-                            <p className="text-xs text-gray-400 mt-0.5">
-                              {new Date(doc.uploaded_at).toLocaleDateString()}
-                            </p>
-                          )}
+                        </div>
+                        <div className="text-xs text-slate-600">
+                          <div className="flex items-center justify-between gap-2">
+                            <span>{t('viewStudent.profile.kpi.attendance')}</span>
+                            <strong className="tabular-nums">{att.rate != null ? `${att.rate}%` : '—'}</strong>
+                          </div>
+                          {att.rate != null ? <Meter value={att.rate} max={100} tone={att.rate < LOW_ATTENDANCE ? 'warn' : 'navy'} /> : null}
+                        </div>
+                        <div className="text-xs text-slate-600">
+                          <div className="flex items-center justify-between gap-2">
+                            <span>{t('viewStudent.profile.lessons')}</span>
+                            <strong className="tabular-nums">{les ? `${les.done}/${les.total}` : '—'}</strong>
+                          </div>
+                          {les ? <Meter value={les.done} max={les.total} tone="gold" /> : null}
+                        </div>
+                      </li>
+                    )
+                  })}
+                </ul>
+              )}
+            </Panel>
+
+            {enrollmentEligibility != null ? (
+              <div className={`rounded-2xl border p-4 ${enrollmentEligibility.allowed ? 'border-emerald-200 bg-emerald-50' : 'border-amber-200 bg-amber-50'}`}>
+                <h3 className="flex items-center gap-2 text-sm font-extrabold text-slate-900">
+                  {enrollmentEligibility.allowed ? <CheckCircle className="h-5 w-5 text-emerald-600" /> : <AlertTriangle className="h-5 w-5 text-amber-600" />}
+                  {t('viewStudent.enrollmentEligibility')}
+                </h3>
+                {!enrollmentEligibility.allowed && enrollmentEligibility.reasons?.length > 0 ? (
+                  <ul className="mt-2 list-inside list-disc space-y-1 text-sm text-amber-900">
+                    {enrollmentEligibility.reasons.map((r, i) => (
+                      <li key={i}>{r}</li>
+                    ))}
+                  </ul>
+                ) : null}
+                {enrollmentEligibility.warnings?.length > 0 ? (
+                  <ul className="mt-2 list-inside list-disc text-sm text-amber-800">
+                    {enrollmentEligibility.warnings.map((w, i) => (
+                      <li key={i}>{w}</li>
+                    ))}
+                  </ul>
+                ) : null}
+                {enrollmentEligibility.allowed && enrollmentEligibility.reasons?.length === 0 ? <p className="mt-1 text-sm text-emerald-800">{t('viewStudent.eligibleToEnroll')}</p> : null}
+              </div>
+            ) : null}
+          </div>
+
+          <div className="space-y-5">
+            <Panel
+              title={t('viewStudent.profile.tabs.application')}
+              aside={
+                application ? (
+                  <Button size="sm" variant="ghost" icon={ExternalLink} onClick={() => navigate(`/admissions/applications/${application.id}`)}>
+                    {t('viewStudent.profile.open')}
+                  </Button>
+                ) : null
+              }
+            >
+              {record.loading ? (
+                <Skeleton className="h-16" />
+              ) : application ? (
+                <dl className="grid grid-cols-2 gap-x-4 gap-y-3">
+                  <Field label={t('viewStudent.profile.applicationNumber')} value={application.application_number || `#${application.id}`} dir="ltr" />
+                  <Field label={t('viewStudent.profile.submitted')} value={fmtDate(application.created_at)} />
+                  <div className="col-span-2">
+                    <Field label={t('common.status')} value={statusName(application.status_code)} />
+                  </div>
+                </dl>
+              ) : (
+                <p className="text-sm text-slate-500">{t('viewStudent.profile.noApplication')}</p>
+              )}
+            </Panel>
+
+            <Panel
+              title={t('viewStudent.profile.tabs.payments')}
+              aside={
+                <Button size="sm" variant="ghost" onClick={() => setActiveTab('payments')}>
+                  {t('viewStudent.profile.open')}
+                </Button>
+              }
+            >
+              {record.loading ? (
+                <Skeleton className="h-16" />
+              ) : record.payments.length === 0 ? (
+                <p className="text-sm text-slate-500">{facts.money.invoices ? t('viewStudent.profile.noPaymentsYet') : t('viewStudent.profile.kpi.noInvoices')}</p>
+              ) : (
+                <ul className="space-y-2">
+                  {record.payments.slice(0, 4).map((p) => (
+                    <li key={p.id} className="flex items-center justify-between gap-3 text-sm">
+                      <span className="min-w-0">
+                        <span className="block font-semibold text-slate-800">{fmtDate(p.payment_date)}</span>
+                        <span className="block truncate text-xs text-slate-500">{String(p.payment_method || '').replace(/_/g, ' ')}</span>
+                      </span>
+                      <span className="font-bold tabular-nums text-emerald-700" dir="ltr">
+                        {fmtMoney(p.amount)}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </Panel>
+          </div>
+        </div>
+      ) : null}
+
+      {/* Courses and grades */}
+      {activeTab === 'courses' ? (
+        record.loading ? (
+          <Skeleton className="h-64 rounded-2xl" />
+        ) : facts.semesters.length === 0 ? (
+          <Panel>
+            <EmptyState
+              icon={GraduationCap}
+              title={t('viewStudent.profile.noCoursesTitle')}
+              hint={t('viewStudent.profile.noCoursesHint')}
+              action={
+                <Button icon={Plus} onClick={() => navigate(`/enrollments/create?student=${id}`)}>
+                  {t('viewStudent.profile.registerCourses')}
+                </Button>
+              }
+            />
+          </Panel>
+        ) : (
+          <div className="space-y-5">
+            {facts.semesters.map((g) => (
+              <Panel
+                key={g.key}
+                flush
+                title={g.semester ? nameOf(g.semester) : t('viewStudent.profile.noSemester')}
+                aside={
+                  <span className="text-xs font-semibold text-slate-500">
+                    {t('viewStudent.profile.creditsShort', { count: g.credits })}
+                    {g.gpa != null ? ` · ${t('viewStudent.profile.semesterGpa', { gpa: g.gpa.toFixed(2) })}` : ''}
+                  </span>
+                }
+              >
+                <ul className="divide-y divide-[#dde3ef]">
+                  {g.rows.map((r) => (
+                    <li key={r.id} className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 px-4 py-3 text-sm">
+                      <div className="min-w-0 flex-1">
+                        {courseTitle(r)}
+                        <div className="mt-0.5 text-xs text-slate-500">
+                          {t('viewStudent.profile.creditsShort', { count: r.credits })} · {t(`enrollments.${r.status || 'enrolled'}`, { defaultValue: r.status })}
                         </div>
                       </div>
-                      <a
-                        href={urlData?.publicUrl}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="inline-flex items-center gap-1.5 text-primary-600 hover:text-primary-700 font-medium text-sm"
-                      >
-                        <ExternalLink className="w-4 h-4" />
+                      <Badge tone={gradeTone(r)} className="tabular-nums">
+                        {r.letter ? `${r.letter}${r.points != null ? ` · ${r.points.toFixed(2)}` : ''}` : t('viewStudent.profile.noGradeYet')}
+                      </Badge>
+                    </li>
+                  ))}
+                </ul>
+              </Panel>
+            ))}
+          </div>
+        )
+      ) : null}
+
+      {/* Attendance */}
+      {activeTab === 'attendance' ? (
+        record.loading ? (
+          <Skeleton className="h-64 rounded-2xl" />
+        ) : record.attendance.length === 0 ? (
+          <Panel>
+            <EmptyState icon={CalendarCheck} title={t('viewStudent.profile.noAttendanceTitle')} hint={t('viewStudent.profile.noAttendanceHint')} />
+          </Panel>
+        ) : (
+          <div className="space-y-5">
+            <Panel flush title={facts.current ? `${t('viewStudent.profile.byCourse')} · ${nameOf(facts.current.semester)}` : t('viewStudent.profile.byCourse')}>
+              <ul className="divide-y divide-[#dde3ef]">
+                {(facts.currentRows.length ? facts.currentRows : facts.rows.filter((r) => facts.attendanceByClass.has(r.class_id))).map((r) => {
+                  const s = attendanceSummary(facts.attendanceByClass.get(r.class_id))
+                  return (
+                    <li key={r.id} className="grid gap-2 px-4 py-3 sm:grid-cols-[minmax(0,1fr)_14rem] sm:items-center">
+                      <div className="min-w-0 text-sm">{courseTitle(r)}</div>
+                      <div className="text-xs text-slate-600">
+                        <div className="flex items-center justify-between gap-2">
+                          <span>
+                            {t('viewStudent.profile.att.present')} {s.present} · {t('viewStudent.profile.att.late')} {s.late} · {t('viewStudent.profile.att.excused')} {s.excused} ·{' '}
+                            {t('viewStudent.profile.att.absent')} {s.absent}
+                          </span>
+                          <strong className="tabular-nums">{s.rate != null ? `${s.rate}%` : '—'}</strong>
+                        </div>
+                        {s.rate != null ? <Meter value={s.rate} max={100} tone={s.rate < LOW_ATTENDANCE ? 'warn' : 'navy'} /> : null}
+                      </div>
+                    </li>
+                  )
+                })}
+              </ul>
+            </Panel>
+            <Panel flush title={t('viewStudent.profile.recentRecords')}>
+              <ul className="divide-y divide-[#dde3ef]">
+                {record.attendance.slice(0, 15).map((a) => {
+                  const row = facts.rows.find((r) => r.class_id === a.class_id)
+                  const status = String(a.status || '').toLowerCase()
+                  return (
+                    <li key={a.id} className="flex items-center justify-between gap-3 px-4 py-2.5 text-sm">
+                      <span className="min-w-0">
+                        <span className="font-semibold text-slate-800">{fmtDate(a.date)}</span>
+                        <span className="text-slate-500"> · </span>
+                        <span dir="ltr" className="text-slate-600">
+                          {row?.classes?.subjects?.code || row?.classes?.code || '—'}
+                        </span>
+                      </span>
+                      <Badge tone={status === 'absent' ? 'err' : status === 'late' ? 'warn' : status === 'excused' ? 'info' : 'ok'}>
+                        {t(`viewStudent.profile.att.${status}`, { defaultValue: status })}
+                      </Badge>
+                    </li>
+                  )
+                })}
+              </ul>
+            </Panel>
+          </div>
+        )
+      ) : null}
+
+      {/* Payments */}
+      {activeTab === 'payments' ? (
+        <div className="space-y-5">
+          <Panel
+            title={t('viewStudent.payments.title', 'Payments')}
+            aside={
+              <div className="flex flex-wrap items-center gap-2">
+                <select className={fieldClass} value={selectedSemesterId} onChange={(e) => setSelectedSemesterId(e.target.value)} aria-label={t('viewStudent.payments.selectSemester')}>
+                  <option value="">{t('viewStudent.payments.selectSemester', 'Select semester')}</option>
+                  {semesterOptions.map((s) => (
+                    <option key={s.id} value={String(s.id)}>
+                      {(isRTL ? s.name_ar : s.name_en) || s.code || `#${s.id}`}
+                    </option>
+                  ))}
+                </select>
+                <Button icon={FileText} loading={genLoading} disabled={!selectedSemesterId} onClick={generateSemesterInvoice}>
+                  {t('viewStudent.payments.generateInvoice', 'Generate semester invoice')}
+                </Button>
+              </div>
+            }
+          >
+            <p className="text-sm text-slate-600">{t('viewStudent.payments.subtitle', 'Generate invoices for semester/major fees and review payments.')}</p>
+            {genError ? <div className="mt-3 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-800">{genError}</div> : null}
+            {genToast ? <div className="mt-3 rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800">{genToast}</div> : null}
+          </Panel>
+
+          <div className="grid items-start gap-5 lg:grid-cols-2">
+            <Panel flush title={t('viewStudent.payments.invoices', 'Invoices')} aside={financeLoading ? <span className="text-xs text-slate-500">{t('common.loading')}</span> : null}>
+              {adminInvoices.length === 0 ? (
+                <p className="px-4 py-6 text-sm text-slate-500">{t('viewStudent.payments.noInvoices', 'No invoices found for this semester.')}</p>
+              ) : (
+                <ul className="divide-y divide-[#dde3ef]">
+                  {adminInvoices.map((inv) => (
+                    <li key={inv.id} className="flex items-center justify-between gap-3 px-4 py-3 text-sm">
+                      <span className="min-w-0">
+                        <span className="block font-mono text-xs font-bold text-slate-800" dir="ltr">
+                          {inv.invoice_number}
+                        </span>
+                        <span className="block text-xs text-slate-500">
+                          {fmtDate(inv.invoice_date)}
+                          {inv.due_date ? ` · ${t('viewStudent.profile.dueOn', { date: fmtDate(inv.due_date) })}` : ''}
+                        </span>
+                      </span>
+                      <span className="text-end">
+                        <span className="block font-bold tabular-nums text-slate-800" dir="ltr">
+                          {fmtMoney(inv.total_amount)}
+                        </span>
+                        {num(inv.pending_amount) > 0 ? (
+                          <span className="block text-xs font-semibold tabular-nums text-amber-700" dir="ltr">
+                            {t('viewStudent.payments.pending', 'Pending')} {fmtMoney(inv.pending_amount)}
+                          </span>
+                        ) : (
+                          <Badge tone="ok">{t('viewStudent.profile.paid')}</Badge>
+                        )}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </Panel>
+
+            <Panel flush title={t('viewStudent.payments.paymentHistory', 'Payment history')}>
+              {adminPayments.length === 0 ? (
+                <p className="px-4 py-6 text-sm text-slate-500">{t('viewStudent.payments.noPayments', 'No payments yet.')}</p>
+              ) : (
+                <ul className="divide-y divide-[#dde3ef]">
+                  {adminPayments.map((p) => (
+                    <li key={p.id} className="flex items-center justify-between gap-3 px-4 py-3 text-sm">
+                      <span className="min-w-0">
+                        <span className="block font-mono text-xs font-bold text-slate-800" dir="ltr">
+                          {p.payment_number}
+                        </span>
+                        <span className="block text-xs text-slate-500">
+                          {fmtDate(p.payment_date)} · {String(p.payment_method || '').replace(/_/g, ' ')}
+                          {p.invoices?.invoice_number ? ` · ${p.invoices.invoice_number}` : ''}
+                        </span>
+                      </span>
+                      <span className="font-bold tabular-nums text-emerald-700" dir="ltr">
+                        {fmtMoney(p.amount)}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </Panel>
+          </div>
+          <p className="rounded-xl border border-[#dde3ef] bg-[#eef2f9] px-4 py-3 text-sm text-[#1a3a6b]">
+            {t('viewStudent.payments.note', 'Note: These invoices form the base for PM10/PM30 milestones (admission_fee invoices are excluded). Once generated, the student can pay from Student Portal.')}
+          </p>
+        </div>
+      ) : null}
+
+      {/* Application */}
+      {activeTab === 'application' ? (
+        record.loading ? (
+          <Skeleton className="h-40 rounded-2xl" />
+        ) : application ? (
+          <Panel
+            title={t('viewStudent.profile.tabs.application')}
+            aside={
+              <Button size="sm" icon={ExternalLink} onClick={() => navigate(`/admissions/applications/${application.id}`)}>
+                {t('viewStudent.profile.openApplication')}
+              </Button>
+            }
+          >
+            <dl className="grid grid-cols-1 gap-x-6 gap-y-4 sm:grid-cols-2 lg:grid-cols-3">
+              <Field label={t('viewStudent.profile.applicationNumber')} value={application.application_number || `#${application.id}`} dir="ltr" />
+              <Field label={t('common.status')} value={statusName(application.status_code)} />
+              <Field label={t('viewStudent.profile.applicantSees')} value={applicantSees} />
+              <Field label={t('viewStudent.profile.submitted')} value={fmtDate(application.created_at)} />
+              <Field label={t('viewStudent.major')} value={nameOf(application.majors)} />
+              <Field label={t('viewStudent.college')} value={nameOf(application.colleges)} />
+              <Field label={t('enrollments.semester')} value={nameOf(application.semesters)} />
+            </dl>
+          </Panel>
+        ) : (
+          <Panel>
+            <EmptyState icon={FileText} title={t('viewStudent.profile.noApplication')} hint={t('viewStudent.profile.noApplicationHint')} />
+          </Panel>
+        )
+      ) : null}
+
+      {/* Documents and requests */}
+      {activeTab === 'documents' ? (
+        <div className="space-y-5">
+          <Panel flush title={t('viewStudent.tabs.documents')}>
+            {studentDocuments.length === 0 ? (
+              <p className="px-4 py-6 text-sm text-slate-500">{t('viewStudent.noDocuments', 'No documents on file.')}</p>
+            ) : (
+              <ul className="divide-y divide-[#dde3ef]">
+                {studentDocuments.map((doc) => {
+                  const { data: urlData } = supabase.storage.from(SUPABASE_STORAGE_BUCKET).getPublicUrl(doc.file_path)
+                  const label = STUDENT_DOCUMENT_LABELS[doc.document_type]
+                  const expired = doc.expiry_date ? new Date(doc.expiry_date) < new Date(new Date().toDateString()) : false
+                  const status = expired ? 'expired' : doc.status || (doc.verified_at ? 'verified' : 'in_review')
+                  return (
+                    <li key={doc.id} className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 text-sm">
+                      <span className="flex min-w-0 items-start gap-3">
+                        <FileText className="mt-0.5 h-5 w-5 shrink-0 text-slate-400" />
+                        <span className="min-w-0">
+                          <span className="block font-semibold text-slate-800">{t(label || doc.document_type)}</span>
+                          <span className="mt-1 flex flex-wrap items-center gap-2 text-xs text-slate-500">
+                            <Badge tone={status === 'verified' ? 'ok' : status === 'expired' ? 'err' : 'info'}>
+                              {status === 'verified' ? t('common.verified', 'Verified') : status === 'expired' ? t('common.expired', 'Expired') : t('common.inReview', 'In review')}
+                            </Badge>
+                            {doc.uploaded_at ? fmtDate(doc.uploaded_at) : null}
+                            {doc.expiry_date ? ` · ${t('viewStudent.documentsExpiry', 'Expiry')}: ${fmtDate(doc.expiry_date)}` : null}
+                          </span>
+                        </span>
+                      </span>
+                      <a href={urlData?.publicUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1.5 text-sm font-bold text-[#1a3a6b] hover:underline">
+                        <ExternalLink className="h-4 w-4" />
                         {t('viewStudent.viewDocument', 'View / Download')}
                       </a>
                     </li>
                   )
-                  })}
-                </ul>
-              )}
-            </div>
-          )}
-
-          {activeTab === 'requests' && (
-            <div className="space-y-4">
-              <p className="text-sm text-gray-600">
-                {t('viewStudent.requestsIntro', 'Student service requests created from the student portal are listed below.')}
-              </p>
-              {studentRequests.length === 0 ? (
-                <p className="text-gray-500 italic">{t('viewStudent.noRequests', 'No requests on file.')}</p>
-              ) : (
-                <div className="overflow-x-auto rounded-xl border border-gray-200">
-                  <table className="w-full text-sm">
-                    <thead className="bg-gray-50">
-                      <tr className="text-gray-600">
-                        <th className="px-4 py-3 text-left">{t('viewStudent.requests.number', 'Request #')}</th>
-                        <th className="px-4 py-3 text-left">{t('viewStudent.requests.type', 'Type')}</th>
-                        <th className="px-4 py-3 text-left">{t('common.date', 'Date')}</th>
-                        <th className="px-4 py-3 text-left">{t('common.status', 'Status')}</th>
-                        <th className="px-4 py-3 text-left">{t('common.notes', 'Notes')}</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {studentRequests.map((r) => (
-                        <tr key={r.id} className="border-t border-gray-100">
-                          <td className="px-4 py-3 font-semibold" dir="ltr">{r.request_number}</td>
-                          <td className="px-4 py-3">{r.request_type}</td>
-                          <td className="px-4 py-3" dir="ltr">{r.created_at ? new Date(r.created_at).toLocaleDateString() : '—'}</td>
-                          <td className="px-4 py-3">{r.status || '—'}</td>
-                          <td className="px-4 py-3 text-gray-600">{r.description || '—'}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </div>
-          )}
-
-          {activeTab === 'payments' && (
-            <div className="space-y-6">
-              <div className="flex items-start justify-between gap-3 flex-wrap">
-                <div>
-                  <h2 className="text-lg font-bold text-gray-900 flex items-center gap-2">
-                    <CreditCard className="w-5 h-5 text-primary-600" />
-                    {t('viewStudent.payments.title', 'Payments')}
-                  </h2>
-                  <p className="text-sm text-gray-600 mt-1">
-                    {t('viewStudent.payments.subtitle', 'Generate invoices for semester/major fees and review payments.')}
-                  </p>
-                </div>
-                <div className="flex items-center gap-2 flex-wrap">
-                  <select
-                    className="border border-gray-300 rounded-lg px-3 py-2 text-sm"
-                    value={selectedSemesterId}
-                    onChange={(e) => setSelectedSemesterId(e.target.value)}
-                  >
-                    <option value="">{t('viewStudent.payments.selectSemester', 'Select semester')}</option>
-                    {semesterOptions.map((s) => (
-                      <option key={s.id} value={String(s.id)}>
-                        {(isRTL ? s.name_ar : s.name_en) || s.code || `#${s.id}`}
-                      </option>
-                    ))}
-                  </select>
-                  <button
-                    type="button"
-                    onClick={generateSemesterInvoice}
-                    disabled={genLoading || !selectedSemesterId}
-                    className={`inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold ${
-                      genLoading || !selectedSemesterId
-                        ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
-                        : 'bg-primary-600 text-white hover:bg-primary-700'
-                    }`}
-                  >
-                    {genLoading ? (
-                      <>
-                        <span className="w-4 h-4 border-2 border-white/60 border-t-transparent rounded-full animate-spin" />
-                        {t('viewStudent.payments.generating', 'Generating...')}
-                      </>
-                    ) : (
-                      <>
-                        <FileText className="w-4 h-4" />
-                        {t('viewStudent.payments.generateInvoice', 'Generate semester invoice')}
-                      </>
-                    )}
-                  </button>
-                </div>
-              </div>
-
-              {genError && <div className="bg-red-50 border border-red-200 rounded-xl p-4 text-sm text-red-800">{genError}</div>}
-              {genToast && <div className="bg-green-50 border border-green-200 rounded-xl p-4 text-sm text-green-800">{genToast}</div>}
-
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                {/* Invoices */}
-                <div className="rounded-xl border border-gray-200 p-4">
-                  <div className="flex items-center justify-between mb-3">
-                    <h3 className="font-semibold text-gray-900">{t('viewStudent.payments.invoices', 'Invoices')}</h3>
-                    {financeLoading && <span className="text-xs text-gray-500">{t('common.loading', 'Loading...')}</span>}
-                  </div>
-                  {adminInvoices.length === 0 ? (
-                    <p className="text-sm text-gray-500">{t('viewStudent.payments.noInvoices', 'No invoices found for this semester.')}</p>
-                  ) : (
-                    <div className="overflow-x-auto">
-                      <table className="w-full text-sm">
-                        <thead>
-                          <tr className="border-b border-gray-200 text-gray-600">
-                            <th className="text-left py-2 pr-2">{t('viewStudent.payments.invoiceNumber', 'Invoice')}</th>
-                            <th className="text-left py-2 pr-2">{t('common.status', 'Status')}</th>
-                            <th className="text-left py-2 pr-2">{t('viewStudent.payments.total', 'Total')}</th>
-                            <th className="text-left py-2 pr-2">{t('viewStudent.payments.pending', 'Pending')}</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {adminInvoices.map((inv) => (
-                            <tr key={inv.id} className="border-b border-gray-100">
-                              <td className="py-2 pr-2 font-mono text-xs">{inv.invoice_number}</td>
-                              <td className="py-2 pr-2">
-                                <span className="text-xs px-2 py-1 rounded border bg-gray-50 text-gray-700 border-gray-200">
-                                  {String(inv.status || '').replace('_', ' ').toUpperCase()}
-                                </span>
-                              </td>
-                              <td className="py-2 pr-2 font-semibold">{Number(inv.total_amount || 0).toFixed(2)}</td>
-                              <td className="py-2 pr-2 text-amber-700 font-semibold">{Number(inv.pending_amount || 0).toFixed(2)}</td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  )}
-                </div>
-
-                {/* Payments */}
-                <div className="rounded-xl border border-gray-200 p-4">
-                  <div className="flex items-center justify-between mb-3">
-                    <h3 className="font-semibold text-gray-900">{t('viewStudent.payments.paymentHistory', 'Payment history')}</h3>
-                    {financeLoading && <span className="text-xs text-gray-500">{t('common.loading', 'Loading...')}</span>}
-                  </div>
-                  {adminPayments.length === 0 ? (
-                    <p className="text-sm text-gray-500">{t('viewStudent.payments.noPayments', 'No payments yet.')}</p>
-                  ) : (
-                    <div className="space-y-3">
-                      {adminPayments.map((p) => (
-                        <div key={p.id} className="border border-gray-200 rounded-lg p-3">
-                          <div className="flex items-center justify-between gap-3">
-                            <div>
-                              <div className="flex items-center gap-2">
-                                <CheckCircle className="w-4 h-4 text-green-600" />
-                                <span className="font-mono text-xs font-semibold text-gray-900">{p.payment_number}</span>
-                                <span className="text-xs px-2 py-0.5 rounded bg-gray-100 text-gray-700">
-                                  {String(p.status || '').toUpperCase()}
-                                </span>
-                              </div>
-                              <div className="text-xs text-gray-600 mt-1">
-                                {p.payment_date} • {String(p.payment_method || '').replace('_', ' ')} • {p.invoices?.invoice_number || '—'}
-                              </div>
-                              {p.transaction_reference && <div className="text-xs text-gray-500 mt-1">Ref: {p.transaction_reference}</div>}
-                            </div>
-                            <div className="text-right">
-                              <div className="text-sm font-bold text-green-700">{Number(p.amount || 0).toFixed(2)}</div>
-                            </div>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              <div className="rounded-xl bg-amber-50 border border-amber-200 p-4 text-sm text-amber-900">
-                {t(
-                  'viewStudent.payments.note',
-                  'Note: These invoices form the base for PM10/PM30 milestones (admission_fee invoices are excluded). Once generated, the student can pay from Student Portal → Invoices & fees.'
-                )}
-              </div>
-            </div>
-          )}
-
-          {activeTab === 'emergency' && (
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              {[
-                ['emergencyContactName', student?.emergency_contact_name],
-                ['emergencyContactRelation', student?.emergency_contact_relation],
-                ['emergencyPhone', student?.emergency_phone],
-                ['emergencyContactEmail', student?.emergency_contact_email],
-              ].map(([key, value]) => (
-                <div key={key} className="rounded-xl bg-gray-50 p-4 border border-gray-100">
-                  <p className="text-xs font-medium text-gray-500 uppercase">{t(`viewStudent.${key}`)}</p>
-                  <p className="mt-1 font-medium text-gray-900">{value || '—'}</p>
-                </div>
-              ))}
-            </div>
-          )}
-
-          {activeTab === 'other' && (
-            <div className="space-y-6">
-              <div>
-                <h3 className="text-sm font-medium text-gray-500 uppercase mb-2">{t('viewStudent.scholarship')}</h3>
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                  <div className="rounded-xl bg-gray-50 p-4"><p className="text-xs text-gray-500 uppercase">{t('viewStudent.hasScholarship')}</p><p className="font-medium">{student?.has_scholarship ? t('common.yes') : t('common.no')}</p></div>
-                  <div className="rounded-xl bg-gray-50 p-4"><p className="text-xs text-gray-500 uppercase">{t('viewStudent.type')}</p><p className="font-medium">{student?.scholarship_type || '—'}</p></div>
-                  <div className="rounded-xl bg-gray-50 p-4"><p className="text-xs text-gray-500 uppercase">{t('viewStudent.percentage')}</p><p className="font-medium">{student?.scholarship_percentage != null ? `${student.scholarship_percentage}%` : '—'}</p></div>
-                </div>
-                {student?.scholarship_details && (
-                  <div className="rounded-xl bg-gray-50 p-4 border border-gray-100">
-                    <p className="text-xs font-medium text-gray-500 uppercase">{t('viewStudent.scholarshipDetails')}</p>
-                    <p className="mt-2 text-gray-900 whitespace-pre-wrap">{student.scholarship_details}</p>
-                  </div>
-                )}
-              </div>
-              <div>
-                <h3 className="text-sm font-medium text-gray-500 uppercase mb-2">{t('viewStudent.medical')}</h3>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div className="rounded-xl bg-gray-50 p-4"><p className="text-xs text-gray-500 uppercase">{t('viewStudent.conditions')}</p><p className="font-medium">{student?.medical_conditions || '—'}</p></div>
-                  <div className="rounded-xl bg-gray-50 p-4"><p className="text-xs text-gray-500 uppercase">{t('viewStudent.allergies')}</p><p className="font-medium">{student?.allergies || '—'}</p></div>
-                  <div className="rounded-xl bg-gray-50 p-4 sm:col-span-2"><p className="text-xs text-gray-500 uppercase">{t('viewStudent.medications')}</p><p className="font-medium">{student?.medications || '—'}</p></div>
-                </div>
-              </div>
-              {student?.notes && (
-                <div className="rounded-xl bg-gray-50 p-4 border border-gray-100">
-                  <p className="text-xs font-medium text-gray-500 uppercase">{t('viewStudent.notes')}</p>
-                  <p className="mt-2 text-gray-900 whitespace-pre-wrap">{student.notes}</p>
-                </div>
-              )}
-            </div>
-          )}
+                })}
+              </ul>
+            )}
+          </Panel>
+          <Panel flush title={t('viewStudent.tabs.requests')}>
+            {studentRequests.length === 0 ? (
+              <p className="px-4 py-6 text-sm text-slate-500">{t('viewStudent.noRequests', 'No requests on file.')}</p>
+            ) : (
+              <ul className="divide-y divide-[#dde3ef]">
+                {studentRequests.map((r) => (
+                  <li key={r.id} className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 text-sm">
+                    <span className="min-w-0">
+                      <span className="block font-semibold text-slate-800">
+                        <span dir="ltr">{r.request_number}</span> · {r.request_type}
+                      </span>
+                      {r.description ? <span className="block truncate text-xs text-slate-500">{r.description}</span> : null}
+                    </span>
+                    <span className="flex items-center gap-2 text-xs text-slate-500">
+                      {fmtDate(r.created_at)}
+                      <Badge tone={CLOSED_REQUEST.has(String(r.status || '').toLowerCase()) ? 'neutral' : 'info'}>{r.status || '—'}</Badge>
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </Panel>
         </div>
+      ) : null}
 
-      <div className="mt-8 text-center">
-        <button onClick={() => navigate('/students')} className="text-primary-600 hover:text-primary-700 font-medium inline-flex items-center gap-2">
-          <ArrowLeft className="w-4 h-4" /> {t('viewStudent.backToList')}
-        </button>
-      </div>
+      {/* Everything on file about the person */}
+      {activeTab === 'profile' ? (
+        <div className="space-y-5">
+          <FieldGrid
+            title={t('viewStudent.tabs.personal')}
+            items={[
+              [t('viewStudent.firstName'), (isRTL ? [student?.first_name_ar, student?.first_name] : [student?.first_name, student?.first_name_ar]).filter(Boolean).join(' / ')],
+              [t('viewStudent.lastName'), (isRTL ? [student?.last_name_ar, student?.last_name] : [student?.last_name, student?.last_name_ar]).filter(Boolean).join(' / ')],
+              [t('viewStudent.dateOfBirth'), student?.date_of_birth ? fmtDate(student.date_of_birth) : null],
+              [t('viewStudent.gender'), student?.gender],
+              [t('viewStudent.nationality'), getNationalityLabel(student?.nationality, isRTL)],
+              [t('viewStudent.religion'), student?.religion],
+              [t('viewStudent.maritalStatus'), student?.marital_status],
+              [t('viewStudent.bloodType'), student?.blood_type],
+              [t('viewStudent.international'), student?.is_international ? t('common.yes') : t('common.no')],
+            ]}
+          />
+          <FieldGrid
+            title={t('viewStudent.tabs.contact')}
+            items={[
+              [t('viewStudent.email'), student?.email, 'ltr'],
+              [t('viewStudent.phone'), student?.phone, 'ltr'],
+              [t('viewStudent.mobilePhone'), student?.mobile_phone, 'ltr'],
+              [t('viewStudent.address'), student?.address],
+              [t('viewStudent.city'), student?.city],
+              [t('viewStudent.state'), student?.state],
+              [t('viewStudent.country'), student?.country],
+              [t('viewStudent.postalCode'), student?.postal_code],
+            ]}
+          />
+          <FieldGrid
+            title={t('viewStudent.tabs.academic')}
+            items={[
+              [t('viewStudent.major'), majorName],
+              [t('viewStudent.college'), collegeName],
+              [t('viewStudent.studyType'), translateStudyType(student?.study_type)],
+              [t('viewStudent.studyLoad'), translateStudyLoad(student?.study_load || '—')],
+              [t('viewStudent.studyApproach'), translateStudyApproach(student?.study_approach || '—')],
+              [t('viewStudent.creditHours'), student?.credit_hours],
+              [t('viewStudent.enrollmentDate'), student?.enrollment_date ? fmtDate(student.enrollment_date) : null],
+              [t('viewStudent.status'), translateStudentStatusValue(student?.status)],
+            ]}
+          />
+          <FieldGrid
+            title={t('viewStudent.tabs.previousEducation')}
+            items={[
+              [t('viewStudent.highSchoolName'), student?.high_school_name],
+              [t('viewStudent.highSchoolCountry'), student?.high_school_country],
+              [t('viewStudent.graduationYear'), student?.graduation_year],
+              [t('viewStudent.highSchoolGpa'), student?.high_school_gpa != null ? Number(student.high_school_gpa).toFixed(2) : null],
+            ]}
+          />
+          <FieldGrid
+            title={t('viewStudent.tabs.identity')}
+            items={[
+              [t('viewStudent.nationalId'), student?.national_id, 'ltr'],
+              [t('viewStudent.passportNumber'), student?.passport_number, 'ltr'],
+              [t('viewStudent.passportExpiry'), student?.passport_expiry ? fmtDate(student.passport_expiry) : null],
+              [t('viewStudent.visaNumber'), student?.visa_number, 'ltr'],
+              [t('viewStudent.visaExpiry'), student?.visa_expiry ? fmtDate(student.visa_expiry) : null],
+              [t('viewStudent.residencePermitNumber'), student?.residence_permit_number, 'ltr'],
+              [t('viewStudent.residencePermitExpiry'), student?.residence_permit_expiry ? fmtDate(student.residence_permit_expiry) : null],
+            ]}
+          />
+          <FieldGrid
+            title={t('viewStudent.tabs.emergency')}
+            items={[
+              [t('viewStudent.emergencyContactName'), student?.emergency_contact_name],
+              [t('viewStudent.emergencyContactRelation'), student?.emergency_contact_relation],
+              [t('viewStudent.emergencyPhone'), student?.emergency_phone, 'ltr'],
+              [t('viewStudent.emergencyContactEmail'), student?.emergency_contact_email, 'ltr'],
+            ]}
+          />
+          <FieldGrid
+            title={t('viewStudent.tabs.other')}
+            items={[
+              [t('viewStudent.hasScholarship'), student?.has_scholarship ? t('common.yes') : t('common.no')],
+              [t('viewStudent.type'), student?.scholarship_type],
+              [t('viewStudent.percentage'), student?.scholarship_percentage != null ? `${student.scholarship_percentage}%` : null],
+              [t('viewStudent.scholarshipDetails'), student?.scholarship_details],
+              [t('viewStudent.conditions'), student?.medical_conditions],
+              [t('viewStudent.allergies'), student?.allergies],
+              [t('viewStudent.medications'), student?.medications],
+              [t('viewStudent.notes'), student?.notes],
+            ]}
+          />
+        </div>
+      ) : null}
 
       <PasswordResetModal
         open={pwdModalOpen}
@@ -1321,7 +1799,6 @@ export default function ViewStudent() {
         loading={pwdLoading}
         error={pwdError}
       />
-
       <CreatePortalAccountModal
         open={linkPortalModalOpen}
         onClose={() => setLinkPortalModalOpen(false)}
@@ -1336,6 +1813,20 @@ export default function ViewStudent() {
           fetchStudent()
           setTimeout(() => setToast(''), 4000)
         }}
+      />
+      <ConfirmDialog
+        open={Boolean(confirmStatus)}
+        tone={confirmStatus === 'inactive' ? 'danger' : 'primary'}
+        title={confirmStatus === 'inactive' ? t('students.deactivate') : t('students.reactivate')}
+        body={confirmStatus === 'inactive' ? t('students.confirmDeactivate') : t('students.confirmReactivate')}
+        confirmLabel={confirmStatus === 'inactive' ? t('students.deactivate') : t('students.reactivate')}
+        cancelLabel={t('common.cancel')}
+        onConfirm={() => {
+          const next = confirmStatus
+          setConfirmStatus(null)
+          setStudentStatus(next)
+        }}
+        onCancel={() => setConfirmStatus(null)}
       />
     </div>
   )

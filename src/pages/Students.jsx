@@ -77,32 +77,17 @@ export default function Students() {
   const canManageAccounts = userRole === 'admin' || userRole === 'user'
 
   useEffect(() => {
-    // Only fetch when we have the necessary data based on role
-    if (userRole === 'admin') {
-      // Admin can fetch (shows all students)
-      fetchStudents()
-    } else if (userRole === 'user' && collegeId) {
-      // College admin needs collegeId
-      console.log('College admin - fetching students for collegeId:', collegeId)
-      fetchStudents()
-    } else if (userRole === 'instructor' && collegeId) {
-      // Instructor needs collegeId (departmentId is optional but query handles it)
-      fetchStudents()
-    } else if (userRole === 'user' && !collegeId) {
-      // College admin but collegeId not loaded yet
-      console.warn('College admin logged in but collegeId is not available yet')
-      setLoading(false)
-    }
-    // Don't fetch if we don't have required data
-  }, [collegeId, userRole, departmentId, showInactive])
-
-  const fetchStudents = async () => {
-    // Don't fetch if we don't have required data
-    if (userRole === 'user' && !collegeId) {
-      console.warn('Cannot fetch students: userRole is "user" but collegeId is missing')
+    if (!userRole) return
+    if (userRole === 'instructor' && !collegeId) {
       setLoading(false)
       return
     }
+    if (userRole === 'admin' || userRole === 'user' || userRole === 'instructor') {
+      fetchStudents()
+    }
+  }, [collegeId, userRole, departmentId, showInactive])
+
+  const fetchStudents = async () => {
     if (userRole === 'instructor' && !collegeId) {
       console.warn('Cannot fetch students: userRole is "instructor" but collegeId is missing')
       setLoading(false)
