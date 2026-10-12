@@ -63,7 +63,7 @@ export const MENU_PRESETS = [
     id: 'admissions',
     label: 'Admissions',
     labelAr: 'القبول',
-    keys: ['dashboard', 'communication', 'admissions', 'people', 'operations'],
+    keys: ['dashboard', 'communication', 'admissions', 'people'],
   },
   {
     id: 'finance',
@@ -128,9 +128,25 @@ export function isMenuModuleAllowed(permissions, menuKey) {
   return keys.includes(menuKey)
 }
 
+const ADMISSIONS_HIDDEN_HREFS = new Set(['/students/upload', '/instructors'])
+
 export function filterNavByMenuPermissions(navigation, permissions) {
   if (hasFullMenuAccess(permissions)) return navigation || []
-  return (navigation || []).filter((item) => isMenuModuleAllowed(permissions, item.menuKey))
+  const keys = normalizeMenuPermissions(permissions) || []
+  const admissionsStaff = keys.includes('admissions')
+  return (navigation || [])
+    .filter((item) => {
+      if (admissionsStaff && (item.menuKey === 'operations' || item.menuKey === 'instructors' || item.href === '/instructors')) {
+        return false
+      }
+      return isMenuModuleAllowed(permissions, item.menuKey)
+    })
+    .map((item) => {
+      if (!admissionsStaff || !Array.isArray(item.submenu)) return item
+      const submenu = item.submenu.filter((sub) => !ADMISSIONS_HIDDEN_HREFS.has(sub.href))
+      if (submenu.length === item.submenu.length) return item
+      return { ...item, submenu }
+    })
 }
 
 export function defaultMenuPermissions() {
