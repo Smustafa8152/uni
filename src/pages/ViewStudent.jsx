@@ -43,14 +43,16 @@ import {
 } from 'lucide-react'
 
 const TABS = [
+  { id: 'profile', labelKey: 'viewStudent.profile.tabs.profile', icon: User },
+  { id: 'documents', labelKey: 'viewStudent.profile.tabs.documents', icon: Paperclip },
+  { id: 'application', labelKey: 'viewStudent.profile.tabs.application', icon: FileText },
   { id: 'overview', labelKey: 'viewStudent.profile.tabs.overview', icon: LayoutDashboard },
   { id: 'courses', labelKey: 'viewStudent.profile.tabs.courses', icon: BookOpen },
   { id: 'attendance', labelKey: 'viewStudent.profile.tabs.attendance', icon: CalendarCheck },
   { id: 'payments', labelKey: 'viewStudent.profile.tabs.payments', icon: CreditCard },
-  { id: 'application', labelKey: 'viewStudent.profile.tabs.application', icon: FileText },
-  { id: 'documents', labelKey: 'viewStudent.profile.tabs.documents', icon: Paperclip },
-  { id: 'profile', labelKey: 'viewStudent.profile.tabs.profile', icon: User },
 ]
+/** The tab a student page opens on. */
+const DEFAULT_TAB = TABS[0].id
 
 const STUDENT_DOCUMENT_LABELS = {
   id_photo: 'viewStudent.documents.idCardPassport',
@@ -157,10 +159,10 @@ export default function ViewStudent() {
   const [error, setError] = useState('')
   const [searchParams, setSearchParams] = useSearchParams()
   const requestedTab = searchParams.get('tab')
-  const activeTab = TABS.some((tab) => tab.id === requestedTab) ? requestedTab : 'overview'
+  const activeTab = TABS.some((tab) => tab.id === requestedTab) ? requestedTab : DEFAULT_TAB
   const setActiveTab = (tabId) => {
     const next = new URLSearchParams(searchParams)
-    if (tabId === 'overview') next.delete('tab')
+    if (tabId === DEFAULT_TAB) next.delete('tab')
     else next.set('tab', tabId)
     setSearchParams(next, { replace: true })
   }
