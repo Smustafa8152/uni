@@ -7,6 +7,8 @@ import { calculateFinancialMilestone } from '../../utils/financePermissions'
 import { resolveRegistrationFeeAmount } from '../../utils/resolveRegistrationFeeAmount'
 import { createApplicationRegistrationInvoice } from '../../utils/createApplicationRegistrationInvoice'
 import { listRegistrationFeeMethods, startRegistrationFeeCheckout } from '../../utils/registrationFee'
+import { formatApplicationFee, onlyPaymentChannel, selectedPaymentChannels } from '../../utils/applicationFee'
+import { getApplicationFormDefaults } from '../../utils/getApplicationFormDefaults'
 import BankTransferPanel, { PaymentChannelChoice } from './BankTransferPanel'
 
 export default function PaymentModal({ isOpen, onClose, application, invoice, student, onPaymentSuccess, purpose = 'registration' }) {
@@ -22,6 +24,8 @@ export default function PaymentModal({ isOpen, onClose, application, invoice, st
   const [methodsLoading, setMethodsLoading] = useState(false)
   const [payingId, setPayingId] = useState(null)
   const [channel, setChannel] = useState(null)
+  const [channels, setChannels] = useState({ myfatoorah: true, bankTransfer: true })
+  const [channelsReady, setChannelsReady] = useState(false)
   const [bankSent, setBankSent] = useState(false)
   const [paymentDetails, setPaymentDetails] = useState({
     cardNumber: '',
@@ -32,8 +36,19 @@ export default function PaymentModal({ isOpen, onClose, application, invoice, st
 
   useEffect(() => {
     if (isOpen) {
-      setChannel(null)
       setBankSent(false)
+      setChannelsReady(false)
+      getApplicationFormDefaults()
+        .then((cfg) => {
+          const next = selectedPaymentChannels(cfg?.application_fee)
+          setChannels(next)
+          setChannel(onlyPaymentChannel(cfg?.application_fee))
+        })
+        .catch(() => {
+          setChannels({ myfatoorah: true, bankTransfer: true })
+          setChannel(null)
+        })
+        .finally(() => setChannelsReady(true))
       if (invoice) {
         // Payment for an invoice
         setAmount(parseFloat(invoice.pending_amount || invoice.total_amount || 0))
@@ -293,9 +308,9 @@ export default function PaymentModal({ isOpen, onClose, application, invoice, st
             to_status_code: application.status_code === 'APPN' ? 'APPC' : application.status_code,
             transition_reason_code: null,
             trigger_code: isTuition ? 'TRTP' : 'TRWH',
-            notes: `${isTuition ? 'Tuition fee' : 'Registration fee'} payment received: $${Number(paidAmount).toFixed(2)} via ${
-              paymentMethod === 'online' ? 'online payment' : 'bank transfer'
-            }`,
+            notes: `${isTuition ? 'Tuition fee' : 'Registration fee'} payment received: ${
+              isTuition ? `$${Number(paidAmount).toFixed(2)}` : formatApplicationFee(paidAmount)
+            } via ${paymentMethod === 'online' ? 'online payment' : 'bank transfer'}`,
           })
 
         if (logError) console.error('Error logging status change:', logError)
@@ -493,7 +508,9 @@ export default function PaymentModal({ isOpen, onClose, application, invoice, st
               <span className="text-gray-600">
                 {invoice ? `${t('payments.invoiceNumber')} ${invoice.invoice_number}` : t('payments.registrationFee')}
               </span>
-              <span className="text-2xl font-bold text-gray-900">${amount.toFixed(2)}</span>
+              <span className="text-2xl font-bold text-gray-900">
+                {invoice || purpose === 'tuition' ? `$${amount.toFixed(2)}` : formatApplicationFee(amount)}
+              </span>
             </div>
             {invoice && (
               <p className="text-sm text-gray-500">
@@ -523,29 +540,44 @@ export default function PaymentModal({ isOpen, onClose, application, invoice, st
                     </button>
                   </div>
                 </div>
+              ) : !channelsReady ? (
+                <div className="flex items-center justify-center py-8 text-gray-500">
+                  <Loader2 className="h-5 w-5 animate-spin" />
+                </div>
               ) : channel == null ? (
                 <div className="space-y-3">
                   <p className="text-sm font-medium text-gray-700">{t('payments.bank.choose')}</p>
-                  <PaymentChannelChoice isRTL={isRTL} onOnline={() => setChannel('online')} onBank={() => setChannel('bank')} />
+                  <PaymentChannelChoice
+                    isRTL={isRTL}
+                    myfatoorah={channels.myfatoorah}
+                    bankTransfer={channels.bankTransfer}
+                    onOnline={() => setChannel('online')}
+                    onBank={() => setChannel('bank')}
+                  />
                 </div>
               ) : channel === 'bank' ? (
                 <div className="space-y-3">
-                  <button type="button" onClick={() => setChannel(null)} className="text-sm font-semibold text-[#1a3a6b]">
-                    {t('payments.bank.back')}
-                  </button>
+                  {channels.myfatoorah && (
+                    <button type="button" onClick={() => setChannel(null)} className="text-sm font-semibold text-[#1a3a6b]">
+                      {t('payments.bank.back')}
+                    </button>
+                  )}
                   <BankTransferPanel
                     applicationId={application.id}
                     feeKind="registration"
                     amount={amount}
+                    currency="GMD"
                     isRTL={isRTL}
                     onSubmitted={() => setBankSent(true)}
                   />
                 </div>
               ) : (
               <div className="space-y-4">
-              <button type="button" onClick={() => setChannel(null)} className="text-sm font-semibold text-[#1a3a6b]">
-                {t('payments.bank.back')}
-              </button>
+              {channels.bankTransfer && (
+                <button type="button" onClick={() => setChannel(null)} className="text-sm font-semibold text-[#1a3a6b]">
+                  {t('payments.bank.back')}
+                </button>
+              )}
               <div>
                 <p className="text-sm font-medium text-gray-700">{t('payments.paymentMethod')}</p>
                 <p className="mt-1 text-sm text-gray-500">{t('payments.gatewayContinue')}</p>

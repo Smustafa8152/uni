@@ -1,6 +1,29 @@
 import { FunctionsHttpError } from '@supabase/supabase-js'
 
 export const APPLICATION_FEE_DEFAULT = 20
+export const APPLICATION_FEE_CURRENCY = 'GMD'
+
+export function readPaymentMethods(applicationFee) {
+  const raw = applicationFee?.methods
+  if (!raw || typeof raw !== 'object') return { myfatoorah: true, bank_transfer: true }
+  return {
+    myfatoorah: raw.myfatoorah !== false,
+    bank_transfer: raw.bank_transfer !== false,
+  }
+}
+
+export function selectedPaymentChannels(applicationFee) {
+  const methods = readPaymentMethods(applicationFee)
+  return { myfatoorah: methods.myfatoorah, bankTransfer: methods.bank_transfer }
+}
+
+/** 'online' or 'bank' when only one method is on. Null means the applicant chooses. */
+export function onlyPaymentChannel(applicationFee) {
+  const { myfatoorah, bankTransfer } = selectedPaymentChannels(applicationFee)
+  if (myfatoorah && !bankTransfer) return 'online'
+  if (bankTransfer && !myfatoorah) return 'bank'
+  return null
+}
 
 export function readApplicationFeeSettings(onboarding) {
   const raw = onboarding?.application_fee
@@ -8,16 +31,18 @@ export function readApplicationFeeSettings(onboarding) {
   return {
     enabled: Boolean(raw?.enabled),
     amount: Number.isFinite(amount) && amount > 0 ? Math.round(amount * 100) / 100 : APPLICATION_FEE_DEFAULT,
+    methods: readPaymentMethods(raw),
   }
 }
 
-export function formatApplicationFee(amount, currency = 'USD') {
+export function formatApplicationFee(amount, currency = APPLICATION_FEE_CURRENCY) {
   const value = Number(amount)
   const safe = Number.isFinite(value) ? value : 0
+  const code = currency || APPLICATION_FEE_CURRENCY
   try {
-    return new Intl.NumberFormat('en-US', { style: 'currency', currency: currency || 'USD' }).format(safe)
+    return new Intl.NumberFormat('en-US', { style: 'currency', currency: code }).format(safe)
   } catch {
-    return `${safe.toFixed(2)} ${currency || 'USD'}`
+    return `${safe.toFixed(2)} ${code}`
   }
 }
 

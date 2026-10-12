@@ -100,25 +100,27 @@ async function loadPayableApplication(
   const owns = app.applicant_user_id === user.id || (email && email === String(user.email || '').toLowerCase())
   if (!owns) return { error: json({ error: 'You cannot pay for this application.' }, 403) }
 
-  if (app.registration_fee_paid_at) return { alreadyPaid: true, app, amount: Number(app.registration_fee_amount) || 0, currency: 'USD' }
+  if (app.registration_fee_paid_at) return { alreadyPaid: true, app, amount: Number(app.registration_fee_amount) || 0, currency: 'GMD' }
   if (String(app.status_code || '').toUpperCase() !== 'APPN') {
     return { error: json({ error: 'This application is not waiting for the registration fee.' }, 400) }
   }
 
-  const amount = await feeAmount(admin, app)
+  const amount = await feeAmount(admin)
   if (!(amount > 0)) return { error: json({ error: 'The registration fee amount is not set.' }, 400) }
-  return { app, amount, currency: 'USD' }
+  return { app, amount, currency: 'GMD' }
 }
 
-async function feeAmount(admin: Admin, app: Record<string, unknown>) {
-  const stored = Number(app.registration_fee_amount)
-  if (Number.isFinite(stored) && stored > 0) return Math.round(stored * 100) / 100
-  if (app.major_id) {
-    const { data: major } = await admin.from('majors').select('registration_fee').eq('id', app.major_id).maybeSingle()
-    const fromMajor = Number(major?.registration_fee)
-    if (Number.isFinite(fromMajor) && fromMajor > 0) return Math.round(fromMajor * 100) / 100
-  }
-  return 0
+/** The amount on the Applications page, Ask for the fee. Status changes do not replace it. */
+async function feeAmount(admin: Admin) {
+  const { data } = await admin
+    .from('university_settings')
+    .select('onboarding_settings')
+    .order('updated_at', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+  const amount = Number(data?.onboarding_settings?.application_fee?.amount)
+  if (Number.isFinite(amount) && amount > 0) return Math.round(amount * 100) / 100
+  return 20
 }
 
 async function listMethods(amount: number, currency: string, app: Record<string, unknown>) {
@@ -285,7 +287,7 @@ async function confirmPayment(admin: Admin, supabaseUrl: string, serviceKey: str
       to_status_code: nextStatus,
       trigger_code: 'TRWH',
       triggered_by: null,
-      notes: `Registration fee paid: ${payment.amount} ${payment.currency || 'USD'}.`,
+      notes: `Registration fee paid: ${payment.amount} ${payment.currency || 'GMD'}.`,
     })
 
     await recordPaidInvoice(admin, current, Number(payment.amount)).catch((err) => {
@@ -302,7 +304,7 @@ async function confirmPayment(admin: Admin, supabaseUrl: string, serviceKey: str
         lang: payment.language,
         kind: 'registration',
         amount: Number(payment.amount),
-        currency: payment.currency || 'USD',
+        currency: payment.currency || 'GMD',
         method: 'online_payment',
         paidAt,
         reference: paymentId,

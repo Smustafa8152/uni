@@ -6,14 +6,14 @@ import { COLLEGE_BANK_ACCOUNT } from '../../utils/collegeBankAccount'
 import { submitBankTransfer } from '../../utils/bankTransferProof'
 import { formatMoney } from '../../utils/programFees'
 
-export function PaymentChannelChoice({ onOnline, onBank, isRTL = false }) {
+export function PaymentChannelChoice({ onOnline, onBank, isRTL = false, myfatoorah = true, bankTransfer = true }) {
   const { t } = useTranslation()
   const options = [
-    { key: 'online', icon: CreditCard, title: t('payments.bank.online'), hint: t('payments.bank.onlineHint'), onClick: onOnline },
-    { key: 'bank', icon: Landmark, title: t('payments.bank.transfer'), hint: t('payments.bank.transferHint'), onClick: onBank },
-  ]
+    myfatoorah ? { key: 'online', icon: CreditCard, title: t('payments.bank.online'), hint: t('payments.bank.onlineHint'), onClick: onOnline } : null,
+    bankTransfer ? { key: 'bank', icon: Landmark, title: t('payments.bank.transfer'), hint: t('payments.bank.transferHint'), onClick: onBank } : null,
+  ].filter(Boolean)
   return (
-    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2" dir={isRTL ? 'rtl' : 'ltr'}>
+    <div className={`grid grid-cols-1 gap-3 ${options.length > 1 ? 'sm:grid-cols-2' : ''}`} dir={isRTL ? 'rtl' : 'ltr'}>
       {options.map((option) => {
         const Icon = option.icon
         return (
@@ -33,7 +33,7 @@ export function PaymentChannelChoice({ onOnline, onBank, isRTL = false }) {
   )
 }
 
-export default function BankTransferPanel({ applicationId, feeKind, amount, currency = 'USD', isRTL = false, onSubmitted }) {
+export default function BankTransferPanel({ applicationId, feeKind, amount, currency = 'GMD', isRTL = false, onSubmitted }) {
   const { t } = useTranslation()
   const [file, setFile] = useState(null)
   const [details, setDetails] = useState('')

@@ -1,6 +1,8 @@
 import { SUPABASE_STORAGE_BUCKET } from '../lib/supabase'
 import { sendPaymentReceiptEmail } from './paymentReceiptEmail'
 
+export const BANK_TRANSFER_CURRENCY = 'GMD'
+
 export async function listBankTransfers(supabase, applicationId) {
   const id = Number(applicationId)
   if (!Number.isFinite(id)) return []
@@ -37,7 +39,7 @@ export async function submitBankTransfer(supabase, { applicationId, feeKind, amo
     application_id: id,
     fee_kind: feeKind === 'registration' ? 'registration' : 'application',
     amount: Number.isFinite(Number(amount)) ? Number(amount) : null,
-    currency: currency || 'USD',
+    currency: currency || BANK_TRANSFER_CURRENCY,
     sender_name: String(senderName || '').trim() || null,
     transfer_reference: note.slice(0, 160),
     transfer_date: transferDate || null,
@@ -78,7 +80,7 @@ export async function confirmBankTransfer(supabase, { proof, application, staffU
       to_status_code: nextStatus,
       trigger_code: 'TRWH',
       triggered_by: staffUserId || null,
-      notes: `Registration fee confirmed from bank transfer: ${proof.amount} ${proof.currency || 'USD'}.`,
+      notes: `Registration fee confirmed from bank transfer: ${proof.amount} ${proof.currency || BANK_TRANSFER_CURRENCY}.`,
     })
   } else {
     const nextStatus = String(fromStatus || '').toUpperCase() === 'APFP' ? 'APSB' : fromStatus
@@ -89,6 +91,8 @@ export async function confirmBankTransfer(supabase, { proof, application, staffU
         status: 'pending',
         application_fee_status: 'paid',
         application_fee_paid_at: now,
+        application_fee_amount: proof.amount,
+        application_fee_currency: proof.currency || BANK_TRANSFER_CURRENCY,
         application_fee_reference: proof.transfer_reference || proof.notes || null,
         application_fee_payment_method: 'bank_transfer',
         status_changed_at: now,
@@ -123,7 +127,7 @@ export async function confirmBankTransfer(supabase, { proof, application, staffU
     application,
     kind: proof.fee_kind === 'registration' ? 'registration' : 'application',
     amount: proof.amount,
-    currency: proof.currency || 'USD',
+    currency: proof.currency || BANK_TRANSFER_CURRENCY,
     method: 'bank_transfer',
     paidAt: now,
     reference: proof.transfer_reference || proof.notes || '',
@@ -131,4 +135,43 @@ export async function confirmBankTransfer(supabase, { proof, application, staffU
       ? `${proof.fee_kind === 'registration' ? 'RF' : 'AF'}-${application.application_number}`
       : '',
   }).catch((err) => console.warn('Payment receipt email failed:', err?.message || err))
+}
+
+/** Staff upload a receipt image and approve that payment in one step. */
+export async function approveStaffReceipt(supabase, { application, staffUserId, feeKind, amount, file }) {
+  const id = Number(application?.id)
+  if (!Number.isFinite(id)) throw new Error('Application is missing.')
+  if (!file) throw new Error('Receipt image is required.')
+  const value = Number(amount)
+  if (!Number.isFinite(value) || value <= 0) throw new Error('Amount is required.')
+
+  const kind = feeKind === 'registration' ? 'registration' : 'application'
+  const safeName = `${Date.now()}-${String(file.name || 'receipt').replace(/[^a-zA-Z0-9.-]/g, '_')}`
+  const storagePath = `${id}/bank-transfer/${kind}/${safeName}`
+  const { error: uploadError } = await supabase.storage
+    .from(SUPABASE_STORAGE_BUCKET)
+    .upload(storagePath, file, { upsert: false, contentType: file.type || 'image/jpeg' })
+  if (uploadError) throw uploadError
+
+  const note = 'Receipt uploaded by staff'
+  const { data: inserted, error } = await supabase
+    .from('application_bank_transfers')
+    .insert({
+      application_id: id,
+      fee_kind: kind,
+      amount: value,
+      currency: BANK_TRANSFER_CURRENCY,
+      notes: note,
+      transfer_reference: note,
+      file_path: storagePath,
+      file_name: file.name || safeName,
+      content_type: file.type || null,
+      status: 'submitted',
+    })
+    .select('id, application_id, fee_kind, amount, currency, notes, transfer_reference, file_path, file_name, content_type, status')
+    .single()
+  if (error) throw error
+
+  await confirmBankTransfer(supabase, { proof: inserted, application, staffUserId })
+  return inserted
 }

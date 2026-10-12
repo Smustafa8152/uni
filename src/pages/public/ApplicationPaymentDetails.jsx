@@ -5,6 +5,8 @@ import { Loader2, Printer } from 'lucide-react'
 import { useAuth } from '../../contexts/AuthContext'
 import { useLanguage } from '../../contexts/LanguageContext'
 import { supabase } from '../../lib/supabase'
+import { APPLICATION_FEE_DEFAULT } from '../../utils/applicationFee'
+import { getApplicationFormDefaults } from '../../utils/getApplicationFormDefaults'
 import { listApplicationPayments } from '../../utils/applicationPayments'
 import ApplicationReceipt from '../../components/payment/ApplicationReceipt'
 
@@ -16,6 +18,7 @@ export default function ApplicationPaymentDetails({ audience = 'applicant' }) {
   const { isRTL } = useLanguage()
   const kind = params.get('kind') === 'registration' ? 'registration' : 'application'
   const [application, setApplication] = useState(null)
+  const [askedFee, setAskedFee] = useState(APPLICATION_FEE_DEFAULT)
   const [extra, setExtra] = useState({ reference: '', receiptNo: '' })
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -51,6 +54,9 @@ export default function ApplicationPaymentDetails({ audience = 'applicant' }) {
         }
       }
       setApplication(data)
+      const cfg = await getApplicationFormDefaults().catch(() => null)
+      const fee = Number(cfg?.application_fee?.amount)
+      if (!cancelled && Number.isFinite(fee) && fee > 0) setAskedFee(fee)
 
       const reference = { reference: '', receiptNo: '' }
       if (kind === 'registration') {
@@ -105,14 +111,14 @@ export default function ApplicationPaymentDetails({ audience = 'applicant' }) {
   }, [id, kind, audience, user?.id, user?.email, t])
 
   const payment = useMemo(() => {
-    const row = listApplicationPayments(application).find((item) => item.kind === kind)
+    const row = listApplicationPayments(application, askedFee).find((item) => item.kind === kind)
     if (!row) return null
     return {
       ...row,
       reference: extra.reference || row.reference,
       receiptNo: extra.receiptNo || row.receiptNo,
     }
-  }, [application, kind, extra])
+  }, [application, askedFee, kind, extra])
 
   const backTo = audience === 'staff'
     ? `/admissions/applications/${id}`

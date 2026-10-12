@@ -10,7 +10,7 @@ import { getNationalityLabel, normalizeNationalityCode } from '../../utils/natio
 import { formatStoredPhone } from '../../utils/callingCodes'
 import ApplyPhoneInput from '../../components/common/ApplyPhoneInput'
 import { notifyApplicationSubmitted } from '../../utils/notifyApplicationSubmitted'
-import { formatApplicationFee } from '../../utils/applicationFee'
+import { APPLICATION_FEE_CURRENCY, formatApplicationFee } from '../../utils/applicationFee'
 import { syncApplicantProfile } from '../../utils/syncApplicantProfile'
 import { resolvePortalAccountByEmail } from '../../utils/resolvePortalAccountByEmail'
 import NationalitySelect from '../../components/common/NationalitySelect'
@@ -1228,7 +1228,7 @@ export default function RegisterApplication({ portal = false }) {
           status_code: formData.submit_as_draft ? 'APDR' : feeRequired ? 'APFP' : 'APSB',
           application_fee_status: feeRequired ? 'pending' : 'not_required',
           application_fee_amount: feeRequired ? applicationFee.amount : null,
-          application_fee_currency: feeRequired ? 'USD' : null,
+          application_fee_currency: feeRequired ? APPLICATION_FEE_CURRENCY : null,
           financial_milestone_code: 'PM00',
           status_changed_at: new Date().toISOString(),
           ...(applicantUserId ? { applicant_user_id: applicantUserId } : {}),
@@ -1867,7 +1867,13 @@ export default function RegisterApplication({ portal = false }) {
                   <div className="rounded-2xl border border-[#c8a84b]/50 bg-[#fff9ec] px-4 py-4">
                     <p className="text-sm font-extrabold text-[#1a3a6b]">{t('registerApplication.feeTitle')}</p>
                     <p className="mt-1 text-sm text-slate-600">
-                      {t('registerApplication.feeHint', { amount: formatApplicationFee(applicationFee.amount, 'USD') })}
+                      {t('registerApplication.feeHint', { amount: formatApplicationFee(applicationFee.amount, APPLICATION_FEE_CURRENCY) })}
+                    </p>
+                    <p className="mt-1 text-sm text-slate-600">
+                      {[
+                        applicationFee.methods?.myfatoorah !== false ? t('payments.bank.online') : null,
+                        applicationFee.methods?.bank_transfer !== false ? t('payments.bank.transfer') : null,
+                      ].filter(Boolean).join(' · ')}
                     </p>
                     {feeCheckout?.application_number && (
                       <p className="mt-2 text-sm font-semibold text-slate-800">

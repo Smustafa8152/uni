@@ -5,7 +5,8 @@ import { CheckCircle, Copy } from 'lucide-react'
 import { useLanguage } from '../../contexts/LanguageContext'
 import { useAuth } from '../../contexts/AuthContext'
 import { supabase } from '../../lib/supabase'
-import { confirmApplicationFeePayment, formatApplicationFee, listApplicationFeeMethods, startApplicationFeeCheckout } from '../../utils/applicationFee'
+import { APPLICATION_FEE_CURRENCY, confirmApplicationFeePayment, formatApplicationFee, listApplicationFeeMethods, onlyPaymentChannel, selectedPaymentChannels, startApplicationFeeCheckout } from '../../utils/applicationFee'
+import { getApplicationFormDefaults } from '../../utils/getApplicationFormDefaults'
 import BankTransferPanel, { PaymentChannelChoice } from '../../components/payment/BankTransferPanel'
 import { listBankTransfers } from '../../utils/bankTransferProof'
 
@@ -23,6 +24,7 @@ export default function ApplicationFeeResult() {
   const [methods, setMethods] = useState([])
   const [payingId, setPayingId] = useState(null)
   const [channel, setChannel] = useState(null)
+  const [channels, setChannels] = useState({ myfatoorah: true, bankTransfer: true })
 
   useEffect(() => {
     async function run() {
@@ -43,14 +45,40 @@ export default function ApplicationFeeResult() {
           setState('unpaid')
           return
         }
-        const listed = await listApplicationFeeMethods(supabase, { applicationId: Number(applicationId) })
+        const defaults = await getApplicationFormDefaults().catch(() => null)
+        const nextChannels = selectedPaymentChannels(defaults?.application_fee)
+        setChannels(nextChannels)
+        setChannel(onlyPaymentChannel(defaults?.application_fee))
+        let listed = null
+        if (nextChannels.myfatoorah) {
+          try {
+            listed = await listApplicationFeeMethods(supabase, { applicationId: Number(applicationId) })
+          } catch (err) {
+            if (!nextChannels.bankTransfer) throw err
+            setError(err?.message || '')
+          }
+        }
         if (listed?.alreadyPaid) {
           setApplication(listed.application || null)
           setState('paid')
           return
         }
-        setApplication(listed?.application || null)
-        setMethods(listed?.methods || [])
+        let applicationRow = listed?.application || null
+        if (!applicationRow) {
+          const { data } = await supabase
+            .from('applications')
+            .select('id, application_number, email, application_fee_amount, application_fee_currency, application_fee_status, application_fee_reference')
+            .eq('id', Number(applicationId))
+            .maybeSingle()
+          applicationRow = data || null
+          if (applicationRow?.application_fee_status === 'paid') {
+            setApplication(applicationRow)
+            setState('paid')
+            return
+          }
+        }
+        setApplication(applicationRow)
+        setMethods(nextChannels.myfatoorah ? listed?.methods || [] : [])
         const proofs = await listBankTransfers(supabase, Number(applicationId)).catch(() => [])
         const waiting = proofs.some((row) => row.fee_kind === 'application' && row.status === 'submitted')
         setState(waiting ? 'proof' : 'choose')
@@ -84,7 +112,7 @@ export default function ApplicationFeeResult() {
   }
 
   const amount = application
-    ? formatApplicationFee(application.application_fee_amount, application.application_fee_currency || 'USD')
+    ? formatApplicationFee(application.application_fee_amount, APPLICATION_FEE_CURRENCY)
     : ''
   const showChoices = (state === 'choose' || state === 'unpaid') && Boolean(applicationId)
   const paid = state === 'paid'
@@ -200,19 +228,27 @@ export default function ApplicationFeeResult() {
             {amount && <p className="mt-1 text-sm font-semibold text-slate-700" dir="ltr">{amount}</p>}
             {showChoices && channel == null && (
               <div className="mt-5 text-start">
-                <PaymentChannelChoice isRTL={isRTL} onOnline={() => setChannel('online')} onBank={() => setChannel('bank')} />
+                <PaymentChannelChoice
+                  isRTL={isRTL}
+                  myfatoorah={channels.myfatoorah}
+                  bankTransfer={channels.bankTransfer}
+                  onOnline={() => setChannel('online')}
+                  onBank={() => setChannel('bank')}
+                />
               </div>
             )}
             {showChoices && channel === 'bank' && applicationId && (
               <div className="mt-5 text-start">
-                <button type="button" onClick={() => setChannel(null)} className="mb-3 text-sm font-semibold text-[#1a3a6b]">
-                  {t('payments.bank.back')}
-                </button>
+                {channels.myfatoorah && (
+                  <button type="button" onClick={() => setChannel(null)} className="mb-3 text-sm font-semibold text-[#1a3a6b]">
+                    {t('payments.bank.back')}
+                  </button>
+                )}
                 <BankTransferPanel
                   applicationId={Number(applicationId)}
                   feeKind="application"
                   amount={application?.application_fee_amount}
-                  currency={application?.application_fee_currency || 'USD'}
+                  currency="GMD"
                   isRTL={isRTL}
                   onSubmitted={() => setState('proof')}
                 />
@@ -220,9 +256,11 @@ export default function ApplicationFeeResult() {
             )}
             {showChoices && channel === 'online' && (
               <div className="mt-5 grid grid-cols-1 gap-3 text-start">
-                <button type="button" onClick={() => setChannel(null)} className="text-start text-sm font-semibold text-[#1a3a6b]">
-                  {t('payments.bank.back')}
-                </button>
+                {channels.bankTransfer && (
+                  <button type="button" onClick={() => setChannel(null)} className="text-start text-sm font-semibold text-[#1a3a6b]">
+                    {t('payments.bank.back')}
+                  </button>
+                )}
                 {methods.map((method) => {
                   const name = isRTL && method.nameAr ? method.nameAr : method.nameEn || method.nameAr
                   const busy = payingId === method.id
@@ -245,7 +283,7 @@ export default function ApplicationFeeResult() {
                         <span className="block text-sm font-extrabold text-slate-900">{name}</span>
                         {method.totalAmount != null && (
                           <span className="mt-0.5 block text-xs text-slate-500" dir="ltr">
-                            {formatApplicationFee(method.totalAmount, method.currency || application?.application_fee_currency || 'USD')}
+                            {formatApplicationFee(method.totalAmount, method.currency || APPLICATION_FEE_CURRENCY)}
                           </span>
                         )}
                       </span>
