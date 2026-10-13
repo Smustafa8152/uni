@@ -14,8 +14,8 @@ function readStoredCollegeId() {
 }
 
 export function CollegeProvider({ children }) {
-  const { userRole, collegeId: authCollegeId } = useAuth()
-  const universityWide = hasUniversityWideScope(userRole, authCollegeId)
+  const { userRole, collegeId: authCollegeId, menuPermissions } = useAuth()
+  const universityWide = hasUniversityWideScope(userRole, authCollegeId, menuPermissions)
   const [selectedCollegeId, setSelectedCollegeId] = useState(() =>
     readStoredCollegeId()
   )

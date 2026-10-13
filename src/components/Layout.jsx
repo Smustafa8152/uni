@@ -420,7 +420,7 @@ export default function Layout({ children }) {
   const { user, userRole, collegeId, menuPermissions, signOut } = useAuth()
   const location = useLocation()
   const navigate = useNavigate()
-  const staffOnAdminPortal = isAdminPortalStaff(userRole, collegeId)
+  const staffOnAdminPortal = isAdminPortalStaff(userRole, collegeId, menuPermissions)
   const useAdminShell = userRole === 'admin' || staffOnAdminPortal
   const isAdminTheme = useAdminShell
   

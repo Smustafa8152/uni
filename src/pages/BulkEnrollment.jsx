@@ -43,9 +43,9 @@ export default function BulkEnrollment() {
   const { t } = useTranslation()
   const { isRTL, language } = useLanguage()
   const navigate = useNavigate()
-  const { userRole, collegeId: authCollegeId } = useAuth()
+  const { userRole, collegeId: authCollegeId, menuPermissions } = useAuth()
   const { selectedCollegeId, colleges } = useCollege()
-  const universityWide = hasUniversityWideScope(userRole, authCollegeId)
+  const universityWide = hasUniversityWideScope(userRole, authCollegeId, menuPermissions)
 
   const localName = useCallback((row) => tidy(isRTL ? row?.name_ar || row?.name_en : row?.name_en || row?.name_ar), [isRTL])
   const studentName = useCallback(

@@ -17,10 +17,10 @@ export default function CreateEnrollment() {
   const { isRTL } = useLanguage()
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
-  const { userRole, collegeId: authCollegeId, departmentId } = useAuth()
+  const { userRole, collegeId: authCollegeId, departmentId, menuPermissions } = useAuth()
   const { selectedCollegeId, requiresCollegeSelection, colleges, setSelectedCollegeId } = useCollege()
-  const collegeId = resolveEffectiveCollegeId(userRole, authCollegeId, selectedCollegeId)
-  const universityWide = hasUniversityWideScope(userRole, authCollegeId)
+  const collegeId = resolveEffectiveCollegeId(userRole, authCollegeId, selectedCollegeId, menuPermissions)
+  const universityWide = hasUniversityWideScope(userRole, authCollegeId, menuPermissions)
 
   // Get student and semester from URL params
   const studentIdFromUrl = searchParams.get('student')

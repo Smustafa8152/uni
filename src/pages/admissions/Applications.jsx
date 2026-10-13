@@ -93,9 +93,9 @@ export default function Applications() {
 
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
-  const { userRole, collegeId: authCollegeId, loading: authLoading, user } = useAuth()
+  const { userRole, collegeId: authCollegeId, menuPermissions, loading: authLoading, user } = useAuth()
   const { selectedCollegeId } = useCollege()
-  const universityWide = hasUniversityWideScope(userRole, authCollegeId)
+  const universityWide = hasUniversityWideScope(userRole, authCollegeId, menuPermissions)
   const [loading, setLoading] = useState(true)
   const [applications, setApplications] = useState([])
   const [filteredApplications, setFilteredApplications] = useState([])
@@ -184,7 +184,7 @@ export default function Applications() {
       return
     }
 
-    const effectiveCollegeId = resolveEffectiveCollegeId(userRole, authCollegeId, selectedCollegeId)
+    const effectiveCollegeId = resolveEffectiveCollegeId(userRole, authCollegeId, selectedCollegeId, menuPermissions)
 
     // College-scoped staff must have a college; university-wide staff/admin can see all
     if (!universityWide && !authCollegeId) {
@@ -279,7 +279,7 @@ export default function Applications() {
     } finally {
       setLoading(false)
     }
-  }, [selectedCollegeId, userRole, authCollegeId, authLoading, universityWide])
+  }, [selectedCollegeId, userRole, authCollegeId, menuPermissions, authLoading, universityWide])
 
   const fetchProgramDefaults = useCallback(async () => {
     if (userRole !== 'admin' && userRole !== 'user') return
@@ -1304,7 +1304,7 @@ export default function Applications() {
   const fetchAssignCatalog = useCallback(async () => {
     setAssignCatalogLoading(true)
     try {
-      const scopeCollegeId = resolveEffectiveCollegeId(userRole, authCollegeId, selectedCollegeId) || authCollegeId
+      const scopeCollegeId = resolveEffectiveCollegeId(userRole, authCollegeId, selectedCollegeId, menuPermissions) || authCollegeId
       let collegesQ = supabase
         .from('colleges')
         .select('id, name_en, name_ar, code, abbreviation')
@@ -1351,7 +1351,7 @@ export default function Applications() {
     } finally {
       setAssignCatalogLoading(false)
     }
-  }, [userRole, authCollegeId, selectedCollegeId, universityWide])
+  }, [userRole, authCollegeId, menuPermissions, selectedCollegeId, universityWide])
 
   const openAssignModal = useCallback(
     async ({ ids, field = 'semester_id' }) => {

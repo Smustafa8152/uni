@@ -5,6 +5,7 @@ import { useLanguage } from '../contexts/LanguageContext'
 import { getLocalizedName } from '../utils/localizedName'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../contexts/AuthContext'
+import { hasUniversityWideScope } from '../utils/menuPermissions'
 import { invokeAdminPasswordReset } from '../utils/invokeAdminPasswordReset'
 import {
   getNationalityFilterOptions,
@@ -59,7 +60,8 @@ export default function Students() {
   const { t } = useTranslation()
   const { isRTL, language } = useLanguage()
   const navigate = useNavigate()
-  const { userRole, collegeId, departmentId } = useAuth()
+  const { userRole, collegeId, departmentId, menuPermissions } = useAuth()
+  const seeAllStudents = hasUniversityWideScope(userRole, collegeId, menuPermissions)
   const [students, setStudents] = useState([])
   const [loading, setLoading] = useState(true)
   const [searchQuery, setSearchQuery] = useState('')
@@ -85,7 +87,7 @@ export default function Students() {
     if (userRole === 'admin' || userRole === 'user' || userRole === 'instructor') {
       fetchStudents()
     }
-  }, [collegeId, userRole, departmentId, showInactive])
+  }, [collegeId, userRole, departmentId, showInactive, seeAllStudents])
 
   const fetchStudents = async () => {
     if (userRole === 'instructor' && !collegeId) {
@@ -103,8 +105,8 @@ export default function Students() {
         query = query.eq('status', 'active')
       }
 
-      // Filter by college for college admins
-      if (userRole === 'user' && collegeId) {
+      // College admins stay in their college. Admissions staff see every student.
+      if (userRole === 'user' && collegeId && !seeAllStudents) {
         console.log('Filtering students by college_id:', collegeId)
         query = query.eq('college_id', collegeId)
       }
