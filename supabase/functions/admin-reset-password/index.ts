@@ -11,12 +11,14 @@ const corsHeaders = {
 
 const STAFF_ROLES = ['admin', 'user', 'instructor']
 
-/** College staff stay inside their college. University-wide staff (no college) cover every application. */
+/** College staff stay inside their college. Admissions and university-wide staff cover every student. */
 function isOutsideCallerCollege(
-  caller: { role?: string; college_id?: number | null },
+  caller: { role?: string; college_id?: number | null; menu_permissions?: unknown },
   targetCollegeId: number | null,
 ): boolean {
   if (caller.role !== 'user' || caller.college_id == null) return false
+  const menus = Array.isArray(caller.menu_permissions) ? caller.menu_permissions.map(String) : []
+  if (menus.includes('admissions')) return false
   return Number(targetCollegeId) !== Number(caller.college_id)
 }
 
@@ -109,7 +111,7 @@ serve(async (req) => {
 
     const { data: callerRow, error: callerErr } = await supabaseAdmin
       .from('users')
-      .select('id, role, college_id')
+      .select('id, role, college_id, menu_permissions')
       .eq('openId', callerAuth.id)
       .maybeSingle()
 

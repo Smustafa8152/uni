@@ -123,9 +123,16 @@ export function isMenuModuleAllowed(permissions, menuKey) {
   if (!menuKey) return true
   if (hasFullMenuAccess(permissions)) return true
   const keys = normalizeMenuPermissions(permissions)
-  if (menuKey === 'dashboard') return true
-  if (menuKey === 'communication') return true
-  return keys.includes(menuKey)
+  const moduleKey = KEY_ALIASES[menuKey] || menuKey
+  if (moduleKey === 'dashboard') return true
+  if (moduleKey === 'communication') return true
+  return keys.includes(moduleKey)
+}
+
+/** Admissions preset: same reach as university-wide admissions, even when a college is still stored. */
+export function isAdmissionsStaff(menuPermissions) {
+  const keys = normalizeMenuPermissions(menuPermissions)
+  return Boolean(keys?.includes('admissions'))
 }
 
 const ADMISSIONS_HIDDEN_HREFS = new Set(['/students/upload', '/instructors'])
@@ -153,14 +160,16 @@ export function defaultMenuPermissions() {
   return [...MENU_MODULE_KEYS]
 }
 
-/** Staff without a college use the admin shell with restricted menus. */
-export function isAdminPortalStaff(userRole, collegeId) {
-  return userRole === 'user' && (collegeId == null || collegeId === '')
+/** Staff without a college, and every admissions user, use the admin shell with restricted menus. */
+export function isAdminPortalStaff(userRole, collegeId, menuPermissions) {
+  if (userRole !== 'user') return false
+  if (collegeId == null || collegeId === '') return true
+  return isAdmissionsStaff(menuPermissions)
 }
 
-/** Superadmin or university-wide staff (no college_id) — see all colleges/semesters. */
-export function hasUniversityWideScope(userRole, collegeId) {
-  return userRole === 'admin' || isAdminPortalStaff(userRole, collegeId)
+/** Superadmin, university-wide staff, or admissions — see all colleges and students. */
+export function hasUniversityWideScope(userRole, collegeId, menuPermissions) {
+  return userRole === 'admin' || isAdminPortalStaff(userRole, collegeId, menuPermissions)
 }
 
 /**
@@ -168,8 +177,8 @@ export function hasUniversityWideScope(userRole, collegeId) {
  * University-wide roles use optional CollegeContext selection (null = all colleges).
  * College-scoped `user` keeps their auth college_id.
  */
-export function resolveEffectiveCollegeId(userRole, authCollegeId, selectedCollegeId) {
-  if (hasUniversityWideScope(userRole, authCollegeId)) {
+export function resolveEffectiveCollegeId(userRole, authCollegeId, selectedCollegeId, menuPermissions) {
+  if (hasUniversityWideScope(userRole, authCollegeId, menuPermissions)) {
     return selectedCollegeId ?? null
   }
   return authCollegeId ?? null

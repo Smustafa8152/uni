@@ -35,10 +35,10 @@ export default function CreateApplication() {
     [t]
   )
   const navigate = useNavigate()
-  const { userRole, collegeId: authCollegeId } = useAuth()
+  const { userRole, collegeId: authCollegeId, menuPermissions } = useAuth()
   const { selectedCollegeId, requiresCollegeSelection, colleges, setSelectedCollegeId, loading: collegesLoading } = useCollege()
-  const collegeId = resolveEffectiveCollegeId(userRole, authCollegeId, selectedCollegeId)
-  const universityWide = hasUniversityWideScope(userRole, authCollegeId)
+  const collegeId = resolveEffectiveCollegeId(userRole, authCollegeId, selectedCollegeId, menuPermissions)
+  const universityWide = hasUniversityWideScope(userRole, authCollegeId, menuPermissions)
   const [paymentsEnabled, setPaymentsEnabled] = useState(true)
   const [currentStep, setCurrentStep] = useState(1)
   const [loading, setLoading] = useState(false)

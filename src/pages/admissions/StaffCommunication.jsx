@@ -18,10 +18,10 @@ export default function StaffCommunication() {
   const { isRTL, language } = useLanguage()
   const isArabic = isRTL || language === 'ar'
   const navigate = useNavigate()
-  const { user, userRole, collegeId: authCollegeId } = useAuth()
+  const { user, userRole, collegeId: authCollegeId, menuPermissions } = useAuth()
   const { selectedCollegeId } = useCollege()
-  const universityWide = hasUniversityWideScope(userRole, authCollegeId)
-  const effectiveCollegeId = resolveEffectiveCollegeId(userRole, authCollegeId, selectedCollegeId)
+  const universityWide = hasUniversityWideScope(userRole, authCollegeId, menuPermissions)
+  const effectiveCollegeId = resolveEffectiveCollegeId(userRole, authCollegeId, selectedCollegeId, menuPermissions)
 
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')

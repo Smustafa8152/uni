@@ -44,11 +44,11 @@ export default function RequestsManagement() {
   const { t, i18n } = useTranslation()
   const { isRTL, language } = useLanguage()
   const isArabic = isRTL || language === 'ar' || i18n?.language?.toLowerCase()?.startsWith('ar')
-  const { userRole, collegeId: authCollegeId } = useAuth()
+  const { userRole, collegeId: authCollegeId, menuPermissions } = useAuth()
   const { selectedCollegeId } = useCollege()
   const navigate = useNavigate()
 
-  const collegeId = resolveEffectiveCollegeId(userRole, authCollegeId, selectedCollegeId)
+  const collegeId = resolveEffectiveCollegeId(userRole, authCollegeId, selectedCollegeId, menuPermissions)
 
   const [loading, setLoading] = useState(true)
   const [rows, setRows] = useState([])
