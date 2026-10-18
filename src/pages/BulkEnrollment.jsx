@@ -12,6 +12,7 @@ import { creditLimits, describeRegistrationState, fetchPrerequisites, isDraftSem
 import { applyBulkRegistration, fetchPassedByStudent, fetchSemesterEnrollments, planBulkRegistration, selectionWarnings } from '../utils/bulkRegistration'
 import { Badge, Button, ConfirmDialog, EmptyState, PageHeader, Panel, Skeleton, toast } from '../components/ui'
 import { ScheduleLine } from '../components/registration/RegistrationWidgets'
+import { getPersonName } from '../utils/localizedName'
 
 const NS = 'enrollments.bulkPage'
 
@@ -50,9 +51,7 @@ export default function BulkEnrollment() {
   const localName = useCallback((row) => tidy(isRTL ? row?.name_ar || row?.name_en : row?.name_en || row?.name_ar), [isRTL])
   const studentName = useCallback(
     (s) => {
-      const en = tidy(s.name_en) || tidy(`${s.first_name || ''} ${s.last_name || ''}`)
-      const ar = tidy(s.name_ar) || tidy(`${s.first_name_ar || ''} ${s.last_name_ar || ''}`)
-      return (isRTL ? ar || en : en || ar) || `#${s.id}`
+      return tidy(getPersonName(s, isRTL)) || `#${s.id}`
     },
     [isRTL]
   )

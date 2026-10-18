@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useMemo } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { useLanguage } from '../../contexts/LanguageContext'
-import { getLocalizedName } from '../../utils/localizedName'
+import { getLocalizedName, getPersonName } from '../../utils/localizedName'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
 import { useCollege } from '../../contexts/CollegeContext'
@@ -199,7 +199,11 @@ export default function Applications() {
         .select(`
           id,
           first_name,
+          middle_name,
           last_name,
+          first_name_ar,
+          middle_name_ar,
+          last_name_ar,
           email,
           phone,
           date_of_birth,
@@ -743,8 +747,12 @@ export default function Applications() {
       const q = searchQuery.toLowerCase()
       filtered = filtered.filter(
         (app) =>
+          getPersonName(app, false).toLowerCase().includes(q) ||
+          getPersonName(app, true).toLowerCase().includes(q) ||
           app.first_name?.toLowerCase().includes(q) ||
           app.last_name?.toLowerCase().includes(q) ||
+          app.first_name_ar?.toLowerCase().includes(q) ||
+          app.last_name_ar?.toLowerCase().includes(q) ||
           app.email?.toLowerCase().includes(q) ||
           app.phone?.includes(q) ||
           app.application_number?.toLowerCase().includes(q)
@@ -2347,7 +2355,7 @@ export default function Applications() {
                     <span>{t('admissions.applicationsPage.selectApplication', 'Select')}</span>
                   </label>
                   <h3 className="text-lg font-bold text-gray-900 mb-1">
-                    {application.first_name} {application.last_name}
+                    {getPersonName(application, isArabicLayout) || application.email}
                   </h3>
                   <p className="text-sm text-gray-600 break-all">{application.email}</p>
                 </div>

@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { useLanguage } from '../../contexts/LanguageContext'
 import { useAuth } from '../../contexts/AuthContext'
-import { getLocalizedName } from '../../utils/localizedName'
+import { getLocalizedName, getPersonName } from '../../utils/localizedName'
 import { supabase } from '../../lib/supabase'
 import { getNationalityLabel } from '../../utils/nationalities'
 
@@ -200,7 +200,7 @@ export default function StudentProfile() {
   const semesterName = getLocalizedName(semester, isRTL)
   const degreeCode = student.majors?.degree_level
   const degree = degreeCode ? t(`academic.majors.${degreeCode}`, { defaultValue: degreeCode }) : ''
-  const displayName = getLocalizedName(student, isRTL) || [student.first_name, student.middle_name, student.last_name].filter(Boolean).join(' ') || student.email
+  const displayName = getPersonName(student, isArabic) || student.email
   const avatarLetter = (displayName || 'م').trim().charAt(0) || 'م'
   const programLine = [major, [degree, semesterName].filter(Boolean).join(' | ')].filter(Boolean).join(' — ') || '—'
 

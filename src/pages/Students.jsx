@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { useLanguage } from '../contexts/LanguageContext'
-import { getLocalizedName } from '../utils/localizedName'
+import { getLocalizedName, getPersonName } from '../utils/localizedName'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../contexts/AuthContext'
 import { hasUniversityWideScope } from '../utils/menuPermissions'
@@ -33,21 +33,14 @@ import {
 
 function getInitials(s, isRTL) {
   if (!s) return '?'
-  const nameForInitials = isRTL ? (s.name_ar || s.name_en) : (s.name_en || s.name_ar)
-  const first = (s.first_name || s.name_en || '').trim().charAt(0)
-  const last = (s.last_name || '').trim().charAt(0)
-  if (first && last) return `${first}${last}`.toUpperCase()
-  const name = (nameForInitials || '').trim()
-  return name.length >= 2 ? name.slice(0, 2).toUpperCase() : (first || name.charAt(0) || '?').toUpperCase()
+  const name = getPersonName(s, isRTL).trim()
+  const parts = name.split(/\s+/).filter(Boolean)
+  if (parts.length >= 2) return `${parts[0].charAt(0)}${parts[1].charAt(0)}`.toUpperCase()
+  return (name.charAt(0) || '?').toUpperCase()
 }
 
 function getStudentDisplayName(student, isRTL) {
-  if (!student) return '—'
-  const localized = getLocalizedName(student, isRTL)
-  if (localized) return localized
-  const en = [student.first_name, student.middle_name, student.last_name].filter(Boolean).join(' ')
-  const ar = [student.first_name_ar, student.middle_name_ar, student.last_name_ar].filter(Boolean).join(' ')
-  return isRTL ? (ar || en) : (en || ar) || '—'
+  return getPersonName(student, isRTL) || '—'
 }
 
 function formatGenderFilterLabel(t, raw) {
@@ -247,8 +240,12 @@ export default function Students() {
     if (q) {
       list = list.filter(
         (student) =>
+          getPersonName(student, false).toLowerCase().includes(q) ||
+          getPersonName(student, true).toLowerCase().includes(q) ||
           (student.first_name && student.first_name.toLowerCase().includes(q)) ||
           (student.last_name && student.last_name.toLowerCase().includes(q)) ||
+          (student.first_name_ar && student.first_name_ar.toLowerCase().includes(q)) ||
+          (student.name_ar && student.name_ar.toLowerCase().includes(q)) ||
           (student.email && student.email.toLowerCase().includes(q)) ||
           (student.student_id && student.student_id.toLowerCase().includes(q))
       )

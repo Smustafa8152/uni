@@ -3,7 +3,7 @@ import { Link, useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { useLanguage } from '../../contexts/LanguageContext'
 import { useAuth } from '../../contexts/AuthContext'
-import { getLocalizedName } from '../../utils/localizedName'
+import { getLocalizedName, getPersonName } from '../../utils/localizedName'
 import { getEmailLookupCandidates } from '../../utils/emailLookup'
 import { formatTimeRange12h } from '../../utils/timeFormat'
 import { formatInstructorDisplayName } from '../../utils/academicTitle'
@@ -100,7 +100,7 @@ export default function StudentDashboard() {
       const emailCandidates = getEmailLookupCandidates(user.email)
       let studentQuery = supabase
         .from('students')
-        .select('id, student_id, name_en, name_ar, first_name, last_name, gpa, college_id, major_id, enrollment_date, notes, total_credits_earned, financial_hold_reason_code, financial_milestone_code, colleges(id, name_en, name_ar), majors(id, name_en, name_ar, total_credits)')
+        .select('id, student_id, name_en, name_ar, first_name, middle_name, last_name, first_name_ar, middle_name_ar, last_name_ar, gpa, college_id, major_id, enrollment_date, notes, total_credits_earned, financial_hold_reason_code, financial_milestone_code, colleges(id, name_en, name_ar), majors(id, name_en, name_ar, total_credits)')
         .eq('status', 'active')
 
       studentQuery =
@@ -314,19 +314,17 @@ export default function StudentDashboard() {
   }, [invoices, isArabic])
 
   const initials = useMemo(() => {
-    const name = (isArabic ? (student?.name_ar || '') : (student?.name_en || '')) || ''
+    const name = getPersonName(student, isArabic)
     const s = name.trim()
     if (s) return s[0]
     const email = user?.email || ''
     return email ? email[0].toUpperCase() : 'S'
-  }, [student?.name_ar, student?.name_en, user?.email, isArabic])
+  }, [student, user?.email, isArabic])
 
   const displayName = useMemo(() => {
     const fallback = user?.email?.split('@')[0] || '—'
-    const ar = student?.name_ar || null
-    const en = student?.name_en || null
-    return (isArabic ? (ar || en) : (en || ar)) || fallback
-  }, [student?.name_ar, student?.name_en, user?.email, isArabic])
+    return getPersonName(student, isArabic) || fallback
+  }, [student, user?.email, isArabic])
 
   if (loading && !student) {
     return (

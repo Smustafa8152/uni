@@ -5,7 +5,7 @@ import { useLanguage } from '../../contexts/LanguageContext'
 import { useAuth } from '../../contexts/AuthContext'
 import { useCollege } from '../../contexts/CollegeContext'
 import { supabase } from '../../lib/supabase'
-import { getLocalizedName } from '../../utils/localizedName'
+import { getLocalizedName, getPersonName } from '../../utils/localizedName'
 import { hasUniversityWideScope, resolveEffectiveCollegeId } from '../../utils/menuPermissions'
 import ApplicationMessagesPanel from '../../components/admissions/ApplicationMessagesPanel'
 import { MessageSquare, Loader2, ExternalLink, Search } from 'lucide-react'
@@ -75,7 +75,11 @@ export default function StaffCommunication() {
           id,
           application_number,
           first_name,
+          middle_name,
           last_name,
+          first_name_ar,
+          middle_name_ar,
+          last_name_ar,
           email,
           status_code,
           college_id,
@@ -137,7 +141,7 @@ export default function StaffCommunication() {
     if (!q) return list
     return list.filter((t) => {
       const a = t.application
-      const name = `${a?.first_name || ''} ${a?.last_name || ''}`.toLowerCase()
+      const name = `${getPersonName(a, false)} ${getPersonName(a, true)}`.toLowerCase()
       return (
         name.includes(q) ||
         String(a?.email || '')
@@ -230,7 +234,7 @@ export default function StaffCommunication() {
                 {filtered.map((thread) => {
                   const a = thread.application
                   const active = thread.applicationId === selectedId
-                  const name = [a.first_name, a.last_name].filter(Boolean).join(' ') || a.email
+                  const name = getPersonName(a, isArabic) || a.email
                   return (
                     <li key={thread.applicationId}>
                       <button
@@ -285,9 +289,7 @@ export default function StaffCommunication() {
               >
                 <div className={alignStart}>
                   <div className="font-bold text-gray-900">
-                    {[selected.application.first_name, selected.application.last_name]
-                      .filter(Boolean)
-                      .join(' ')}
+                    {getPersonName(selected.application, isArabic)}
                   </div>
                   <div className="text-xs text-gray-500 font-mono">
                     {selected.application.application_number} · {selected.application.email}

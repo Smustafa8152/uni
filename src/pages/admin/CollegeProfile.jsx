@@ -3,7 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { useLanguage } from '../../contexts/LanguageContext'
 import { supabase } from '../../lib/supabase'
-import { getLocalizedName } from '../../utils/localizedName'
+import { getLocalizedName, getPersonName } from '../../utils/localizedName'
 import { formatInstructorDisplayName } from '../../utils/academicTitle'
 import { 
   ArrowLeft, 
@@ -530,7 +530,7 @@ export default function CollegeProfile() {
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                 {students.map((student) => (
                   <div key={student.id} className="bg-gray-50 rounded-lg p-4 hover:shadow-md transition-shadow cursor-pointer" onClick={() => navigate(`/students/${student.id}`)}>
-                    <p className="font-semibold text-gray-900">{getLocalizedName(student, isRTL) || student.name_en || student.name_ar}</p>
+                    <p className="font-semibold text-gray-900">{getPersonName(student, isRTL) || student.student_id}</p>
                     <p className="text-sm text-gray-600">{student.student_id}</p>
                     <p className="text-sm text-gray-600" dir="ltr">{student.email}</p>
                   </div>

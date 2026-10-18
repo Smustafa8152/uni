@@ -92,64 +92,48 @@ async function signedInStudent(req: Request, admin: Admin, anonKey: string, supa
 }
 
 type Due = {
-  plan: { id: number; installments: number; currency: string }
+  plan: { id: number; currency: string }
   semester: { id: number; name_en: string | null; name_ar: string | null }
   amount: number
+  breakdown: Record<string, unknown>
   alreadyPaid?: boolean
 }
 
-/** The amount this student owes for one opened semester, checked on the server so the browser cannot change it. */
+const DUE_ERRORS: Record<string, string> = {
+  no_student: 'Your student record was not found.',
+  no_plan: 'Your program has no fees set yet.',
+  no_semester: 'Semester not found.',
+  not_open: 'Payment for this semester is not open.',
+  before_joining: 'This semester ended before you joined.',
+  all_paid: 'All installments of your program are paid.',
+  no_courses: 'You are not registered in any course this semester yet.',
+  nothing_due: 'Nothing is due for this semester.',
+}
+
+/**
+ * The amount this student owes for one opened semester. The database function student_fee_due() is the one
+ * calculation (billing mode, credit hours, approved scholarship), so the portal and the payment always agree.
+ */
 async function installmentDue(admin: Admin, student: Record<string, unknown>, semesterId: number): Promise<Due | { error: string }> {
   if (!Number.isFinite(semesterId)) return { error: 'Choose the semester to pay for.' }
-  if (!student.major_id) return { error: 'Your program has no fees set yet.' }
-
-  const { data: plan } = await admin
-    .from('program_fee_plans')
-    .select('id, installments, currency, is_active, program_fee_items (amount, is_optional)')
-    .eq('major_id', student.major_id)
-    .maybeSingle()
-  if (!plan || !plan.is_active) return { error: 'Your program has no fees set yet.' }
-
-  const { data: semester } = await admin
-    .from('semesters')
-    .select('id, name_en, name_ar, academic_year_id, end_date')
-    .eq('id', semesterId)
-    .maybeSingle()
-  if (!semester) return { error: 'Semester not found.' }
-
-  const { data: openings } = await admin
-    .from('program_fee_openings')
-    .select('id, semester_id, academic_year_id')
-    .eq('plan_id', plan.id)
-  const opened = (openings || []).some(
-    (o) => o.semester_id === semester.id || (o.academic_year_id != null && o.academic_year_id === semester.academic_year_id),
-  )
-  if (!opened) return { error: 'Payment for this semester is not open.' }
-
-  if (student.enrollment_date && semester.end_date && String(semester.end_date) < String(student.enrollment_date)) {
-    return { error: 'This semester ended before you joined.' }
+  const { data, error } = await admin.rpc('student_fee_due', { p_student_id: student.id, p_semester_id: semesterId })
+  if (error) throw new Error(error.message)
+  const d = (data || {}) as Record<string, unknown>
+  if (!d.ok) return { error: DUE_ERRORS[String(d.reason)] || 'Your program has no fees set yet.' }
+  const base: Due = {
+    plan: { id: Number(d.plan_id), currency: String(d.currency || 'GMD') },
+    semester: { id: Number(d.semester_id), name_en: (d.semester_name_en as string) || null, name_ar: (d.semester_name_ar as string) || null },
+    amount: Number(d.amount) || 0,
+    breakdown: d,
   }
-
-  const { data: paidRows } = await admin
-    .from('program_fee_payments')
-    .select('semester_id')
-    .eq('student_id', student.id)
-    .eq('plan_id', plan.id)
-    .eq('status', 'paid')
-  const paid = paidRows || []
-  const base = { plan, semester, amount: 0 }
-  if (paid.some((row) => row.semester_id === semester.id)) return { ...base, alreadyPaid: true }
-  if (paid.length >= plan.installments) return { error: 'All installments of your program are paid.' }
-
-  const items = (plan.program_fee_items || []) as { amount: number; is_optional: boolean }[]
-  const total = items.filter((i) => !i.is_optional).reduce((sum, i) => sum + Number(i.amount || 0), 0)
-  const amount = Math.round((total / plan.installments) * 100) / 100
-  if (!(amount > 0)) return { error: 'Your program has no fees set yet.' }
-  return { ...base, amount }
+  if (d.paid) return { ...base, alreadyPaid: true }
+  if (d.reason) return { error: DUE_ERRORS[String(d.reason)] || 'Payment is not possible for this semester.' }
+  if (!(base.amount > 0)) return { error: DUE_ERRORS.nothing_due }
+  return base
 }
 
 async function listMethods(due: Due) {
-  const currency = due.plan.currency || 'USD'
+  const currency = due.plan.currency || 'GMD'
   const data = await myfatoorah('/v2/InitiatePayment', { InvoiceAmount: due.amount, CurrencyIso: currency })
   const methods = (Array.isArray(data?.PaymentMethods) ? data.PaymentMethods : []).map((row: Record<string, unknown>) => ({
     id: row.PaymentMethodId,
@@ -174,7 +158,7 @@ async function createInvoice(req: Request, admin: Admin, student: Record<string,
   const language = String(body.language || '').toLowerCase().startsWith('ar') ? 'ar' : 'en'
   const name =
     [student.first_name, student.last_name].filter(Boolean).join(' ').trim() || String(student.name_en || '') || 'Student'
-  const currency = due.plan.currency || 'USD'
+  const currency = due.plan.currency || 'GMD'
 
   const data = await myfatoorah('/v2/ExecutePayment', {
     PaymentMethodId: paymentMethodId,
@@ -200,6 +184,8 @@ async function createInvoice(req: Request, admin: Admin, student: Record<string,
     amount: due.amount,
     currency,
     status: 'pending',
+    method: 'card',
+    breakdown: due.breakdown,
     myfatoorah_invoice_id: invoiceId || null,
     invoice_url: invoiceUrl,
     language,

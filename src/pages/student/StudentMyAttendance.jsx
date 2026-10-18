@@ -4,6 +4,7 @@ import { useLanguage } from '../../contexts/LanguageContext'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
 import { Calendar, CheckCircle, XCircle, Clock, AlertCircle } from 'lucide-react'
+import { getPersonName } from '../../utils/localizedName'
 
 export default function StudentMyAttendance() {
   const { t } = useTranslation()
@@ -217,7 +218,7 @@ export default function StudentMyAttendance() {
           <div>
             <h3 className={`text-sm font-medium text-gray-500 mb-2 ${isRTL ? 'text-right' : 'text-left'}`}>{t('student.myAttendance.studentName')}</h3>
             <p className={`text-lg font-semibold text-gray-900 ${isRTL ? 'text-right' : 'text-left'}`}>
-              {student.name_en || `${student.first_name} ${student.last_name}`}
+              {getPersonName(student, isRTL)}
             </p>
           </div>
           <div>

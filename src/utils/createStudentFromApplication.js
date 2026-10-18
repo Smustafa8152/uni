@@ -302,7 +302,9 @@ export async function createStudentFromApplication(application, customPassword =
         high_school_country: application.high_school_country || null,
         graduation_year: application.graduation_year ? parseInt(application.graduation_year) : null,
         high_school_gpa: application.gpa ? parseFloat(application.gpa) : null,
-        has_scholarship: application.scholarship_request || false,
+        // A request is not a scholarship: only a decision made by staff (Finance > Scholarships) counts.
+        // The database copies an approved or declined decision onto the new student record.
+        has_scholarship: application.scholarship_status === 'approved',
         scholarship_type: application.scholarship_type?.trim() || null,
         scholarship_percentage: application.scholarship_percentage ? parseFloat(application.scholarship_percentage) : null,
         scholarship_details: application.scholarship_details?.trim() || null,

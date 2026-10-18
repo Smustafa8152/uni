@@ -310,7 +310,8 @@
     "curriculumMap": "Curriculum map",
     "examAnswers": "Exam answers",
     "gradesExport": "Grades export",
-    "universityKPIs": "University KPIs"
+    "universityKPIs": "University KPIs",
+    "feesPayments": "Fees & payments"
   },
   "roleSelection": {
     "title": "Imam Bukhari University",
@@ -8460,7 +8461,27 @@
     "confirming": "Checking your payment…",
     "paymentReceived": "Payment received. Thank you.",
     "paymentPending": "Your payment is still being processed. Check again in a few minutes.",
-    "paymentFailed": "The payment was not completed. You can try again."
+    "paymentFailed": "The payment was not completed. You can try again.",
+    "noPlan": "Fees for your programme have not been set yet.",
+    "dueNow": "To pay now",
+    "perCreditHour": "Per credit hour",
+    "scholarshipBadge": "Scholarship: {{percent}}% off tuition",
+    "semestersTitle": "Semesters",
+    "semesterN": "Semester {{n}}",
+    "tuition": "Tuition",
+    "tuitionHours": "Tuition: {{hours}} hours × {{rate}}",
+    "otherFees": "Services, exams, library and records",
+    "scholarshipLine": "Scholarship {{percent}}%",
+    "toPay": "To pay",
+    "payAmount": "Pay {{amount}}",
+    "creditHoursNote": "Tuition is charged each semester for the hours you register, at {{rate}} per credit hour.",
+    "reason": {
+      "not_open": "Payment for this semester is not open yet.",
+      "no_courses": "Register your courses for this semester first; the amount depends on your hours.",
+      "before_joining": "This semester ended before you joined.",
+      "all_paid": "All instalments of your programme are paid.",
+      "nothing_due": "Nothing is due for this semester."
+    }
   },
   "dashboardHome": {
     "title": "Overview",
@@ -8595,5 +8616,147 @@
     "intakeByYear": "New students by year",
     "passBySemester": "Pass rate by semester",
     "passBySemesterHint": "Graded courses passed"
+  },
+  "fees": {
+    "title": "Fees & payments",
+    "subtitle": "Open a semester for payment, see who has paid, and record cash or bank payments.",
+    "viewsLabel": "Fee views",
+    "views": {
+      "schedule": "Open & close",
+      "roster": "Who has paid",
+      "programmes": "Programme prices",
+      "payments": "All payments"
+    },
+    "migrationNeeded": "The fees update is not installed in the database yet. Run the migration 20261013180000_fees_billing_scholarships.sql in Supabase, then reload this page.",
+    "openedToast": "Opened for payment ({{count}})",
+    "closedToast": "Closed. Payments already made stay recorded.",
+    "closeTitle": "Close payment?",
+    "savedToast": "Programme prices saved",
+    "perHourLine": "{{rate}} per credit hour + {{fees}} fixed per semester",
+    "perCreditHour": "Per credit hour",
+    "perSemester": "Per semester",
+    "byHours": "By hours",
+    "tuitionTag": "Tuition",
+    "tuitionHint": "Tuition lines are what a scholarship reduces. Credit-hour programmes charge them by the hours registered.",
+    "creditHoursExplain": "Each semester: credit hours registered × the hour rate, plus {{fees}} of fixed fees (the fixed lines spread over {{count}} semesters).",
+    "mode": {
+      "installment": "Equal instalments",
+      "credit_hours": "By credit hours"
+    },
+    "modeLabel": "How a semester is billed",
+    "modeHint": {
+      "installment": "The programme total split into equal instalments, one per semester.",
+      "credit_hours": "Hours registered that semester × the hour rate, plus a share of the fixed fees."
+    },
+    "semestersForFixed": "Semesters the fixed fees are spread over",
+    "fixedPerSemester": "Fixed fees per semester",
+    "errors": {
+      "rate": "Enter the price of one credit hour."
+    },
+    "methodLabel": "Paid by",
+    "method": {
+      "card": "Card (online)",
+      "cash": "Cash",
+      "bank_transfer": "Bank transfer"
+    },
+    "cancelled": "Cancelled",
+    "reason": {
+      "not_open": "Not open",
+      "no_courses": "No courses registered",
+      "before_joining": "Before joining",
+      "all_paid": "All instalments paid",
+      "nothing_due": "Nothing due"
+    },
+    "convert": {
+      "hint": "{{count}} programmes are still priced in {{currency}}. Enter the rate once to convert every price to dalasi (GMD).",
+      "button": "Convert to dalasi",
+      "confirmTitle": "Convert all prices to dalasi?",
+      "confirmBody": "Every item and hour rate in {{count}} programmes will be multiplied by {{rate}} (1 {{currency}} = {{rate}} GMD) and saved in GMD. Do this once.",
+      "done": "{{count}} programmes converted to dalasi"
+    },
+    "roster": {
+      "students": "Students",
+      "paid": "Paid",
+      "unpaid": "Not paid yet",
+      "collected": "Collected",
+      "outstanding": "Still due",
+      "search": "Search by name, number or email",
+      "filter": {
+        "all": "All",
+        "unpaid": "Not paid",
+        "paid": "Paid"
+      },
+      "tuition": "Tuition",
+      "tuitionHours": "Tuition (hours)",
+      "hours": "{{count}} hours",
+      "scholarship": "Scholarship",
+      "fees": "Fixed fees",
+      "due": "To pay",
+      "status": "Status",
+      "paidBy": "Paid · {{method}}",
+      "record": "Record payment",
+      "recordTitle": "Record a payment",
+      "amountToRecord": "Amount (worked out by the system)",
+      "reference": "Receipt or transfer number",
+      "referenceHint": "e.g. RCPT-1042",
+      "note": "Note (optional)",
+      "recordButton": "Record as paid",
+      "recorded": "Recorded {{amount}} for {{name}}",
+      "cancel": "Cancel this payment",
+      "cancelConfirm": "Cancel the {{amount}} payment recorded for {{name}}? The semester shows as unpaid again. Use this only for a payment recorded by mistake.",
+      "cancelled": "Payment cancelled",
+      "noStudents": "No active students in this programme.",
+      "noMatch": "No student matches."
+    }
+  },
+  "scholarships": {
+    "title": "Scholarships",
+    "subtitle": "Decide who gets a scholarship and how much.",
+    "howItWorks": "Applicants ask for a scholarship on the application form. Staff approve or decline here. An approved percentage reduces only the tuition part of each semester; admission, services, library and documents are charged in full. A decision made while the person is still an applicant moves to their student record automatically.",
+    "tabs": {
+      "requested": "Waiting for decision",
+      "approved": "Approved",
+      "declined": "Declined"
+    },
+    "approvedStudents": "Students with a scholarship",
+    "search": "Search by name, number or email",
+    "kind": {
+      "student": "Student",
+      "applicant": "Applicant"
+    },
+    "asked": "Asked for {{percent}}%",
+    "approvedPercent": "{{percent}}% of tuition",
+    "approve": "Approve",
+    "change": "Change %",
+    "decline": "Decline",
+    "revoke": "Withdraw",
+    "save": "Save",
+    "approvedToast": "{{name}}: {{percent}}% scholarship approved",
+    "declinedToast": "{{name}}: scholarship declined",
+    "addForStudent": "Add for a student",
+    "addHint": "For a student who did not ask on the form, e.g. a sponsored student.",
+    "showMore": "Show {{count}} more",
+    "empty": {
+      "requested": "No requests waiting.",
+      "approved": "No approved scholarships yet.",
+      "declined": "Nothing declined."
+    },
+    "noDocs": "No documents uploaded.",
+    "noScholarshipDocs": "No scholarship documents.",
+    "moreDocs": "+ {{count}} other documents",
+    "fewerDocs": "Show scholarship documents only"
+  },
+  "applicantFees": {
+    "title": "Your programme fees",
+    "total": "Whole programme",
+    "perHour": "Per credit hour",
+    "perSemester": "Each of {{count}} semesters",
+    "creditHoursHint": "You pay each semester for the hours you register, plus {{fees}} of fixed fees. Payment opens in your student portal after you join.",
+    "installmentHint": "Paid in {{count}} equal instalments, one per semester, from your student portal after you join.",
+    "scholarship": {
+      "requested": "Your scholarship request is waiting for a decision.",
+      "approved": "Scholarship approved: {{percent}}% off tuition.",
+      "declined": "Your scholarship request was not approved."
+    }
   }
 }

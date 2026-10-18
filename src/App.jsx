@@ -151,6 +151,8 @@ import CreateDonation from './pages/finance/CreateDonation'
 import InstallmentPlans from './pages/finance/InstallmentPlans'
 import CreateInstallmentPlan from './pages/finance/CreateInstallmentPlan'
 import FinanceConfiguration from './pages/finance/FinanceConfiguration'
+import Fees from './pages/finance/Fees'
+import Scholarships from './pages/finance/Scholarships'
 import CreateFeeStructure from './pages/finance/CreateFeeStructure'
 import CreateFeeType from './pages/finance/CreateFeeType'
 import RegisterApplication from './pages/public/RegisterApplication'
@@ -1718,6 +1720,26 @@ function App() {
               <ProtectedRoute>
                 <RoleBasedLayout>
                   <CreateInstallmentPlan />
+                </RoleBasedLayout>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/finance/fees"
+            element={
+              <ProtectedRoute>
+                <RoleBasedLayout>
+                  <Fees />
+                </RoleBasedLayout>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/finance/scholarships"
+            element={
+              <ProtectedRoute>
+                <RoleBasedLayout>
+                  <Scholarships />
                 </RoleBasedLayout>
               </ProtectedRoute>
             }

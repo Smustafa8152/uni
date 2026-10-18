@@ -2,11 +2,14 @@ import { useState, useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
+import { useLanguage } from '../../contexts/LanguageContext'
+import { getPersonName } from '../../utils/localizedName'
 import { Save, X, CheckCircle, XCircle, Clock, AlertCircle } from 'lucide-react'
 
 export default function AttendanceManagement({ classId, sessionId, enrollmentIds, onClose, onSave }) {
   const { t } = useTranslation()
   const { userRole } = useAuth()
+  const { isRTL } = useLanguage()
   const canRecordAttendance = userRole === 'instructor'
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
@@ -28,7 +31,7 @@ export default function AttendanceManagement({ classId, sessionId, enrollmentIds
         .select(`
           id,
           student_id,
-          students(id, name_en, student_id, email)
+          students(id, name_en, name_ar, first_name, middle_name, last_name, first_name_ar, middle_name_ar, last_name_ar, student_id, email)
         `)
         .in('id', enrollmentIds)
         .eq('status', 'enrolled')
@@ -199,7 +202,7 @@ export default function AttendanceManagement({ classId, sessionId, enrollmentIds
                 <div key={student.enrollmentId} className="border border-gray-200 rounded-lg p-4">
                   <div className="flex items-center justify-between mb-3">
                     <div>
-                      <p className="font-semibold text-gray-900">{student.name_en || 'Unknown Student'}</p>
+                      <p className="font-semibold text-gray-900">{getPersonName(student, isRTL) || 'Unknown Student'}</p>
                       <p className="text-sm text-gray-600">ID: {student.student_id || student.email}</p>
                     </div>
                   </div>
