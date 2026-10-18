@@ -1,11 +1,14 @@
 import { useState, useEffect } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
+import { useLanguage } from '../contexts/LanguageContext'
+import { getPersonName } from '../utils/localizedName'
 import { ArrowLeft, Edit, X, User, Trash2, Calendar, DollarSign, GraduationCap, CheckCircle } from 'lucide-react'
 
 export default function ViewEnrollment() {
   const { id } = useParams()
   const navigate = useNavigate()
+  const { isRTL } = useLanguage()
   const [enrollment, setEnrollment] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -34,7 +37,13 @@ export default function ViewEnrollment() {
           students (
             id,
             first_name,
+            middle_name,
             last_name,
+            first_name_ar,
+            middle_name_ar,
+            last_name_ar,
+            name_en,
+            name_ar,
             student_id,
             email,
             phone
@@ -355,7 +364,7 @@ export default function ViewEnrollment() {
                   <div>
                     <label className="text-xs text-gray-500">Name:</label>
                     <p className="text-gray-900 font-medium">
-                      {enrollment?.students?.first_name} {enrollment?.students?.last_name}
+                      {getPersonName(enrollment?.students, isRTL)}
                     </p>
                   </div>
                   <div>

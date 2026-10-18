@@ -3,7 +3,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { useLanguage } from '../contexts/LanguageContext'
 import { getSemesterCreditsFromUniversitySettings } from '../utils/getCollegeSettings'
-import { getLocalizedName } from '../utils/localizedName'
+import { getLocalizedName, getPersonName } from '../utils/localizedName'
 import { supabase } from '../lib/supabase'
 import { finalGradePoints, isPassedEnrollment } from '../utils/registrationRules'
 import { useAuth } from '../contexts/AuthContext'
@@ -107,7 +107,7 @@ export default function CreateEnrollment() {
       const studentExists = students.find(s => s.id.toString() === studentIdFromUrl)
       if (studentExists) {
         setFormData(prev => ({ ...prev, student_id: studentIdFromUrl }))
-        setStudentSearch(`${studentExists.first_name} ${studentExists.last_name} (${studentExists.student_id})`)
+        setStudentSearch(`${getPersonName(studentExists, isRTL)} (${studentExists.student_id})`)
         setCurrentStep(3) // Skip to step 3 if student is pre-filled
       }
     }
@@ -775,7 +775,7 @@ export default function CreateEnrollment() {
     try {
       let query = supabase
         .from('students')
-        .select('id, first_name, last_name, student_id, email, college_id, majors(name_en, name_ar, code), status')
+        .select('id, first_name, middle_name, last_name, first_name_ar, middle_name_ar, last_name_ar, name_en, name_ar, student_id, email, college_id, majors(name_en, name_ar, code), status')
         .eq('status', 'active')
         .order('first_name')
 
@@ -1253,7 +1253,7 @@ export default function CreateEnrollment() {
                       type="button"
                       onClick={() => {
                         setFormData(prev => ({ ...prev, student_id: student.id.toString() }))
-                        setStudentSearch(`${student.first_name} ${student.last_name} (${student.student_id})`)
+                        setStudentSearch(`${getPersonName(student, isRTL)} (${student.student_id})`)
                         setError('')
                       }}
                       className={`w-full px-4 py-3 hover:bg-gray-50 border-b border-gray-100 ${isRTL ? 'text-right' : 'text-left'} ${
@@ -1261,7 +1261,7 @@ export default function CreateEnrollment() {
                       }`}
                     >
                       <div className="font-medium text-gray-900">
-                        {student.first_name} {student.last_name} ({student.student_id})
+                        {getPersonName(student, isRTL)} ({student.student_id})
                       </div>
                       <div className="text-sm text-gray-500">{student.email}</div>
                     </button>
@@ -1276,7 +1276,7 @@ export default function CreateEnrollment() {
                 <div className="grid grid-cols-2 gap-4 text-sm">
                   <div>
                     <span className="text-gray-500">{t('enrollments.studentName', { defaultValue: 'Name:' })}</span>
-                    <span className={`${isRTL ? 'mr-2' : 'ml-2'} font-medium`}>{selectedStudent.first_name} {selectedStudent.last_name}</span>
+                    <span className={`${isRTL ? 'mr-2' : 'ml-2'} font-medium`}>{getPersonName(selectedStudent, isRTL)}</span>
                   </div>
                   <div>
                     <span className="text-gray-500">{t('enrollments.studentId', { defaultValue: 'ID:' })}</span>
@@ -1543,7 +1543,7 @@ export default function CreateEnrollment() {
               </div>
               <div>
                 <span className="text-sm font-medium text-gray-500">Student:</span>
-                <p className="text-gray-900">{selectedStudent?.first_name} {selectedStudent?.last_name} ({selectedStudent?.student_id})</p>
+                <p className="text-gray-900">{getPersonName(selectedStudent, isRTL)} ({selectedStudent?.student_id})</p>
                 <p className="text-xs text-gray-500 mt-1">Major: {getLocalizedName(selectedStudent?.majors, isRTL) || 'N/A'}</p>
               </div>
               <div>

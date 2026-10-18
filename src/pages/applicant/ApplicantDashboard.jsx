@@ -14,6 +14,7 @@ import {
   resolveApplicantStatus,
 } from '../../utils/applicationStatusDisplay'
 import ApplicantNextStep, { applicantHasNextStep, ApplicantSessionLinks } from '../../components/applicant/ApplicantNextStep'
+import ProgrammeFeesCard from '../../components/applicant/ProgrammeFeesCard'
 import ApplicationFeeSummary from '../../components/applicant/ApplicationFeeSummary'
 import { FilePlus2, ChevronRight, Loader2, AlertTriangle, Upload } from 'lucide-react'
 
@@ -65,6 +66,7 @@ export default function ApplicantDashboard() {
             exam_location_or_link,
             exam_instructions,
             created_at,
+            major_id,
             majors!major_id (name_en, name_ar),
             colleges!college_id (name_en, name_ar),
             semesters (name_en, name_ar)
@@ -264,6 +266,7 @@ export default function ApplicantDashboard() {
                 </div>
               )}
               <ApplicationFeeSummary application={active} className="mb-6" />
+              <ProgrammeFeesCard applicationId={active.id} majorId={active.major_id} className="mb-6" />
               {(showNext || active.interview_meeting_url || active.exam_location_or_link || active.interview_at || active.exam_at) && (
                 <div className="mb-6 space-y-3">
                   {showNext && <ApplicantNextStep application={active} isRTL={isRTL} portal />}

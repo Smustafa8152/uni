@@ -7,7 +7,7 @@ import { useAuth } from '../contexts/AuthContext'
 import { invokeAdminPasswordReset } from '../utils/invokeAdminPasswordReset'
 import PasswordResetModal from '../components/admin/PasswordResetModal'
 import CreatePortalAccountModal from '../components/admin/CreatePortalAccountModal'
-import { getLocalizedName } from '../utils/localizedName'
+import { getLocalizedName, getPersonName } from '../utils/localizedName'
 import { getNationalityLabel } from '../utils/nationalities'
 import { getStudentSemesterMilestone, checkFinancePermission, getMilestoneInfo } from '../utils/financePermissions'
 import { getCurrencyCodeFromFinancialSettings } from '../utils/getCollegeSettings'
@@ -893,7 +893,7 @@ export default function ViewStudent() {
   const majorName = getLocalizedName(student?.majors, isRTL) || student?.majors?.name_en || 'N/A'
   const displayNameEn = [student?.first_name, student?.middle_name, student?.last_name].filter(Boolean).join(' ') || student?.name_en || '—'
   const displayNameAr = [student?.first_name_ar, student?.middle_name_ar, student?.last_name_ar].filter(Boolean).join(' ') || student?.name_ar || ''
-  const primaryDisplayName = getLocalizedName(student, isRTL) || (isRTL ? (displayNameAr || displayNameEn) : (displayNameEn || displayNameAr)) || '—'
+  const primaryDisplayName = getPersonName(student, isRTL) || '—'
   const secondaryDisplayName = isRTL ? (displayNameEn || null) : (displayNameAr || null)
   const canManageThisStudent =
     canManageAccounts &&

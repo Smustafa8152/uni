@@ -14,3 +14,15 @@ export function getLocalizedName(item, isRTL) {
     : (item.name_en || item.name_ar || item.fee_name_en || item.fee_name_ar || item.item_name_en || item.item_name_ar || item.group_name_en || item.group_name_ar)
   return (val || '').toString().trim()
 }
+
+function joinName(parts) {
+  return parts.map((part) => String(part || '').trim()).filter(Boolean).join(' ')
+}
+
+/** A person's name in the page language. Arabic uses the Arabic name, then the Latin name. */
+export function getPersonName(person, isArabic) {
+  if (!person) return ''
+  const english = joinName([person.first_name, person.middle_name, person.last_name]) || String(person.name_en || '').trim()
+  const arabic = joinName([person.first_name_ar, person.middle_name_ar, person.last_name_ar]) || String(person.name_ar || '').trim()
+  return (isArabic ? arabic || english : english || arabic) || ''
+}

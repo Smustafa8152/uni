@@ -1,7 +1,28 @@
 import { FunctionsHttpError } from '@supabase/supabase-js'
 
 export const PLAN_SELECT =
+  'id, major_id, study_mode, installments, currency, is_active, billing_mode, credit_hour_rate, majors (id, name_en, name_ar, code, degree_level), program_fee_items (id, name_en, name_ar, amount, is_optional, is_tuition, sort_order)'
+
+/** The same select without the columns added on 13 Oct 2026, for a database that has not run that migration yet. */
+export const PLAN_SELECT_LEGACY =
   'id, major_id, study_mode, installments, currency, is_active, majors (id, name_en, name_ar, code, degree_level), program_fee_items (id, name_en, name_ar, amount, is_optional, sort_order)'
+
+/** True when an error says a column or function from the 13 Oct 2026 fee migration is missing. */
+export function isMissingFeeMigration(error) {
+  const text = `${error?.message || ''} ${error?.details || ''} ${error?.hint || ''}`
+  return /billing_mode|credit_hour_rate|is_tuition|scholarship_status|student_fee_due|program_fee_roster|record_program_fee_payment|breakdown|method/i.test(text) &&
+    /does not exist|could not find|schema cache/i.test(text)
+}
+
+/** Reads the plans; falls back to the older columns when the migration has not been run. */
+export async function loadPlans(supabase) {
+  const res = await supabase.from('program_fee_plans').select(PLAN_SELECT).order('id')
+  if (!res.error) return { plans: res.data || [], migrated: true }
+  if (!isMissingFeeMigration(res.error)) throw res.error
+  const legacy = await supabase.from('program_fee_plans').select(PLAN_SELECT_LEGACY).order('id')
+  if (legacy.error) throw legacy.error
+  return { plans: (legacy.data || []).map((p) => ({ ...p, billing_mode: 'installment', credit_hour_rate: null })), migrated: false }
+}
 
 export function sortedItems(plan) {
   return [...(plan?.program_fee_items || [])].sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0) || a.id - b.id)
@@ -18,13 +39,54 @@ export function installmentAmount(plan) {
   return Math.round((planTotal(plan) / n) * 100) / 100
 }
 
-export function formatMoney(amount, currency = 'USD') {
+/** Tuition lines (what a scholarship reduces) and the fixed fees, both without optional lines. */
+export function planParts(plan) {
+  const items = sortedItems(plan).filter((i) => !i.is_optional)
+  const tuition = items.filter((i) => i.is_tuition).reduce((s, i) => s + Number(i.amount || 0), 0)
+  const total = items.reduce((s, i) => s + Number(i.amount || 0), 0)
+  const n = Number(plan?.installments) || 1
+  return { tuition, fees: total - tuition, total, n, feesPerSemester: Math.round(((total - tuition) / n) * 100) / 100 }
+}
+
+export const isCreditHourPlan = (plan) => plan?.billing_mode === 'credit_hours'
+
+/** What one student owes for one semester, worked out by the database (billing mode, hours, scholarship). */
+export async function fetchFeeDue(supabase, studentId, semesterId) {
+  const { data, error } = await supabase.rpc('student_fee_due', { p_student_id: studentId, p_semester_id: semesterId })
+  if (error) throw error
+  return data || null
+}
+
+export async function fetchRoster(supabase, planId, semesterId) {
+  const { data, error } = await supabase.rpc('program_fee_roster', { p_plan_id: planId, p_semester_id: semesterId })
+  if (error) throw error
+  return data || []
+}
+
+export async function recordFeePayment(supabase, { studentId, semesterId, method, reference, note }) {
+  const { data, error } = await supabase.rpc('record_program_fee_payment', {
+    p_student_id: studentId,
+    p_semester_id: semesterId,
+    p_method: method,
+    p_reference: reference || null,
+    p_note: note || null,
+  })
+  if (error) throw error
+  return data
+}
+
+export async function cancelFeePayment(supabase, paymentId, note) {
+  const { error } = await supabase.rpc('cancel_program_fee_payment', { p_payment_id: paymentId, p_note: note || null })
+  if (error) throw error
+}
+
+export function formatMoney(amount, currency = 'GMD') {
   const value = Number(amount)
   const safe = Number.isFinite(value) ? value : 0
   try {
-    return new Intl.NumberFormat('en-US', { style: 'currency', currency: currency || 'USD', minimumFractionDigits: 0, maximumFractionDigits: 2 }).format(safe)
+    return new Intl.NumberFormat('en-US', { style: 'currency', currency: currency || 'GMD', minimumFractionDigits: 0, maximumFractionDigits: 2 }).format(safe)
   } catch {
-    return `${safe.toFixed(2)} ${currency || 'USD'}`
+    return `${safe.toFixed(2)} ${currency || 'GMD'}`
   }
 }
 
@@ -46,12 +108,20 @@ export function openedSemesterIds(openings, semesters) {
  */
 export async function loadStudentInstallments(supabase, student) {
   if (!student?.major_id) return { plan: null, rows: [] }
-  const { data: plan, error: planErr } = await supabase
+  let { data: plan, error: planErr } = await supabase
     .from('program_fee_plans')
     .select(PLAN_SELECT)
     .eq('major_id', student.major_id)
     .eq('is_active', true)
     .maybeSingle()
+  if (planErr && isMissingFeeMigration(planErr)) {
+    ;({ data: plan, error: planErr } = await supabase
+      .from('program_fee_plans')
+      .select(PLAN_SELECT_LEGACY)
+      .eq('major_id', student.major_id)
+      .eq('is_active', true)
+      .maybeSingle())
+  }
   if (planErr) throw planErr
   if (!plan) return { plan: null, rows: [] }
 
@@ -87,11 +157,23 @@ export async function loadStudentInstallments(supabase, student) {
   const opened = openedSemesterIds(openings, semesters)
   const paidBySemester = new Map((payRes.data || []).map((p) => [p.semester_id, p]))
   const joined = student.enrollment_date ? String(student.enrollment_date) : ''
+  const creditHours = plan.billing_mode === 'credit_hours'
   const rows = semesters
     .filter((s) => opened.has(s.id))
     .filter((s) => !joined || !s.end_date || String(s.end_date) >= joined)
-    .slice(0, plan.installments)
-    .map((s, index) => ({ semester: s, number: index + 1, payment: paidBySemester.get(s.id) || null }))
+    .slice(0, creditHours ? undefined : plan.installments)
+    .map((s, index) => ({ semester: s, number: index + 1, payment: paidBySemester.get(s.id) || null, due: null }))
+
+  // The amount and its parts come from the database, the same figure the payment will charge.
+  await Promise.all(
+    rows.map(async (row) => {
+      try {
+        row.due = await fetchFeeDue(supabase, student.id, row.semester.id)
+      } catch {
+        row.due = null
+      }
+    })
+  )
   return { plan, rows }
 }
 

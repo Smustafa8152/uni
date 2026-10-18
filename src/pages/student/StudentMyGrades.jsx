@@ -1,7 +1,7 @@
 import { useState, useEffect, Fragment } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useLanguage } from '../../contexts/LanguageContext'
-import { getLocalizedName } from '../../utils/localizedName'
+import { getLocalizedName, getPersonName } from '../../utils/localizedName'
 import {
   getGradingScaleFromUniversitySettings,
   normalizeGradeComponent,
@@ -315,7 +315,7 @@ export default function StudentMyGrades() {
   )
   const currentTally = tallyGrades(currentSemesterEnrollments, gradingScale)
 
-  const studentName = getLocalizedName(student, isRTL) || `${student.first_name || ''} ${student.last_name || ''}`.trim() || student.student_id
+  const studentName = getPersonName(student, isRTL) || student.student_id
   const specialization = getLocalizedName(student.majors, isRTL) || '—'
   const college = getLocalizedName(student.colleges, isRTL) || '—'
 

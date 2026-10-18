@@ -7,6 +7,7 @@ import { useAuth } from '../contexts/AuthContext'
 import { supabase } from '../lib/supabase'
 import { exportEnrollmentRecords } from '../utils/exportStudentEnrollments'
 import { buildStudentSearchOrFilter } from '../utils/studentSearchQuery'
+import { getPersonName } from '../utils/localizedName'
 import { Badge, Button, EmptyState, PageHeader, Panel, Skeleton, toast } from '../components/ui'
 
 const NS = 'enrollments.listPage'
@@ -16,7 +17,7 @@ const EXPORT_PAGE_SIZE = 100
 const ENROLLMENT_SELECT = `
   id, enrollment_date, status, grade, numeric_grade, grade_points, created_at, updated_at,
   students (
-    id, student_id, first_name, middle_name, last_name, name_en, name_ar, email, phone, mobile_phone, gender, nationality,
+    id, student_id, first_name, middle_name, last_name, first_name_ar, middle_name_ar, last_name_ar, name_en, name_ar, email, phone, mobile_phone, gender, nationality,
     majors ( id, name_en, name_ar, code ),
     colleges ( id, name_en, name_ar, code )
   ),
@@ -61,8 +62,7 @@ export default function Enrollments() {
   const studentName = useCallback(
     (s) => {
       if (!s) return '—'
-      const en = tidy(s.name_en) || tidy(`${s.first_name || ''} ${s.last_name || ''}`)
-      return (isRTL ? tidy(s.name_ar) || en : en || tidy(s.name_ar)) || '—'
+      return tidy(getPersonName(s, isRTL)) || '—'
     },
     [isRTL]
   )
