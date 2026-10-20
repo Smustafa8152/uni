@@ -8768,5 +8768,36 @@
       "approved": "تمت الموافقة على المنحة: خصم {{percent}}٪ من الرسوم الدراسية.",
       "declined": "لم تتم الموافقة على طلب المنحة."
     }
+  },
+  "subjectView": {
+    "loadFailed": "تعذّر تحميل المادة.",
+    "notWritten": "لم يُكتب بعد.",
+    "allMajors": "جميع تخصصات الكلية",
+    "registeredNow": "المسجّلون حاليًا",
+    "ofSeats": "من {{count}} مقعدًا",
+    "noOpenSection": "لا توجد شعبة مفتوحة",
+    "sections": "الشُعب",
+    "activeSections": "{{count}} نشطة",
+    "passRate": "نسبة النجاح",
+    "ofGraded": "من {{count}} مرصودة",
+    "noGradesYet": "لا توجد درجات نهائية بعد",
+    "tabsLabel": "أقسام المادة",
+    "tabs": {
+      "overview": "نظرة عامة",
+      "students": "الشُعب والطلاب",
+      "outcomes": "المخرجات وخريطة المنهج"
+    },
+    "results": "النتائج",
+    "rules": "الساعات والضوابط",
+    "noPrerequisites": "لا توجد متطلبات سابقة، ويمكن لأي طالب التسجيل.",
+    "noSections": "لا توجد شُعب بعد",
+    "noSectionsHint": "أنشئ شعبة لفصل دراسي ليتمكن الطلاب من التسجيل.",
+    "section": "الشعبة {{name}}",
+    "noInstructor": "بلا مدرّس",
+    "seats": "المقاعد",
+    "registeredStudents": "الطلاب المسجّلون ({{count}})",
+    "searchStudents": "ابحث بالاسم أو الرقم أو البريد",
+    "noMatch": "لا يوجد طالب مطابق.",
+    "noStudents": "لا يوجد طلاب مسجّلون بعد."
   }
 }

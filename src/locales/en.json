@@ -8758,5 +8758,36 @@
       "approved": "Scholarship approved: {{percent}}% off tuition.",
       "declined": "Your scholarship request was not approved."
     }
+  },
+  "subjectView": {
+    "loadFailed": "The subject could not be loaded.",
+    "notWritten": "Not written yet.",
+    "allMajors": "All majors of the college",
+    "registeredNow": "Registered now",
+    "ofSeats": "of {{count}} seats",
+    "noOpenSection": "No open section",
+    "sections": "Sections",
+    "activeSections": "{{count}} active",
+    "passRate": "Pass rate",
+    "ofGraded": "of {{count}} graded",
+    "noGradesYet": "No final grades yet",
+    "tabsLabel": "Subject sections",
+    "tabs": {
+      "overview": "Overview",
+      "students": "Sections & students",
+      "outcomes": "Outcomes & curriculum map"
+    },
+    "results": "Results",
+    "rules": "Hours & rules",
+    "noPrerequisites": "No prerequisites. Any student can register.",
+    "noSections": "No sections yet",
+    "noSectionsHint": "Create a section for a semester so students can register.",
+    "section": "Section {{name}}",
+    "noInstructor": "No instructor",
+    "seats": "Seats",
+    "registeredStudents": "Registered students ({{count}})",
+    "searchStudents": "Search by name, number or email",
+    "noMatch": "No student matches.",
+    "noStudents": "No students registered yet."
   }
 }

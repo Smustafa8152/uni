@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useRef } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { useLanguage } from '../../contexts/LanguageContext'
@@ -21,6 +21,7 @@ export default function CreateSubject() {
   const [success, setSuccess] = useState(false)
   const [collegeId, setCollegeId] = useState(null)
   const [selectedCollegeId, setSelectedCollegeId] = useState(null)
+  const collegePickedRef = useRef(false)
   const [colleges, setColleges] = useState([])
   const [majors, setMajors] = useState([])
   const [allSubjects, setAllSubjects] = useState([])
@@ -67,31 +68,42 @@ export default function CreateSubject() {
     allowed_teacher_actions: [],
   })
 
+  const urlCollegeId = searchParams.get('collegeId')
+
   useEffect(() => {
-    // Check if college ID is passed via URL parameter
-    const urlCollegeId = searchParams.get('collegeId')
-    if (urlCollegeId && userRole === 'admin') {
-      const collegeIdInt = parseInt(urlCollegeId)
-      setCollegeId(collegeIdInt)
-      setSelectedCollegeId(collegeIdInt)
-      setFormData(prev => ({ ...prev, college_id: collegeIdInt, is_university_wide: false }))
-    } else if (userRole === 'user' && authCollegeId) {
-      // For college admins, use their college ID
-      setCollegeId(authCollegeId)
-      setSelectedCollegeId(authCollegeId)
-      setFormData(prev => ({ ...prev, college_id: authCollegeId, is_university_wide: false }))
-    } else {
-      fetchUserCollege()
+    if (!userRole) return
+
+    // Do not re-apply the signed-in user's college after a manual pick.
+    // That reload was clearing the dropdown when their college is inactive.
+    if (!collegePickedRef.current) {
+      if (urlCollegeId && userRole === 'admin') {
+        const collegeIdInt = parseInt(urlCollegeId, 10)
+        if (Number.isFinite(collegeIdInt)) {
+          setCollegeId(collegeIdInt)
+          setSelectedCollegeId(collegeIdInt)
+          setFormData(prev => ({ ...prev, college_id: collegeIdInt, is_university_wide: false }))
+        }
+      } else if (userRole === 'user' && authCollegeId) {
+        setCollegeId(authCollegeId)
+        setSelectedCollegeId(authCollegeId)
+        setFormData(prev => ({ ...prev, college_id: authCollegeId, is_university_wide: false }))
+      } else {
+        fetchUserCollege()
+      }
     }
-    
+
     if (userRole === 'admin') {
       fetchColleges()
     }
-    fetchMajors()
-    fetchInstructors()
     fetchGradeTypes()
     fetchContentTypes()
-  }, [userRole, authCollegeId, collegeId, searchParams])
+  }, [userRole, authCollegeId, urlCollegeId])
+
+  useEffect(() => {
+    if (!userRole) return
+    fetchMajors(collegeId)
+    fetchInstructors(collegeId)
+  }, [userRole, authCollegeId, collegeId])
 
   const fetchContentTypes = async () => {
     try {
@@ -113,20 +125,30 @@ export default function CreateSubject() {
 
   const fetchUserCollege = async () => {
     try {
+      if (collegePickedRef.current) return
       const { data: { user } } = await supabase.auth.getUser()
-      if (!user?.email) return
+      if (!user?.email || collegePickedRef.current) return
 
       const { data: userData } = await supabase
         .from('users')
         .select('college_id')
         .eq('email', user.email)
-        .single()
+        .maybeSingle()
 
-      if (userData?.college_id) {
-        setCollegeId(userData.college_id)
-        setSelectedCollegeId(userData.college_id)
-        setFormData(prev => ({ ...prev, college_id: userData.college_id }))
-      }
+      if (!userData?.college_id || collegePickedRef.current) return
+
+      const { data: college } = await supabase
+        .from('colleges')
+        .select('id, status')
+        .eq('id', userData.college_id)
+        .maybeSingle()
+
+      if (collegePickedRef.current) return
+      if (college?.status !== 'active') return
+
+      setCollegeId(college.id)
+      setSelectedCollegeId(college.id)
+      setFormData(prev => ({ ...prev, college_id: college.id }))
     } catch (err) {
       console.error('Error fetching college ID:', err)
     }
@@ -147,7 +169,7 @@ export default function CreateSubject() {
     }
   }
 
-  const fetchMajors = async () => {
+  const fetchMajors = async (forCollegeId = collegeId) => {
     try {
       let query = supabase
         .from('majors')
@@ -159,8 +181,8 @@ export default function CreateSubject() {
         query = query.or(`college_id.eq.${authCollegeId},is_university_wide.eq.true`)
       }
       // For super admins with selected college: show college's majors OR university-wide majors
-      else if (userRole === 'admin' && collegeId) {
-        query = query.or(`college_id.eq.${collegeId},is_university_wide.eq.true`)
+      else if (userRole === 'admin' && forCollegeId) {
+        query = query.or(`college_id.eq.${forCollegeId},is_university_wide.eq.true`)
       }
 
       const { data, error } = await query
@@ -209,7 +231,7 @@ export default function CreateSubject() {
     }
   }
 
-  const fetchInstructors = async () => {
+  const fetchInstructors = async (forCollegeId = collegeId) => {
     try {
       let query = supabase
         .from('instructors')
@@ -221,8 +243,8 @@ export default function CreateSubject() {
         query = query.eq('college_id', authCollegeId)
       }
       // For super admins, filter by selected college
-      else if (userRole === 'admin' && collegeId) {
-        query = query.eq('college_id', collegeId)
+      else if (userRole === 'admin' && forCollegeId) {
+        query = query.eq('college_id', forCollegeId)
       }
 
       const { data, error } = await query
@@ -530,20 +552,20 @@ export default function CreateSubject() {
                     {t('subjectsForm.college')} {formData.major_scope !== 'university_wide' ? '*' : ''}
                   </label>
                   <select
-                    value={selectedCollegeId || ''}
+                    value={selectedCollegeId != null ? String(selectedCollegeId) : ''}
                     onChange={(e) => {
-                      const collegeIdValue = e.target.value ? parseInt(e.target.value) : null
+                      const collegeIdValue = e.target.value ? parseInt(e.target.value, 10) : null
+                      collegePickedRef.current = true
                       setCollegeId(collegeIdValue)
                       setSelectedCollegeId(collegeIdValue)
                       setFormData(prev => ({ ...prev, college_id: collegeIdValue, selected_major_ids: [] }))
-                      fetchMajors()
                     }}
                     required={formData.major_scope !== 'university_wide'}
                     className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
                   >
                     <option value="">{t('subjectsForm.selectCollege')}</option>
                     {colleges.map((college) => (
-                      <option key={college.id} value={college.id}>
+                      <option key={college.id} value={String(college.id)}>
                         {getLocalizedName(college, isRTL)} ({college.code})
                       </option>
                     ))}
