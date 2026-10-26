@@ -3132,8 +3132,12 @@
       "create": "Create Subject",
       "searchPlaceholder": "Search subjects...",
       "allMajors": "All Majors",
+      "allDepartments": "All Departments",
       "allColleges": "All Colleges",
+      "college": "College",
+      "department": "Department",
       "major": "Major",
+      "allMajorsOfCollege": "All majors of this college",
       "creditHours": "Credit Hours",
       "type": "Type",
       "semester": "Semester",
@@ -3154,7 +3158,17 @@
       "exportAllExcel": "Export all subjects (Excel)",
       "exportAllSuccess": "Downloaded workbook with {{sheets}} sheets and {{students}} students.",
       "exportAllEmpty": "Downloaded workbook with {{sheets}} sheets (no enrolled students found).",
-      "exportAllNone": "No subjects to export."
+      "exportAllNone": "No subjects to export.",
+      "delete": "Delete",
+      "deleteTitle": "Delete this subject",
+      "deleteIntro": "The subject and its sessions will be deleted. Student records stay. Only their registration in these sessions is removed.",
+      "deleteSessions": "Sessions",
+      "deleteStudents": "Students registered in these sessions",
+      "deleteNone": "No sessions or students are linked to this subject.",
+      "deleteMore": "and {{count}} more",
+      "deleteConfirm": "Delete subject and sessions",
+      "deleteSuccess": "Subject and its sessions were deleted.",
+      "deleteFailed": "Could not delete this subject."
     }
   },
   "academicYears": {

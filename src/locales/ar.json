@@ -3965,7 +3965,11 @@
       "searchPlaceholder": "البحث عن المواد...",
       "major": "التخصص",
       "allMajors": "جميع التخصصات",
+      "allDepartments": "جميع الأقسام",
       "allColleges": "جميع الكليات",
+      "college": "الكلية",
+      "department": "القسم",
+      "allMajorsOfCollege": "جميع تخصصات الكلية",
       "creditHours": "الساعات المعتمدة",
       "type": "النوع",
       "semester": "الفصل",
@@ -3986,7 +3990,17 @@
       "exportAllExcel": "تصدير جميع المواد (Excel)",
       "exportAllSuccess": "تم تنزيل ملف Excel يحتوي على {{sheets}} أوراق و{{students}} طالب.",
       "exportAllEmpty": "تم تنزيل ملف Excel يحتوي على {{sheets}} أوراق (لا يوجد طلاب مسجلون).",
-      "exportAllNone": "لا توجد مواد للتصدير."
+      "exportAllNone": "لا توجد مواد للتصدير.",
+      "delete": "حذف",
+      "deleteTitle": "حذف هذه المادة",
+      "deleteIntro": "ستُحذف المادة ومحاضراتها. سجل الطالب يبقى، وتُزال فقط تسجيلاته في هذه المحاضرات.",
+      "deleteSessions": "المحاضرات",
+      "deleteStudents": "الطلاب المسجلون في هذه المحاضرات",
+      "deleteNone": "لا توجد محاضرات أو طلاب مرتبطون بهذه المادة.",
+      "deleteMore": "و{{count}} أخرى",
+      "deleteConfirm": "حذف المادة والمحاضرات",
+      "deleteSuccess": "تم حذف المادة ومحاضراتها.",
+      "deleteFailed": "تعذر حذف هذه المادة."
     }
   },
   "academicYears": {
