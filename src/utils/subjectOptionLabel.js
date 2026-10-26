@@ -10,7 +10,7 @@ export const SUBJECT_OPTION_SELECT = `
   is_university_wide,
   major_id,
   applies_to_all_majors_of_college,
-  colleges(name_en, name_ar, code),
+  colleges!subjects_college_id_fkey(name_en, name_ar, code),
   majors!subjects_major_id_majors_id_fk(name_en, name_ar, code),
   subject_majors(majors(name_en, name_ar, code))
 `

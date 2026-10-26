@@ -44,6 +44,10 @@ BEGIN
       AND (
         v_user.college_id IS NULL
         OR v_subject.college_id = v_user.college_id
+        OR EXISTS (
+          SELECT 1 FROM public.subject_colleges sc
+          WHERE sc.subject_id = v_subject.id AND sc.college_id = v_user.college_id
+        )
         OR COALESCE(v_subject.is_university_wide, false)
       )
     )
@@ -143,6 +147,10 @@ BEGIN
       AND (
         v_user.college_id IS NULL
         OR v_subject.college_id = v_user.college_id
+        OR EXISTS (
+          SELECT 1 FROM public.subject_colleges sc
+          WHERE sc.subject_id = v_subject.id AND sc.college_id = v_user.college_id
+        )
         OR COALESCE(v_subject.is_university_wide, false)
       )
     )

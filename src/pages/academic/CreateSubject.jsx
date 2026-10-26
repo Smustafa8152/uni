@@ -9,6 +9,7 @@ import { supabase, SUPABASE_STORAGE_BUCKET } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
 import { ArrowLeft, Save, Check, Plus, Trash2, Upload } from 'lucide-react'
 import SearchableMultiSelect from '../../components/SearchableMultiSelect'
+import { chosenCollegeIds, collegeScopeFilter, saveSubjectColleges } from '../../utils/subjectColleges'
 
 export default function CreateSubject() {
   const { t } = useTranslation()
@@ -21,7 +22,9 @@ export default function CreateSubject() {
   const [success, setSuccess] = useState(false)
   const [collegeId, setCollegeId] = useState(null)
   const [selectedCollegeId, setSelectedCollegeId] = useState(null)
+  const [selectedCollegeIds, setSelectedCollegeIds] = useState([])
   const collegePickedRef = useRef(false)
+  const collegeFetchRef = useRef(0)
   const [colleges, setColleges] = useState([])
   const [majors, setMajors] = useState([])
   const [allSubjects, setAllSubjects] = useState([])
@@ -33,6 +36,7 @@ export default function CreateSubject() {
 
   const [formData, setFormData] = useState({
     major_scope: 'specific_majors', // 'university_wide' | 'all_majors_of_college' | 'specific_majors'
+    selected_college_ids: [],
     selected_major_ids: [],
     code: '',
     name_en: '',
@@ -81,12 +85,14 @@ export default function CreateSubject() {
         if (Number.isFinite(collegeIdInt)) {
           setCollegeId(collegeIdInt)
           setSelectedCollegeId(collegeIdInt)
-          setFormData(prev => ({ ...prev, college_id: collegeIdInt, is_university_wide: false }))
+          setSelectedCollegeIds([collegeIdInt])
+          setFormData(prev => ({ ...prev, college_id: collegeIdInt, selected_college_ids: [collegeIdInt], is_university_wide: false }))
         }
       } else if (userRole === 'user' && authCollegeId) {
         setCollegeId(authCollegeId)
         setSelectedCollegeId(authCollegeId)
-        setFormData(prev => ({ ...prev, college_id: authCollegeId, is_university_wide: false }))
+        setSelectedCollegeIds([authCollegeId])
+        setFormData(prev => ({ ...prev, college_id: authCollegeId, selected_college_ids: [authCollegeId], is_university_wide: false }))
       } else {
         fetchUserCollege()
       }
@@ -99,11 +105,13 @@ export default function CreateSubject() {
     fetchContentTypes()
   }, [userRole, authCollegeId, urlCollegeId])
 
+  const collegeKey = selectedCollegeIds.join(',')
+
   useEffect(() => {
     if (!userRole) return
-    fetchMajors(collegeId)
-    fetchInstructors(collegeId)
-  }, [userRole, authCollegeId, collegeId])
+    fetchMajors(selectedCollegeIds)
+    fetchInstructors(selectedCollegeIds)
+  }, [userRole, authCollegeId, collegeKey])
 
   const fetchContentTypes = async () => {
     try {
@@ -121,7 +129,7 @@ export default function CreateSubject() {
 
   useEffect(() => {
     fetchSubjects()
-  }, [collegeId, authCollegeId, formData.major_scope, userRole])
+  }, [collegeKey, authCollegeId, formData.major_scope, userRole])
 
   const fetchUserCollege = async () => {
     try {
@@ -148,7 +156,8 @@ export default function CreateSubject() {
 
       setCollegeId(college.id)
       setSelectedCollegeId(college.id)
-      setFormData(prev => ({ ...prev, college_id: college.id }))
+      setSelectedCollegeIds([college.id])
+      setFormData(prev => ({ ...prev, college_id: college.id, selected_college_ids: [college.id] }))
     } catch (err) {
       console.error('Error fetching college ID:', err)
     }
@@ -169,24 +178,28 @@ export default function CreateSubject() {
     }
   }
 
-  const fetchMajors = async (forCollegeId = collegeId) => {
+  const fetchMajors = async (forCollegeIds = selectedCollegeIds) => {
+    const requestId = ++collegeFetchRef.current
     try {
+      const ids = (Array.isArray(forCollegeIds) ? forCollegeIds : [forCollegeIds]).filter(Boolean)
       let query = supabase
         .from('majors')
-        .select('id, name_en, name_ar, code')
+        .select('id, name_en, name_ar, code, college_id, is_university_wide')
         .order('name_en', { ascending: true })
 
-      // For college admins (user role): show college's majors OR university-wide majors
       if (userRole === 'user' && authCollegeId) {
         query = query.or(`college_id.eq.${authCollegeId},is_university_wide.eq.true`)
-      }
-      // For super admins with selected college: show college's majors OR university-wide majors
-      else if (userRole === 'admin' && forCollegeId) {
-        query = query.or(`college_id.eq.${forCollegeId},is_university_wide.eq.true`)
+      } else if (userRole === 'admin') {
+        if (!ids.length) {
+          setMajors([])
+          return
+        }
+        query = query.or(collegeScopeFilter(ids))
       }
 
       const { data, error } = await query
       if (error) throw error
+      if (requestId !== collegeFetchRef.current) return
       setMajors(data || [])
     } catch (err) {
       console.error('Error fetching majors:', err)
@@ -195,7 +208,7 @@ export default function CreateSubject() {
 
   const fetchSubjects = async () => {
     try {
-      const targetCollegeId = collegeId || authCollegeId
+      const targetCollegeIds = selectedCollegeIds.length ? selectedCollegeIds : (authCollegeId ? [authCollegeId] : [])
 
       // University-wide subject (admin): prerequisites can reference any active subject — no college filter
       if (formData.major_scope === 'university_wide' && userRole === 'admin') {
@@ -209,7 +222,7 @@ export default function CreateSubject() {
         return
       }
 
-      if (!targetCollegeId) {
+      if (!targetCollegeIds.length) {
         setAllSubjects([])
         return
       }
@@ -220,7 +233,7 @@ export default function CreateSubject() {
         .eq('status', 'active')
         .order('code')
 
-      query = query.or(`college_id.eq.${targetCollegeId},is_university_wide.eq.true`)
+      query = query.or(collegeScopeFilter(targetCollegeIds))
 
       const { data, error } = await query
       if (error) throw error
@@ -231,20 +244,18 @@ export default function CreateSubject() {
     }
   }
 
-  const fetchInstructors = async (forCollegeId = collegeId) => {
+  const fetchInstructors = async (forCollegeIds = selectedCollegeIds) => {
     try {
+      const ids = (Array.isArray(forCollegeIds) ? forCollegeIds : [forCollegeIds]).filter(Boolean)
       let query = supabase
         .from('instructors')
         .select('id, name_en, name_ar, email, phone, title, academic_title')
         .order('name_en', { ascending: true })
 
-      // For college admins (user role), always filter by their college
       if (userRole === 'user' && authCollegeId) {
         query = query.eq('college_id', authCollegeId)
-      }
-      // For super admins, filter by selected college
-      else if (userRole === 'admin' && forCollegeId) {
-        query = query.eq('college_id', forCollegeId)
+      } else if (userRole === 'admin' && ids.length) {
+        query = query.or(ids.map((id) => `college_id.eq.${id}`).join(','))
       }
 
       const { data, error } = await query
@@ -315,6 +326,27 @@ export default function CreateSubject() {
     setFormData(prev => ({ ...prev, [field]: value }))
   }
 
+  const toggleCollege = (collegeIdValue, checked) => {
+    collegePickedRef.current = true
+    const next = checked
+      ? [...selectedCollegeIds, collegeIdValue]
+      : selectedCollegeIds.filter((id) => id !== collegeIdValue)
+    const kept = new Set(next)
+    setSelectedCollegeIds(next)
+    setCollegeId(next[0] || null)
+    setSelectedCollegeId(next[0] || null)
+    setFormData((prev) => ({
+      ...prev,
+      selected_college_ids: next,
+      college_id: next[0] || null,
+      selected_major_ids: (prev.selected_major_ids || []).filter((majorId) => {
+        const major = majors.find((row) => String(row.id) === String(majorId))
+        if (!major || major.is_university_wide) return Boolean(major)
+        return kept.has(major.college_id)
+      }),
+    }))
+  }
+
   const handlePrerequisiteChange = (subjectId, checked) => {
     if (checked) {
       setFormData(prev => ({
@@ -369,25 +401,20 @@ export default function CreateSubject() {
     setSuccess(false)
 
     try {
-      const targetCollegeId = formData.college_id || collegeId || authCollegeId
+      const collegeIds = chosenCollegeIds(
+        { ...formData, selected_college_ids: selectedCollegeIds },
+        authCollegeId
+      )
 
-      // Validate based on scope
-      if (formData.major_scope === 'all_majors_of_college' && !targetCollegeId) {
-        setError(t('subjectsForm.selectCollegeFirst'))
+      if (formData.major_scope !== 'university_wide' && !collegeIds.length) {
+        setError(t('subjectsForm.selectAtLeastOneCollege'))
         setLoading(false)
         return
       }
-      if (formData.major_scope === 'specific_majors') {
-        if (!targetCollegeId) {
-          setError(t('subjectsForm.selectCollegeFirst'))
-          setLoading(false)
-          return
-        }
-        if (!formData.selected_major_ids?.length) {
-          setError(t('subjectsForm.selectAtLeastOneMajor'))
-          setLoading(false)
-          return
-        }
+      if (formData.major_scope === 'specific_majors' && !formData.selected_major_ids?.length) {
+        setError(t('subjectsForm.selectAtLeastOneMajor'))
+        setLoading(false)
+        return
       }
 
       const isUniversityWide = formData.major_scope === 'university_wide'
@@ -416,7 +443,7 @@ export default function CreateSubject() {
         status: formData.status,
         is_university_wide: isUniversityWide,
         applies_to_all_majors_of_college: appliesToAllMajorsOfCollege,
-        college_id: isUniversityWide ? null : (formData.college_id || collegeId || authCollegeId),
+        college_id: isUniversityWide ? null : collegeIds[0],
         grade_configuration: gradeConfiguration.map(gc => ({
           grade_type_id: gc.grade_type_id,
           grade_type_code: gc.grade_type_code,
@@ -450,8 +477,11 @@ export default function CreateSubject() {
           subject_id: subject.id,
           major_id: parseInt(mid),
         }))
-        await supabase.from('subject_majors').insert(subjectMajorsData)
+        const { error: majorsError } = await supabase.from('subject_majors').insert(subjectMajorsData)
+        if (majorsError) throw majorsError
       }
+
+      await saveSubjectColleges(supabase, subject.id, isUniversityWide ? [] : collegeIds)
 
       // Insert subject materials
       const { data: { user } } = await supabase.auth.getUser()
@@ -549,27 +579,20 @@ export default function CreateSubject() {
               {userRole === 'admin' && (
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">
-                    {t('subjectsForm.college')} {formData.major_scope !== 'university_wide' ? '*' : ''}
+                    {t('subjectsForm.colleges')} {formData.major_scope !== 'university_wide' ? '*' : ''}
                   </label>
-                  <select
-                    value={selectedCollegeId != null ? String(selectedCollegeId) : ''}
-                    onChange={(e) => {
-                      const collegeIdValue = e.target.value ? parseInt(e.target.value, 10) : null
-                      collegePickedRef.current = true
-                      setCollegeId(collegeIdValue)
-                      setSelectedCollegeId(collegeIdValue)
-                      setFormData(prev => ({ ...prev, college_id: collegeIdValue, selected_major_ids: [] }))
-                    }}
-                    required={formData.major_scope !== 'university_wide'}
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
-                  >
-                    <option value="">{t('subjectsForm.selectCollege')}</option>
+                  <div className="grid gap-2 sm:grid-cols-2">
                     {colleges.map((college) => (
-                      <option key={college.id} value={String(college.id)}>
-                        {getLocalizedName(college, isRTL)} ({college.code})
-                      </option>
+                      <label key={college.id} className="flex items-center gap-2 rounded-lg border border-gray-200 px-3 py-2 cursor-pointer hover:bg-gray-50">
+                        <input
+                          type="checkbox"
+                          checked={selectedCollegeIds.includes(college.id)}
+                          onChange={(e) => toggleCollege(college.id, e.target.checked)}
+                        />
+                        <span>{getLocalizedName(college, isRTL)} ({college.code})</span>
+                      </label>
                     ))}
-                  </select>
+                  </div>
                 </div>
               )}
 
@@ -598,7 +621,7 @@ export default function CreateSubject() {
                       value="all_majors_of_college"
                       checked={formData.major_scope === 'all_majors_of_college'}
                       onChange={(e) => handleChange('major_scope', e.target.value)}
-                      disabled={!collegeId && !authCollegeId}
+                      disabled={selectedCollegeIds.length === 0 && !authCollegeId}
                       className="rounded-full"
                     />
                     <div>
@@ -613,7 +636,7 @@ export default function CreateSubject() {
                       value="specific_majors"
                       checked={formData.major_scope === 'specific_majors'}
                       onChange={(e) => handleChange('major_scope', e.target.value)}
-                      disabled={!collegeId && !authCollegeId}
+                      disabled={selectedCollegeIds.length === 0 && !authCollegeId}
                       className="rounded-full"
                     />
                     <div>
@@ -622,29 +645,40 @@ export default function CreateSubject() {
                     </div>
                   </label>
                 </div>
-                {formData.major_scope === 'specific_majors' && (collegeId || authCollegeId) && (
+                {formData.major_scope === 'specific_majors' && (selectedCollegeIds.length > 0 || authCollegeId) && (
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2">{t('subjectsForm.selectMajors')} *</label>
-                    <div className="border rounded-lg p-3 max-h-40 overflow-y-auto space-y-2">
-                      {majors.map(major => (
-                        <label key={major.id} className="flex items-center gap-2 cursor-pointer">
-                          <input
-                            type="checkbox"
-                            checked={(formData.selected_major_ids || []).includes(String(major.id))}
-                            onChange={(e) => {
-                              const ids = formData.selected_major_ids || []
-                              const newIds = e.target.checked
-                                ? [...ids, String(major.id)]
-                                : ids.filter(id => id !== String(major.id))
-                              handleChange('selected_major_ids', newIds)
-                            }}
-                          />
-                          <span>{getLocalizedName(major, isRTL)} ({major.code})</span>
-                        </label>
-                      ))}
-                      {majors.length === 0 && (
-                        <p className="text-sm text-gray-500">{t('subjectsForm.noMajorsInCollege')}</p>
-                      )}
+                    <div className="space-y-3">
+                      {(selectedCollegeIds.length ? selectedCollegeIds : (authCollegeId ? [authCollegeId] : [])).map((cid) => {
+                        const college = colleges.find((row) => row.id === cid)
+                        const rows = majors.filter((major) => major.college_id === cid)
+                        return (
+                          <div key={cid} className="rounded-lg border p-3">
+                            <p className="mb-2 text-sm font-semibold text-gray-800">{college ? getLocalizedName(college, isRTL) : t('subjectsForm.college')}</p>
+                            <div className="max-h-40 space-y-2 overflow-y-auto">
+                              {rows.map((major) => (
+                                <label key={major.id} className="flex items-center gap-2 cursor-pointer">
+                                  <input
+                                    type="checkbox"
+                                    checked={(formData.selected_major_ids || []).includes(String(major.id))}
+                                    onChange={(e) => {
+                                      const ids = formData.selected_major_ids || []
+                                      const newIds = e.target.checked
+                                        ? [...ids, String(major.id)]
+                                        : ids.filter((id) => id !== String(major.id))
+                                      handleChange('selected_major_ids', newIds)
+                                    }}
+                                  />
+                                  <span>{getLocalizedName(major, isRTL)} ({major.code})</span>
+                                </label>
+                              ))}
+                              {rows.length === 0 && (
+                                <p className="text-sm text-gray-500">{t('subjectsForm.noMajorsInCollege')}</p>
+                              )}
+                            </div>
+                          </div>
+                        )
+                      })}
                     </div>
                   </div>
                 )}
@@ -748,7 +782,7 @@ export default function CreateSubject() {
 
               <div className="border-t pt-4">
                 <h3 className="text-lg font-semibold text-gray-900 mb-4">{t('subjectsForm.prerequisitesCorequisites')}</h3>
-                {(collegeId || authCollegeId || (formData.major_scope === 'university_wide' && userRole === 'admin')) ? (
+                {(selectedCollegeIds.length || authCollegeId || (formData.major_scope === 'university_wide' && userRole === 'admin')) ? (
                   allSubjects.length > 0 ? (
                   <div className="space-y-4">
                     {formData.major_scope === 'university_wide' && userRole === 'admin' && (
