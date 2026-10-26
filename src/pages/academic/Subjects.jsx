@@ -10,6 +10,15 @@ import { Plus, BookOpen, Search, Eye, Edit, Download, Trash2 } from 'lucide-reac
 import { Badge, Button, EmptyState, PageHeader, Skeleton } from '../../components/ui'
 import { Facts, Mark, Register, RegisterRow, fieldClass } from '../../components/academic/catalogUi'
 
+function subjectCollegeRows(subject) {
+  const rows = []
+  for (const link of subject.subject_colleges || []) {
+    if (link.colleges?.id) rows.push(link.colleges)
+  }
+  if (subject.colleges?.id) rows.push(subject.colleges)
+  return [...new Map(rows.map((college) => [college.id, college])).values()]
+}
+
 function subjectMajors(subject) {
   const rows = []
   if (subject.majors?.id) rows.push(subject.majors)
@@ -72,7 +81,7 @@ export default function Subjects() {
       setLoading(true)
       let query = supabase
         .from('subjects')
-        .select('*, majors(id, name_en, name_ar, code, college_id, department_id, departments(id, name_en, name_ar, college_id, status)), colleges(id, name_en, name_ar, code, status), subject_majors(majors(id, name_en, name_ar, code, college_id, department_id, departments(id, name_en, name_ar, college_id, status)))')
+        .select('*, majors(id, name_en, name_ar, code, college_id, department_id, departments(id, name_en, name_ar, college_id, status)), colleges!subjects_college_id_fkey(id, name_en, name_ar, code, status), subject_colleges(colleges(id, name_en, name_ar, code, status)), subject_majors(majors(id, name_en, name_ar, code, college_id, department_id, departments(id, name_en, name_ar, college_id, status)))')
         .eq('status', 'active')
         .order('code')
       let departmentQuery = supabase
@@ -149,7 +158,7 @@ export default function Subjects() {
     if (subjectDepartments(subject).some((department) => String(department.id) === departmentFilter)) return true
     if (!subject.applies_to_all_majors_of_college) return false
     const department = departments.find((row) => String(row.id) === departmentFilter)
-    return Boolean(department && String(department.college_id || '') === String(subject.college_id || ''))
+    return Boolean(department && subjectCollegeRows(subject).some((college) => String(college.id) === String(department.college_id || '')))
   }
 
   const subjectMatchesMajor = (subject) => {
@@ -157,7 +166,7 @@ export default function Subjects() {
     if (subjectMajors(subject).some((major) => String(major.id) === majorFilter)) return true
     if (!subject.applies_to_all_majors_of_college) return false
     const major = majorsCatalog.find((row) => String(row.id) === majorFilter)
-    return Boolean(major && String(major.college_id || '') === String(subject.college_id || ''))
+    return Boolean(major && subjectCollegeRows(subject).some((college) => String(college.id) === String(major.college_id || '')))
   }
 
   const filteredSubjects = subjects.filter(subject => {
@@ -167,7 +176,7 @@ export default function Subjects() {
     const matchesCollege = (() => {
       if (!collegeFilter) return true
       if (collegeFilter === 'university_wide') return subject.is_university_wide
-      return String(subject.college_id || subject.colleges?.id || '') === collegeFilter
+      return subjectCollegeRows(subject).some((college) => String(college.id) === collegeFilter)
     })()
 
     return matchesSearch && matchesCollege && subjectMatchesDepartment(subject) && subjectMatchesMajor(subject)
@@ -193,8 +202,9 @@ export default function Subjects() {
   const collegeFilterOptions = useMemo(
     () => [...new Map(
       subjects
-        .filter((s) => s.colleges?.id && s.colleges.status === 'active')
-        .map((s) => [s.colleges.id, s.colleges])
+        .flatMap((subject) => subjectCollegeRows(subject))
+        .filter((college) => college.status === 'active')
+        .map((college) => [college.id, college])
     ).values()],
     [subjects]
   )
@@ -417,8 +427,8 @@ export default function Subjects() {
               tags={subject.is_university_wide ? <Badge tone="info">{t('academic.subjects.universityWide')}</Badge> : null}
               detail={
                 <span className="flex flex-col gap-0.5">
-                  {(subject.is_university_wide || subject.colleges) && (
-                    <span><span className="font-medium text-slate-500">{t('academic.subjects.college')}: </span>{subject.is_university_wide ? t('academic.subjects.universityWide') : getLocalizedName(subject.colleges, isRTL)}</span>
+                  {(subject.is_university_wide || subjectCollegeRows(subject).length > 0) && (
+                    <span><span className="font-medium text-slate-500">{t('academic.subjects.college')}: </span>{subject.is_university_wide ? t('academic.subjects.universityWide') : formatNameList(subjectCollegeRows(subject), isRTL, t)}</span>
                   )}
                   {subjectDepartments(subject).length > 0 && (
                     <span><span className="font-medium text-slate-500">{t('academic.subjects.department')}: </span>{formatNameList(subjectDepartments(subject), isRTL, t)}</span>

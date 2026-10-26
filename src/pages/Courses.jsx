@@ -125,7 +125,7 @@ export default function Courses() {
             name_en,
             code
           ),
-          colleges(
+          colleges!subjects_college_id_fkey(
             id,
             name_en,
             code

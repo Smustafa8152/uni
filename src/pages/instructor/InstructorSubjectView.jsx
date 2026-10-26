@@ -100,7 +100,7 @@ export default function InstructorSubjectView() {
           *,
           majors(id, name_en, code),
           instructors(id, name_en, email),
-          colleges(id, name_en, code)
+          colleges!subjects_college_id_fkey(id, name_en, code)
         `)
         .eq('id', id)
         .single()

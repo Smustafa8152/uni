@@ -204,7 +204,7 @@ export default function ViewSubject() {
       try {
         const { data, error: subErr } = await supabase
           .from('subjects')
-          .select('*, majors(id, name_en, name_ar, code), instructors(id, name_en, name_ar, email, academic_title), colleges(id, name_en, name_ar, code)')
+          .select('*, majors(id, name_en, name_ar, code), instructors(id, name_en, name_ar, email, academic_title), colleges!subjects_college_id_fkey(id, name_en, name_ar, code), subject_colleges(colleges(id, name_en, name_ar, code))')
           .eq('id', id)
           .single()
         if (subErr) throw subErr
@@ -367,7 +367,13 @@ export default function ViewSubject() {
   const title = nameOf(subject)
   const otherName = isArabic ? subject?.name_en : subject?.name_ar
   const showOtherName = otherName && otherName.trim() && otherName.trim() !== title
-  const collegeName = nameOf(subject?.colleges) || (subject?.is_university_wide ? t('academic.subjects.universityWide') : '')
+  const collegeNames = [...new Map(
+    [
+      ...(subject?.subject_colleges || []).map((link) => link.colleges).filter(Boolean),
+      subject?.colleges,
+    ].filter((college) => college?.id).map((college) => [college.id, nameOf(college)])
+  ).values()].filter(Boolean)
+  const collegeName = collegeNames.join(' · ') || (subject?.is_university_wide ? t('academic.subjects.universityWide') : '')
   const majorName = nameOf(subject?.majors) || (subject?.is_university_wide || subject?.applies_to_all_majors_of_college ? t(`${NS}.allMajors`) : '')
   const instructorName = formatInstructorDisplayName(subject?.instructors, isArabic) || String(subject?.instructor_name || '').replace(/\s+/g, ' ').trim()
   const instructorEmail = subject?.instructors?.email || subject?.instructor_email

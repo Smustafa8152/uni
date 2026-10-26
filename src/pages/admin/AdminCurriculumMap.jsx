@@ -112,7 +112,7 @@ export default function AdminCurriculumMap() {
       const { data, error } = await supabase
         .from('subjects')
         .select(
-          'id, code, name_en, name_ar, college_id, major_id, semester_number, is_university_wide, majors(id, name_en, name_ar, code), colleges(id, name_en, name_ar, code)'
+          'id, code, name_en, name_ar, college_id, major_id, semester_number, is_university_wide, majors(id, name_en, name_ar, code), colleges!subjects_college_id_fkey(id, name_en, name_ar, code)'
         )
         .eq('status', 'active')
         .order('code', { ascending: true })
