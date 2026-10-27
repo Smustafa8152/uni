@@ -50,7 +50,11 @@ export function ApplicantProtectedRoute({ children }) {
   }
 
   if (userRole !== 'applicant') {
-    return <Navigate to="/" replace />
+    // Staff or other roles clicking Applicant portal were bouncing back to "/"
+    // and it looked like the button did nothing. Send them to applicant sign-in.
+    return (
+      <Navigate to="/login/applicant" replace state={{ from: location.pathname + location.search }} />
+    )
   }
 
   return children
