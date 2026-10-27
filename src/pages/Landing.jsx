@@ -63,7 +63,7 @@ export default function Landing() {
                 {t('landing.applyButton', 'Apply for admission')}
               </Link>
               <Link
-                to="/portal"
+                to="/login/applicant"
                 className="flex-1 rounded-2xl bg-white text-slate-900 px-5 py-3 text-center font-extrabold ring-1 ring-slate-200 shadow-sm transition hover:bg-slate-50"
               >
                 {t('landing.portalButton', 'Applicant portal')}
