@@ -18,8 +18,9 @@ import SectionVerifyButton from '../../components/admissions/SectionVerifyButton
 import { confirmBankTransfer, listBankTransfers } from '../../utils/bankTransferProof'
 import { emailForActionStatus } from '../../utils/admissionMessageTemplates'
 import NationalitySelect from '../../components/common/NationalitySelect'
-import { ArrowLeft, CheckCircle, XCircle, Clock, Mail, Phone, MapPin, Calendar, GraduationCap, FileText, User, AlertCircle, BookOpen, Edit, Save, X, ArrowRight, Info, Sparkles, Shield, ArrowDown, KeyRound, Eye, EyeOff, Loader2, Copy, MessageSquare, Video, History, Wallet } from 'lucide-react'
+import { ArrowLeft, CheckCircle, XCircle, Clock, Mail, Phone, MapPin, Calendar, GraduationCap, FileText, User, AlertCircle, BookOpen, Edit, Save, X, ArrowRight, Info, Sparkles, Shield, ArrowDown, KeyRound, Eye, EyeOff, Loader2, Copy, MessageSquare, Video, History, Wallet, Trash2 } from 'lucide-react'
 import { Button, toast } from '../../components/ui'
+import DeleteApplicationModal from '../../components/admissions/DeleteApplicationModal'
 import { invokeAdminPasswordReset } from '../../utils/invokeAdminPasswordReset'
 import ApplicationMessagesPanel from '../../components/admissions/ApplicationMessagesPanel'
 import InterviewExamInvitePanel from '../../components/admissions/InterviewExamInvitePanel'
@@ -845,6 +846,7 @@ export default function ViewApplication() {
   const [rejectReasons, setRejectReasons] = useState([])
   const [showStatusModal, setShowStatusModal] = useState(false)
   const [showPasswordReset, setShowPasswordReset] = useState(false)
+  const [showDeleteModal, setShowDeleteModal] = useState(false)
   const [newPassword, setNewPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
   const [showNewPassword, setShowNewPassword] = useState(false)
@@ -2481,6 +2483,15 @@ export default function ViewApplication() {
             <Button variant="quiet" icon={KeyRound} className={heroButtonClass} disabled={updating || resettingPassword} onClick={openPasswordReset}>
               {t('admissions.viewApplication.resetPassword')}
             </Button>
+            <Button
+              variant="danger"
+              icon={Trash2}
+              className={heroButtonClass}
+              disabled={updating || loading}
+              onClick={() => setShowDeleteModal(true)}
+            >
+              {t('admissions.viewApplication.delete')}
+            </Button>
           </div>
         </div>
 
@@ -3294,26 +3305,6 @@ export default function ViewApplication() {
               {verifyButton('academic')}
             </div>
             <div className="grid grid-cols-1 gap-x-6 gap-y-4 sm:grid-cols-2 lg:grid-cols-3">
-              <div>
-                <label className={`block text-xs font-semibold text-slate-500 mb-1 ${alignStart}`}>
-                  {t('admissions.viewApplication.detail.major')}
-                </label>
-                <p className={`text-gray-900 ${alignStart}`}>
-                  {application?.majors
-                    ? getLocalizedName(application.majors, isArabicLayout) || application.majors.name_en
-                    : '—'}
-                </p>
-              </div>
-              <div>
-                <label className={`block text-xs font-semibold text-slate-500 mb-1 ${alignStart}`}>
-                  {t('admissions.viewApplication.detail.semester')}
-                </label>
-                <p className={`text-gray-900 ${alignStart}`}>
-                  {application?.semesters
-                    ? getLocalizedName(application.semesters, isArabicLayout) || application.semesters.name_en
-                    : '—'}
-                </p>
-              </div>
               <div>
                 <label className={`block text-xs font-semibold text-slate-500 mb-1 ${alignStart}`}>
                   {t('admissions.viewApplication.detail.highSchool')}
@@ -4292,6 +4283,16 @@ export default function ViewApplication() {
       </div>
       </div>
 
+      <DeleteApplicationModal
+        open={showDeleteModal}
+        application={application}
+        isArabic={isArabicLayout}
+        onClose={() => setShowDeleteModal(false)}
+        onDeleted={() => {
+          toast(t('admissions.applicationsPage.deleteSuccess'), 'ok')
+          navigate('/admissions/applications')
+        }}
+      />
     </div>
   )
 }

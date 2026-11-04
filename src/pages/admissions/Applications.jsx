@@ -7,7 +7,8 @@ import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
 import { useCollege } from '../../contexts/CollegeContext'
 import { getNationalityFilterOptions, nationalityMatchesFilter } from '../../utils/nationalities'
-import { Search, Plus, Eye, CheckCircle, XCircle, Clock, Calendar, Phone, GraduationCap, FileText, Building2, Filter, LayoutDashboard, X, Download, Loader2, Mail } from 'lucide-react'
+import { Search, Plus, Eye, Trash2, CheckCircle, XCircle, Clock, Calendar, Phone, GraduationCap, FileText, Building2, Filter, LayoutDashboard, X, Download, Loader2, Mail } from 'lucide-react'
+import DeleteApplicationModal from '../../components/admissions/DeleteApplicationModal'
 import { hasUniversityWideScope, resolveEffectiveCollegeId } from '../../utils/menuPermissions'
 import { exportApplicationsList, applyApplicationFilters } from '../../utils/exportApplications'
 import SearchableMultiSelect from '../../components/SearchableMultiSelect'
@@ -125,6 +126,8 @@ export default function Applications() {
   const [assignCatalogLoading, setAssignCatalogLoading] = useState(false)
   const [exporting, setExporting] = useState(false)
   const [exportMessage, setExportMessage] = useState('')
+  const [deleteTarget, setDeleteTarget] = useState(null)
+  const [deleteToast, setDeleteToast] = useState('')
   const [exportOpen, setExportOpen] = useState(false)
   const [exportFormat, setExportFormat] = useState('xlsx')
   const [exportFilters, setExportFilters] = useState({
@@ -1561,6 +1564,11 @@ export default function Applications() {
           {exportMessage}
         </div>
       )}
+      {deleteToast && (
+        <div className={`rounded-lg border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-700 ${alignStart}`}>
+          {deleteToast}
+        </div>
+      )}
 
       {userRole === 'admin' && (
         <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6">
@@ -2454,7 +2462,7 @@ export default function Applications() {
                 </div>
               </div>
 
-              <div className="pt-4 border-t border-gray-200">
+              <div className="pt-4 border-t border-gray-200 flex flex-col gap-2">
                 <button
                   type="button"
                   onClick={(e) => {
@@ -2468,6 +2476,20 @@ export default function Applications() {
                 >
                   <Eye className="w-4 h-4 shrink-0" />
                   <span>{t('admissions.applicationsPage.viewDetails')}</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    setDeleteTarget(application)
+                  }}
+                  className={`w-full bg-red-50 text-red-700 py-2 rounded-xl font-medium hover:bg-red-100 transition-colors flex items-center gap-2 ${
+                    isArabicLayout ? 'justify-start' : 'justify-center'
+                  }`}
+                  dir={isArabicLayout ? 'rtl' : 'ltr'}
+                >
+                  <Trash2 className="w-4 h-4 shrink-0" />
+                  <span>{t('admissions.applicationsPage.delete')}</span>
                 </button>
               </div>
             </div>
@@ -2992,6 +3014,24 @@ export default function Applications() {
           </div>
         </div>
       )}
+
+      <DeleteApplicationModal
+        open={Boolean(deleteTarget)}
+        application={deleteTarget}
+        isArabic={isArabicLayout}
+        onClose={() => setDeleteTarget(null)}
+        onDeleted={(id) => {
+          setApplications((current) => current.filter((row) => row.id !== id))
+          setFilteredApplications((current) => current.filter((row) => row.id !== id))
+          setSelectedIds((current) => {
+            const next = new Set(current)
+            next.delete(id)
+            return next
+          })
+          setDeleteToast(t('admissions.applicationsPage.deleteSuccess'))
+          setTimeout(() => setDeleteToast(''), 4000)
+        }}
+      />
     </div>
   )
 }
