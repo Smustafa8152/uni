@@ -18,7 +18,7 @@ import SectionVerifyButton from '../../components/admissions/SectionVerifyButton
 import { confirmBankTransfer, listBankTransfers } from '../../utils/bankTransferProof'
 import { emailForActionStatus } from '../../utils/admissionMessageTemplates'
 import NationalitySelect from '../../components/common/NationalitySelect'
-import { ArrowLeft, CheckCircle, XCircle, Clock, Mail, Phone, MapPin, Calendar, GraduationCap, FileText, User, AlertCircle, BookOpen, Edit, Save, X, ArrowRight, Info, Sparkles, Shield, ArrowDown, KeyRound, Eye, EyeOff, Loader2, Copy, MessageSquare, Video, History, Wallet, Trash2 } from 'lucide-react'
+import { ArrowLeft, CheckCircle, XCircle, Clock, Mail, Phone, MapPin, Calendar, GraduationCap, FileText, User, AlertCircle, BookOpen, Edit, Save, X, ArrowRight, Info, Sparkles, Shield, ArrowDown, KeyRound, Eye, EyeOff, Loader2, Copy, MessageSquare, Video, History, Wallet, Trash2, Upload } from 'lucide-react'
 import { Button, toast } from '../../components/ui'
 import DeleteApplicationModal from '../../components/admissions/DeleteApplicationModal'
 import { invokeAdminPasswordReset } from '../../utils/invokeAdminPasswordReset'
@@ -881,6 +881,10 @@ export default function ViewApplication() {
   const [rejectDoc, setRejectDoc] = useState(null)
   const [rejectReason, setRejectReason] = useState('')
   const [rejectingDoc, setRejectingDoc] = useState(false)
+  const [staffDocLabel, setStaffDocLabel] = useState('')
+  const [staffDocFile, setStaffDocFile] = useState(null)
+  const [staffDocInputKey, setStaffDocInputKey] = useState(0)
+  const [uploadingStaffDoc, setUploadingStaffDoc] = useState(false)
   const [staffUserId, setStaffUserId] = useState(null)
 
   const [showOfferModal, setShowOfferModal] = useState(false)
@@ -1587,6 +1591,62 @@ export default function ViewApplication() {
   const documentTitle = (doc) =>
     String(doc?.document_label || '').trim() ||
     t(`admissions.viewApplication.documentTypes.${doc?.document_type}`, { defaultValue: doc?.document_type || '' })
+
+  const handleStaffDocumentUpload = async () => {
+    const label = staffDocLabel.trim()
+    if (!application?.id) return
+    if (!label) {
+      setError(t('admissions.viewApplication.detail.documentNameRequired'))
+      return
+    }
+    if (!staffDocFile) {
+      setError(t('admissions.viewApplication.detail.fileRequired'))
+      return
+    }
+    setUploadingStaffDoc(true)
+    setError('')
+    try {
+      const safeName = `${Date.now()}-${staffDocFile.name.replace(/[^a-zA-Z0-9.-]/g, '_')}`
+      const storagePath = `${application.id}/additional/${safeName}`
+      const { error: uploadError } = await supabase.storage
+        .from(SUPABASE_STORAGE_BUCKET)
+        .upload(storagePath, staffDocFile, { upsert: false, contentType: staffDocFile.type || undefined })
+      if (uploadError) throw uploadError
+
+      const now = new Date().toISOString()
+      const staffId = staffUserId || (await getStaffUserId())
+      const payload = {
+        application_id: application.id,
+        document_type: 'additional',
+        document_label: label,
+        file_path: storagePath,
+        file_name: staffDocFile.name,
+        file_size: staffDocFile.size,
+        content_type: staffDocFile.type || null,
+        uploaded_at: now,
+        verified_at: now,
+        verified_by: staffId,
+        rejected_at: null,
+        rejected_by: null,
+        rejection_reason: null,
+      }
+      const { data, error: insertError } = await supabase
+        .from('application_documents')
+        .insert(payload)
+        .select('id, application_id, document_type, document_label, file_path, file_name, file_size, content_type, uploaded_at, verified_at, verified_by, verification_notes, rejected_at, rejection_reason')
+        .single()
+      if (insertError) throw insertError
+      setApplicationDocuments((prev) => [data, ...prev])
+      setStaffDocLabel('')
+      setStaffDocFile(null)
+      setStaffDocInputKey((key) => key + 1)
+    } catch (e) {
+      console.error('Staff document upload failed:', e)
+      setError(e?.message || t('admissions.viewApplication.detail.uploadFailed'))
+    } finally {
+      setUploadingStaffDoc(false)
+    }
+  }
 
   const openRejectDocument = (doc) => {
     setRejectDoc(doc)
@@ -3777,6 +3837,48 @@ export default function ViewApplication() {
                 </button>
               </div>
             </div>
+
+            <form
+              className="mb-5 grid gap-3 rounded-xl border border-[#dde3ef] bg-[#f7f9fc] p-4 sm:grid-cols-[1fr_1fr_auto] sm:items-end"
+              onSubmit={(event) => {
+                event.preventDefault()
+                handleStaffDocumentUpload()
+              }}
+            >
+              <label className="block text-sm">
+                <span className="mb-1 block font-semibold text-gray-700">
+                  {t('admissions.viewApplication.detail.documentName')}
+                </span>
+                <input
+                  type="text"
+                  value={staffDocLabel}
+                  onChange={(e) => setStaffDocLabel(e.target.value)}
+                  placeholder={t('admissions.viewApplication.detail.documentNamePlaceholder')}
+                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+                />
+              </label>
+              <label className="block text-sm">
+                <span className="mb-1 block font-semibold text-gray-700">
+                  {t('admissions.viewApplication.detail.chooseFile')}
+                </span>
+                <input
+                  key={staffDocInputKey}
+                  type="file"
+                  onChange={(e) => setStaffDocFile(e.target.files?.[0] || null)}
+                  className="w-full text-sm text-gray-700 file:me-3 file:rounded-lg file:border-0 file:bg-white file:px-3 file:py-2 file:font-semibold"
+                />
+              </label>
+              <button
+                type="submit"
+                disabled={uploadingStaffDoc}
+                className="inline-flex items-center justify-center gap-2 rounded-lg bg-[#1a3a6b] px-4 py-2 text-sm font-semibold text-white hover:bg-[#152e56] disabled:opacity-50"
+              >
+                <Upload className="h-4 w-4" />
+                {uploadingStaffDoc
+                  ? t('admissions.viewApplication.detail.uploading')
+                  : t('admissions.viewApplication.detail.uploadDocument')}
+              </button>
+            </form>
 
             {loadingDocuments ? (
               <div className="flex justify-center py-8">
