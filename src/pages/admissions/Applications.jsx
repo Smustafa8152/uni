@@ -16,6 +16,8 @@ import { ADMISSION_MESSAGE_TEMPLATES, getAdmissionTemplate } from '../../utils/a
 import { APPLICATION_DEGREE_LEVELS, resolveActiveDegreeLevels } from '../../utils/getApplicationFormDefaults'
 import { APPLICATION_FEE_DEFAULT, readApplicationFeeSettings } from '../../utils/applicationFee'
 
+const APPLICATIONS_LIST_QUERY_KEY = 'admissions.applications.listQuery'
+
 const ASSIGN_FIELDS = [
   { key: 'college_id', labelKey: 'admissions.applicationsPage.assignCollege', fallback: 'College' },
   { key: 'major_id', labelKey: 'admissions.applicationsPage.assignMajor', fallback: 'Major' },
@@ -93,21 +95,21 @@ export default function Applications() {
   const iconRow = isArabicLayout ? 'flex-row-reverse' : ''
 
   const navigate = useNavigate()
-  const [searchParams] = useSearchParams()
+  const [searchParams, setSearchParams] = useSearchParams()
   const { userRole, collegeId: authCollegeId, menuPermissions, loading: authLoading, user } = useAuth()
   const { selectedCollegeId } = useCollege()
   const universityWide = hasUniversityWideScope(userRole, authCollegeId, menuPermissions)
   const [loading, setLoading] = useState(true)
   const [applications, setApplications] = useState([])
   const [filteredApplications, setFilteredApplications] = useState([])
-  const [searchQuery, setSearchQuery] = useState('')
-  const [statusFilter, setStatusFilter] = useState(searchParams.get('status') || 'all')
-  const [nationalityFilter, setNationalityFilter] = useState('all')
-  const [genderFilter, setGenderFilter] = useState('all')
-  const [collegeFilter, setCollegeFilter] = useState(searchParams.get('college') || 'all')
-  const [majorFilter, setMajorFilter] = useState(searchParams.get('major') || 'all')
-  const [academicYearFilter, setAcademicYearFilter] = useState(searchParams.get('academicYear') || 'all')
-  const [semesterFilter, setSemesterFilter] = useState(searchParams.get('semester') || 'all')
+  const [searchQuery, setSearchQuery] = useState(() => searchParams.get('q') || '')
+  const [statusFilter, setStatusFilter] = useState(() => searchParams.get('status') || 'all')
+  const [nationalityFilter, setNationalityFilter] = useState(() => searchParams.get('nationality') || 'all')
+  const [genderFilter, setGenderFilter] = useState(() => searchParams.get('gender') || 'all')
+  const [collegeFilter, setCollegeFilter] = useState(() => searchParams.get('college') || 'all')
+  const [majorFilter, setMajorFilter] = useState(() => searchParams.get('major') || 'all')
+  const [academicYearFilter, setAcademicYearFilter] = useState(() => searchParams.get('academicYear') || 'all')
+  const [semesterFilter, setSemesterFilter] = useState(() => searchParams.get('semester') || 'all')
   const [pendingApplicantRequestMap, setPendingApplicantRequestMap] = useState({})
   const [selectedIds, setSelectedIds] = useState(() => new Set())
   const [assignOpen, setAssignOpen] = useState(false)
@@ -1277,6 +1279,47 @@ export default function Applications() {
     setSemesterFilter('all')
   }
 
+  // Keep the active filters in the URL so opening an application and coming back restores them.
+  useEffect(() => {
+    const next = new URLSearchParams()
+    if (statusFilter !== 'all') next.set('status', statusFilter)
+    if (nationalityFilter !== 'all') next.set('nationality', nationalityFilter)
+    if (genderFilter !== 'all') next.set('gender', genderFilter)
+    if (collegeFilter !== 'all') next.set('college', collegeFilter)
+    if (majorFilter !== 'all') next.set('major', majorFilter)
+    if (academicYearFilter !== 'all') next.set('academicYear', academicYearFilter)
+    if (semesterFilter !== 'all') next.set('semester', semesterFilter)
+    if (searchQuery.trim()) next.set('q', searchQuery.trim())
+    const nextStr = next.toString()
+    if (nextStr === searchParams.toString()) return
+    setSearchParams(next, { replace: true })
+  }, [
+    statusFilter,
+    nationalityFilter,
+    genderFilter,
+    collegeFilter,
+    majorFilter,
+    academicYearFilter,
+    semesterFilter,
+    searchQuery,
+    searchParams,
+    setSearchParams,
+  ])
+
+  const openApplication = useCallback(
+    (applicationId) => {
+      if (!applicationId) return
+      const listSearch = window.location.search || ''
+      try {
+        sessionStorage.setItem(APPLICATIONS_LIST_QUERY_KEY, listSearch)
+      } catch {
+        /* ignore */
+      }
+      navigate(`/admissions/applications/${applicationId}`, { state: { listSearch } })
+    },
+    [navigate]
+  )
+
   const noSemesterAppIds = useMemo(
     () =>
       applications
@@ -2341,12 +2384,12 @@ export default function Applications() {
               role="button"
               tabIndex={0}
               onKeyDown={(e) => {
-                if (e.key === 'Enter') navigate(`/admissions/applications/${application.id}`)
+                if (e.key === 'Enter') openApplication(application.id)
               }}
               className={`bg-white rounded-2xl shadow-sm border p-6 hover:shadow-md transition-shadow cursor-pointer ${
                 checked ? 'border-primary-400 ring-2 ring-primary-100' : 'border-gray-200'
               }`}
-              onClick={() => navigate(`/admissions/applications/${application.id}`)}
+              onClick={() => openApplication(application.id)}
             >
               <div className="flex items-start justify-between gap-3 mb-4">
                 <div className={`min-w-0 flex-1 ${alignStart}`}>
@@ -2467,7 +2510,7 @@ export default function Applications() {
                   type="button"
                   onClick={(e) => {
                     e.stopPropagation()
-                    navigate(`/admissions/applications/${application.id}`)
+                    openApplication(application.id)
                   }}
                   className={`w-full bg-primary-50 text-primary-600 py-2 rounded-xl font-medium hover:bg-primary-100 transition-colors flex items-center gap-2 ${
                     isArabicLayout ? 'justify-start' : 'justify-center'

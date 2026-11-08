@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useCallback } from 'react'
-import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
+import { useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { useLanguage } from '../../contexts/LanguageContext'
 import { supabase, SUPABASE_STORAGE_BUCKET } from '../../lib/supabase'
@@ -721,8 +721,11 @@ function EditApplicationModal({
   )
 }
 
+const APPLICATIONS_LIST_QUERY_KEY = 'admissions.applications.listQuery'
+
 export default function ViewApplication() {
   const navigate = useNavigate()
+  const location = useLocation()
   const { id: idParam } = useParams()
   const [searchParams, setSearchParams] = useSearchParams()
   const { i18n } = useTranslation()
@@ -739,6 +742,18 @@ export default function ViewApplication() {
   )
   const alignStart = isArabicLayout ? 'text-right' : 'text-left'
   const { user } = useAuth()
+
+  const goBackToApplications = useCallback(() => {
+    let listSearch = typeof location.state?.listSearch === 'string' ? location.state.listSearch : ''
+    if (!listSearch) {
+      try {
+        listSearch = sessionStorage.getItem(APPLICATIONS_LIST_QUERY_KEY) || ''
+      } catch {
+        listSearch = ''
+      }
+    }
+    navigate(`/admissions/applications${listSearch || ''}`)
+  }, [location.state, navigate])
 
   const translateActivityNote = useCallback(
     (note) => {
@@ -2255,10 +2270,18 @@ export default function ViewApplication() {
           updateData[key] = value === true || value === 'true'
         } else if (key === 'nationality') {
           updateData[key] = normalizeNationalityCode(value) || null
+        } else if (typeof value === 'string') {
+          const trimmed = value.trim()
+          updateData[key] = trimmed || null
         } else {
           updateData[key] = value || null
         }
       })
+
+      // Always persist Arabic name fields from the edit form (even if cleared)
+      updateData.first_name_ar = String(editFormData.first_name_ar || '').trim() || null
+      updateData.middle_name_ar = String(editFormData.middle_name_ar || '').trim() || null
+      updateData.last_name_ar = String(editFormData.last_name_ar || '').trim() || null
 
       const { error: updateError } = await supabase
         .from('applications')
@@ -2270,6 +2293,7 @@ export default function ViewApplication() {
       setShowEditModal(false)
       setEditFormData({})
       await fetchApplication()
+      toast(t('admissions.viewApplication.editSaved', 'Application updated'))
     } catch (err) {
       console.error('Error updating application:', err)
       setError(err.message || 'Failed to update application')
@@ -2355,7 +2379,7 @@ export default function ViewApplication() {
     return (
       <div className="space-y-6">
         <button
-          onClick={() => navigate('/admissions/applications')}
+          onClick={goBackToApplications}
           className="flex items-center space-x-2 text-gray-600 hover:text-gray-900"
         >
           <ArrowLeft className="w-5 h-5" />
@@ -2407,9 +2431,12 @@ export default function ViewApplication() {
   )
 
   // ---- header and tabs ----
-  const latinName = [application?.first_name, application?.last_name].filter(Boolean).join(' ').trim()
+  const latinName = [application?.first_name, application?.middle_name, application?.last_name].filter(Boolean).join(' ').trim()
   const arabicName = [application?.first_name_ar, application?.middle_name_ar, application?.last_name_ar].filter(Boolean).join(' ').trim()
   const applicantDisplayName = (isArabicLayout ? arabicName || latinName : latinName || arabicName) || t('admissions.viewApplication.title')
+  const applicantSecondaryName = isArabicLayout
+    ? (latinName && latinName !== arabicName ? latinName : '')
+    : (arabicName && arabicName !== latinName ? arabicName : '')
   const applicationNumberText = application?.application_number || `#${application?.id}`
   const copyApplicationNumber = () => {
     const done = () => toast(t('admissions.viewApplication.page.numberCopied'))
@@ -2459,13 +2486,21 @@ export default function ViewApplication() {
           <div className="min-w-0">
             <button
               type="button"
-              onClick={() => navigate('/admissions/applications')}
+              onClick={goBackToApplications}
               className="inline-flex items-center gap-1.5 text-sm font-semibold text-slate-500 hover:text-[#1a3a6b]"
             >
               {isArabicLayout ? <ArrowRight className="h-4 w-4" /> : <ArrowLeft className="h-4 w-4" />}
               {t('admissions.viewApplication.page.back')}
             </button>
             <h1 className="mt-2 break-words text-2xl font-extrabold tracking-tight text-[#1a3a6b] sm:text-[28px]">{applicantDisplayName}</h1>
+            {applicantSecondaryName ? (
+              <p
+                className="mt-1 break-words text-base font-semibold text-slate-600"
+                dir={isArabicLayout ? 'ltr' : 'rtl'}
+              >
+                {applicantSecondaryName}
+              </p>
+            ) : null}
             <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-slate-500">
               <button
                 type="button"
@@ -3172,6 +3207,30 @@ export default function ViewApplication() {
               </div>
               <div>
                 <label className={`block text-xs font-semibold text-slate-500 mb-1 ${alignStart}`}>
+                  {t('admissions.viewApplication.editModal.fields.firstNameAr')}
+                </label>
+                <p className={`text-gray-900 font-medium ${alignStart}`} dir="rtl">
+                  {application?.first_name_ar || t('admissions.viewApplication.detail.notAvailable')}
+                </p>
+              </div>
+              <div>
+                <label className={`block text-xs font-semibold text-slate-500 mb-1 ${alignStart}`}>
+                  {t('admissions.viewApplication.editModal.fields.middleNameAr')}
+                </label>
+                <p className={`text-gray-900 ${alignStart}`} dir="rtl">
+                  {application?.middle_name_ar || t('admissions.viewApplication.detail.notAvailable')}
+                </p>
+              </div>
+              <div>
+                <label className={`block text-xs font-semibold text-slate-500 mb-1 ${alignStart}`}>
+                  {t('admissions.viewApplication.editModal.fields.lastNameAr')}
+                </label>
+                <p className={`text-gray-900 font-medium ${alignStart}`} dir="rtl">
+                  {application?.last_name_ar || t('admissions.viewApplication.detail.notAvailable')}
+                </p>
+              </div>
+              <div>
+                <label className={`block text-xs font-semibold text-slate-500 mb-1 ${alignStart}`}>
                   {t('admissions.viewApplication.detail.dateOfBirth')}
                 </label>
                 <p className={`text-gray-900 ${alignStart}`}>{formatViewDate(application?.date_of_birth)}</p>
@@ -3208,16 +3267,6 @@ export default function ViewApplication() {
                   {application?.place_of_birth || t('admissions.viewApplication.detail.notAvailable')}
                 </p>
               </div>
-              {(application?.first_name_ar || application?.middle_name_ar || application?.last_name_ar) && (
-                <div className="sm:col-span-2 lg:col-span-3">
-                  <label className={`block text-xs font-semibold text-slate-500 mb-1 ${alignStart}`}>
-                    {t('admissions.viewApplication.detail.nameArabic')}
-                  </label>
-                  <p className={`text-gray-900 ${alignStart}`}>
-                    <span dir="rtl">{arabicName}</span>
-                  </p>
-                </div>
-              )}
             </div>
           </div>
 
@@ -4392,7 +4441,7 @@ export default function ViewApplication() {
         onClose={() => setShowDeleteModal(false)}
         onDeleted={() => {
           toast(t('admissions.applicationsPage.deleteSuccess'), 'ok')
-          navigate('/admissions/applications')
+          goBackToApplications()
         }}
       />
     </div>

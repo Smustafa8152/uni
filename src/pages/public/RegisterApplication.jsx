@@ -75,8 +75,8 @@ function isCompleteMobile(phone) {
   return national.length >= MIN_MOBILE_DIGITS && dial.replace(/\D/g, '').length + national.length <= MAX_PHONE_DIGITS
 }
 
-/** Programs taught on campus, matched by faculty code, program code, and level. Every other program is online only. */
-const ON_CAMPUS_PROGRAMS = [{ collegeCode: 'SH001', majorCode: '0141', degreeLevel: 'bachelor' }]
+/** Faculties that teach on campus. Every program under these codes is available when On campus is selected; other faculties stay online only. */
+const ON_CAMPUS_COLLEGE_CODES = new Set(['SH001', 'Bus001'])
 
 const PAST_SEMESTER_STATUSES = new Set(['completed', 'archived', 'closed', 'cancelled', 'ended'])
 
@@ -701,14 +701,7 @@ export default function RegisterApplication({ portal = false }) {
 
   const campusMajors = useMemo(() => {
     const collegeCode = (id) => String(colleges.find((c) => String(c.id) === String(id))?.code || '').trim()
-    return majors.filter((m) =>
-      ON_CAMPUS_PROGRAMS.some(
-        (p) =>
-          m.degree_level === p.degreeLevel &&
-          String(m.code || '').trim() === p.majorCode &&
-          collegeCode(m.college_id) === p.collegeCode
-      )
-    )
+    return majors.filter((m) => ON_CAMPUS_COLLEGE_CODES.has(collegeCode(m.college_id)))
   }, [colleges, majors])
 
   const programMajors = onCampus && !programLocked ? campusMajors : majors
@@ -758,7 +751,7 @@ export default function RegisterApplication({ portal = false }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [formData.degree_level, collegesForDegreeLevel])
 
-  // On campus fills in the campus program, so the applicant does not pick a level, faculty, or program that is online only.
+  // On campus keeps only Sharia and Business programs. Drop a level/faculty/program that is online only.
   useEffect(() => {
     if (!onCampus || programLocked || loadingColleges) return
     const level = campusDegreeLevels.includes(formData.degree_level)
@@ -766,11 +759,17 @@ export default function RegisterApplication({ portal = false }) {
       : campusDegreeLevels.length === 1
         ? campusDegreeLevels[0]
         : ''
-    const atLevel = campusMajors.filter((m) => m.degree_level === level)
+    const atLevel = campusMajors.filter((m) => !level || m.degree_level === level)
     const keepMajor = atLevel.some((m) => String(m.id) === String(formData.major_id))
+    const campusCollegeIds = new Set(atLevel.map((m) => String(m.college_id)))
+    const keepCollege = selectedCollegeId && campusCollegeIds.has(String(selectedCollegeId))
     const only = atLevel.length === 1 ? atLevel[0] : null
     const nextMajor = keepMajor ? formData.major_id : only ? String(only.id) : ''
-    const nextCollege = keepMajor ? selectedCollegeId : only ? String(only.college_id) : ''
+    const nextCollege = keepMajor || keepCollege
+      ? selectedCollegeId
+      : only
+        ? String(only.college_id)
+        : ''
     if (level === formData.degree_level && nextMajor === formData.major_id && nextCollege === selectedCollegeId) return
     setSelectedCollegeId(nextCollege)
     setFormData((prev) => ({
