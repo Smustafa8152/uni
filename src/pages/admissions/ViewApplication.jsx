@@ -1702,7 +1702,11 @@ export default function ViewApplication() {
         })
         toast(t('admissions.viewApplication.detail.rejectSent'))
       } catch (mailErr) {
-        setError(t('admissions.viewApplication.detail.rejectEmailFailed', { error: mailErr?.message || '' }))
+        setError(
+          t('admissions.viewApplication.detail.rejectEmailFailed', {
+            error: friendlyEmailError(mailErr?.message),
+          })
+        )
       }
     } catch (e) {
       console.error('Reject document failed:', e)
@@ -1710,6 +1714,14 @@ export default function ViewApplication() {
     } finally {
       setRejectingDoc(false)
     }
+  }
+
+  const friendlyEmailError = (raw) => {
+    const msg = String(raw || '').trim()
+    if (/535|Authentication unsuccessful|Invalid login/i.test(msg)) {
+      return t('admissions.viewApplication.detail.smtpAuthFailed')
+    }
+    return msg || t('admissions.viewApplication.detail.uploadFailed')
   }
 
   const handleRequestMoreDocuments = async () => {
@@ -1747,19 +1759,28 @@ export default function ViewApplication() {
         setApplication((prev) => (prev ? { ...prev, status_code: 'RVRI', status: 'pending' } : prev))
       }
 
-      const docsEmail = emailForActionStatus('RVRI', isArabicLayout, msg)
-      await sendAdmissionNotification({
-        type: 'request_documents',
-        subject: docsEmail.subject,
-        message: docsEmail.body,
-        meta: { request_id: reqRow?.id },
-      })
-
       setShowRequestDocsModal(false)
       setRequestDocsMessage('')
+
+      try {
+        const docsEmail = emailForActionStatus('RVRI', isArabicLayout, msg)
+        await sendAdmissionNotification({
+          type: 'request_documents',
+          subject: docsEmail.subject,
+          message: docsEmail.body,
+          meta: { request_id: reqRow?.id },
+        })
+        toast(t('admissions.viewApplication.detail.requestDocsSent'), 'ok')
+      } catch (mailErr) {
+        setError(
+          t('admissions.viewApplication.detail.requestDocsEmailFailed', {
+            error: friendlyEmailError(mailErr?.message),
+          })
+        )
+      }
     } catch (e) {
       console.error('Request docs failed:', e)
-      setError(e?.message || 'Failed to request documents')
+      setError(e?.message || t('admissions.viewApplication.detail.requestDocsFailed'))
     } finally {
       setRequestDocsSending(false)
     }

@@ -305,6 +305,17 @@ serve(async (req) => {
         }
 
         smtpCfg = normalizeEmailSettings(rawEmail)
+        // Empty college stubs (host with no mailbox) must use the university account, same as send-admission-notification.
+        if (!smtpCfg?.host || !smtpCfg.fromEmail || !smtpCfg.username || !smtpCfg.password) {
+          const { data: urow } = await supabaseAdmin
+            .from('university_settings')
+            .select('email_settings')
+            .order('updated_at', { ascending: false })
+            .limit(1)
+            .maybeSingle()
+          rawEmail = urow?.email_settings ?? rawEmail
+          smtpCfg = normalizeEmailSettings(rawEmail)
+        }
         if (!to) to = testAddressFromRaw(rawEmail)
       }
     } else {
