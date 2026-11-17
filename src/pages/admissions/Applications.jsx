@@ -782,28 +782,37 @@ export default function Applications() {
     filterApplications()
   }, [filterApplications])
 
-  // Keep major/semester/year filters valid when parent filters change
+  // Keep major/semester/year filters valid when parent filters change.
+  // Wait until applications are loaded, and only clear when options exist — an empty list
+  // often means a parent filter is about to clear, and wiping children would drop restored filters.
   useEffect(() => {
-    if (majorFilter !== 'all' && !majorOptions.some((m) => m.id === majorFilter)) {
+    if (loading || applications.length === 0 || majorOptions.length === 0) return
+    if (majorFilter !== 'all' && !majorOptions.some((m) => String(m.id) === String(majorFilter))) {
       setMajorFilter('all')
     }
-  }, [majorOptions, majorFilter])
+  }, [loading, applications.length, majorOptions, majorFilter])
 
   useEffect(() => {
+    if (loading || applications.length === 0 || academicYearOptions.length === 0) return
     if (
       academicYearFilter !== 'all' &&
       academicYearFilter !== '__none__' &&
-      !academicYearOptions.some((y) => y.id === academicYearFilter)
+      !academicYearOptions.some((y) => String(y.id) === String(academicYearFilter))
     ) {
       setAcademicYearFilter('all')
     }
-  }, [academicYearOptions, academicYearFilter])
+  }, [loading, applications.length, academicYearOptions, academicYearFilter])
 
   useEffect(() => {
-    if (semesterFilter !== 'all' && semesterFilter !== '__none__' && !semesterOptions.some((s) => s.id === semesterFilter)) {
+    if (loading || applications.length === 0 || semesterOptions.length === 0) return
+    if (
+      semesterFilter !== 'all' &&
+      semesterFilter !== '__none__' &&
+      !semesterOptions.some((s) => String(s.id) === String(semesterFilter))
+    ) {
       setSemesterFilter('all')
     }
-  }, [semesterOptions, semesterFilter])
+  }, [loading, applications.length, semesterOptions, semesterFilter])
 
   const stats = useMemo(() => summarizeApps(filteredApplications), [filteredApplications])
 
@@ -1279,8 +1288,7 @@ export default function Applications() {
     setSemesterFilter('all')
   }
 
-  // Keep the active filters in the URL so opening an application and coming back restores them.
-  useEffect(() => {
+  const buildListSearch = useCallback(() => {
     const next = new URLSearchParams()
     if (statusFilter !== 'all') next.set('status', statusFilter)
     if (nationalityFilter !== 'all') next.set('nationality', nationalityFilter)
@@ -1291,8 +1299,7 @@ export default function Applications() {
     if (semesterFilter !== 'all') next.set('semester', semesterFilter)
     if (searchQuery.trim()) next.set('q', searchQuery.trim())
     const nextStr = next.toString()
-    if (nextStr === searchParams.toString()) return
-    setSearchParams(next, { replace: true })
+    return nextStr ? `?${nextStr}` : ''
   }, [
     statusFilter,
     nationalityFilter,
@@ -1302,14 +1309,23 @@ export default function Applications() {
     academicYearFilter,
     semesterFilter,
     searchQuery,
-    searchParams,
-    setSearchParams,
   ])
+
+  // Keep the active filters in the URL so opening an application and coming back restores them.
+  useEffect(() => {
+    const listSearch = buildListSearch()
+    const next = new URLSearchParams(listSearch.startsWith('?') ? listSearch.slice(1) : listSearch)
+    const same =
+      [...next.keys()].length === [...searchParams.keys()].length &&
+      [...next.keys()].every((key) => next.get(key) === searchParams.get(key))
+    if (same) return
+    setSearchParams(next, { replace: true })
+  }, [buildListSearch, searchParams, setSearchParams])
 
   const openApplication = useCallback(
     (applicationId) => {
       if (!applicationId) return
-      const listSearch = window.location.search || ''
+      const listSearch = buildListSearch()
       try {
         sessionStorage.setItem(APPLICATIONS_LIST_QUERY_KEY, listSearch)
       } catch {
@@ -1317,7 +1333,7 @@ export default function Applications() {
       }
       navigate(`/admissions/applications/${applicationId}`, { state: { listSearch } })
     },
-    [navigate]
+    [buildListSearch, navigate]
   )
 
   const noSemesterAppIds = useMemo(
