@@ -252,7 +252,8 @@ export default function Applications() {
           colleges!college_id (
             id,
             name_en,
-            name_ar
+            name_ar,
+            status
           )
         `)
         .order('created_at', { ascending: false })
@@ -603,6 +604,7 @@ export default function Applications() {
     for (const a of applications) {
       const id = a.college_id ?? a.colleges?.id
       if (id == null) continue
+      if (String(a.colleges?.status || '').toLowerCase() !== 'active') continue
       if (!map.has(String(id))) {
         map.set(String(id), {
           id: String(id),
@@ -781,6 +783,17 @@ export default function Applications() {
   useEffect(() => {
     filterApplications()
   }, [filterApplications])
+
+  // Drop an inactive / missing college filter once options are ready.
+  useEffect(() => {
+    if (loading || applications.length === 0 || collegeOptions.length === 0) return
+    if (collegeFilter !== 'all' && !collegeOptions.some((c) => String(c.id) === String(collegeFilter))) {
+      setCollegeFilter('all')
+      setMajorFilter('all')
+      setAcademicYearFilter('all')
+      setSemesterFilter('all')
+    }
+  }, [loading, applications.length, collegeOptions, collegeFilter])
 
   // Keep major/semester/year filters valid when parent filters change.
   // Wait until applications are loaded, and only clear when options exist — an empty list
