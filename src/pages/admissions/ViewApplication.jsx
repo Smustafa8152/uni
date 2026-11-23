@@ -3289,7 +3289,7 @@ export default function ViewApplication() {
                 </p>
               </div>
             </div>
-          </div>
+          </div> 
 
           {/* Contact Information */}
           <div className="rounded-2xl border border-[#dde3ef] bg-white p-5 sm:p-6">
